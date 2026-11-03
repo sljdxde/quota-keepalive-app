@@ -3,7 +3,7 @@ main = "src/index.js"
 compatibility_date = "2026-10-01"
 
 [vars]
-GITHUB_REPOSITORY = "sljdxde/quota-keepalive"
+GITHUB_REPOSITORY = "sljdxde/quota-keepalive-app"
 ASSET_BRANCH = "feedback-assets"
 
 # 客户端内置地址的唯一真源。internal/feedback 的测试会读这一行并与

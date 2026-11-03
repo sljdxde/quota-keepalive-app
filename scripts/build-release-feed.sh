@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${DIST:-$ROOT/dist}"
 VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --always 2>/dev/null || echo dev)}"
 VERSION="${VERSION#v}"
-BASE_URL="${QKA_RELEASE_BASE_URL:-https://github.com/sljdxde/quota-keepalive/releases/latest/download}"
+BASE_URL="${QKA_RELEASE_BASE_URL:-https://github.com/sljdxde/quota-keepalive-app/releases/latest/download}"
 REQUIRE_PLATFORMS="${QKA_REQUIRE_PLATFORMS:-darwin/arm64,darwin/amd64,windows/amd64,windows/arm64}"
 
 if [[ ! -d "$DIST" ]]; then

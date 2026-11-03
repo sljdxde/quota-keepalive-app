@@ -81,7 +81,7 @@ export function createHandler(deps = {}) {
   }
 
   async function ensureAssetBranch(env) {
-    const repo = env.GITHUB_REPOSITORY || "sljdxde/quota-keepalive";
+    const repo = env.GITHUB_REPOSITORY || "sljdxde/quota-keepalive-app";
     const branch = env.ASSET_BRANCH || "feedback-assets";
     try {
       return await github(env, `/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`);
@@ -98,7 +98,7 @@ export function createHandler(deps = {}) {
 
   async function uploadImages(env, images) {
     if (!images.length) return [];
-    const repo = env.GITHUB_REPOSITORY || "sljdxde/quota-keepalive";
+    const repo = env.GITHUB_REPOSITORY || "sljdxde/quota-keepalive-app";
     const branch = env.ASSET_BRANCH || "feedback-assets";
     const ref = await ensureAssetBranch(env);
     const parent = ref.object.sha;
@@ -141,7 +141,7 @@ export function createHandler(deps = {}) {
   }
 
   async function createIssue(env, payload, assets) {
-    const repo = env.GITHUB_REPOSITORY || "sljdxde/quota-keepalive";
+    const repo = env.GITHUB_REPOSITORY || "sljdxde/quota-keepalive-app";
     const body = issueBody(payload, assets);
     return github(env, `/repos/${repo}/issues`, {
       method: "POST",

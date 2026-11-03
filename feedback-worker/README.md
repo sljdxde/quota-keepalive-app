@@ -3,7 +3,7 @@
 Small Cloudflare Worker proxy for the in-app feedback dialog. The desktop
 client never receives a GitHub token. The Worker validates and rate-limits the
 request, commits images to the `feedback-assets` branch in one Git tree commit,
-then creates an Issue in `sljdxde/quota-keepalive`.
+then creates an Issue in `sljdxde/quota-keepalive-app`.
 
 ## Secrets
 

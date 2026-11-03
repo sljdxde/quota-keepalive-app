@@ -34,3 +34,6 @@ out/
 .env.local
 *.pem
 *.key
+
+# 插件是独立仓库（sljdxde/quota-keepalive），不再放应用仓库。
+/packages/quota-keepalive-plugin/

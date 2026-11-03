@@ -21,7 +21,7 @@ import (
 const (
 	// DefaultFeedURL is updated by the release pipeline. A local override keeps
 	// development and controlled acceptance tests away from the network.
-	DefaultFeedURL = "https://github.com/sljdxde/quota-keepalive/releases/latest/download/feed.json"
+	DefaultFeedURL = "https://github.com/sljdxde/quota-keepalive-app/releases/latest/download/feed.json"
 	maxFeedBytes   = 1 << 20
 )
 

@@ -16,7 +16,7 @@ import (
 	"qka/internal/release"
 )
 
-const defaultBaseURL = "https://github.com/sljdxde/quota-keepalive/releases/latest/download"
+const defaultBaseURL = "https://github.com/sljdxde/quota-keepalive-app/releases/latest/download"
 
 var stableVersionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}$`)
 
