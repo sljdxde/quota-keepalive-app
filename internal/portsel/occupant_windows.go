@@ -6,12 +6,18 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"qka/internal/procattr"
 )
 
 // runLsof is named for the shared parser; on Windows netstat supplies the
 // listening PID without requiring lsof or administrator privileges.
 func runLsof(port int) ([]string, error) {
-	out, err := exec.Command("netstat", "-ano", "-p", "tcp").Output()
+	cmd := exec.Command("netstat", "-ano", "-p", "tcp")
+	// The GUI build of QKA has no console of its own; without this netstat
+	// would flash a console window.
+	procattr.Hide(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +39,10 @@ func runLsof(port int) ([]string, error) {
 }
 
 func fmtPIDName(pid int) string {
-	out, err := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid),
-		"/FO", "CSV", "/NH").Output()
+	cmd := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid),
+		"/FO", "CSV", "/NH")
+	procattr.Hide(cmd)
+	out, err := cmd.Output()
 	if err != nil {
 		return "pid " + strconv.Itoa(pid)
 	}

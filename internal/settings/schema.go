@@ -104,6 +104,18 @@ var Schema = []Field{
 		},
 	},
 	{
+		Key:         "performance_mode",
+		Type:        FieldSelect,
+		Label:       "性能模式",
+		Description: "默认保留全部毛玻璃与 3D 特效（与 macOS 一致）。在无显卡加速或虚拟机里觉得卡时，再切到「自动」或「低配优先」。",
+		Default:     "off",
+		Options: []Option{
+			{Value: "auto", Label: "自动"},
+			{Value: "on", Label: "低配优先"},
+			{Value: "off", Label: "关闭"},
+		},
+	},
+	{
 		Key:         "show_dock_icon",
 		Type:        FieldBool,
 		Label:       "在 Dock 中显示图标",

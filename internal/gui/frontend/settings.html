@@ -208,6 +208,7 @@
     .switch::before, .switch::after, .choice button { transition: none; }
   }
 </style>
+<link rel="stylesheet" href="assets/perf-mode.css">
 </head>
 <body>
   <header>
@@ -308,6 +309,7 @@
 <script type="module">
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
   import { Events } from "/wails/runtime.js";
+  import { initPerformanceMode, PERFORMANCE_MODE_KEY } from "./assets/perf-mode.js";
 
   function asJSON(v) {
     if (typeof v === "string") return JSON.parse(v);
@@ -328,6 +330,7 @@
       (values && values.background) || "mist";
     document.documentElement.dataset.glass =
       (values && values.glass) || "standard";
+    initPerformanceMode({ setting: values && values[PERFORMANCE_MODE_KEY] });
   }
 
   Events.On("theme-changed", function (event) {
@@ -337,6 +340,9 @@
     const change = event && event.data;
     if (!change || !change.key) return;
     document.documentElement.dataset[change.key] = change.value;
+  });
+  Events.On("performance-changed", function (event) {
+    initPerformanceMode({ setting: event && event.data });
   });
 
   function copyBlock(f) {
@@ -405,6 +411,7 @@
           if (f.key === "background" || f.key === "glass") {
             document.documentElement.dataset[f.key] = next;
           }
+          if (f.key === PERFORMANCE_MODE_KEY) initPerformanceMode({ setting: next });
         } catch (_) {
           select.value = current;
         } finally {
@@ -440,6 +447,9 @@
           if (f.key === "theme") applyTheme(option.value);
           if (f.key === "background" || f.key === "glass") {
             document.documentElement.dataset[f.key] = option.value;
+          }
+          if (f.key === PERFORMANCE_MODE_KEY) {
+            initPerformanceMode({ setting: option.value });
           }
           group.querySelectorAll("button").forEach(function (b) {
             const active = b === button;

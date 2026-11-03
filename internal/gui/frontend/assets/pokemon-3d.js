@@ -1,6 +1,7 @@
 import * as THREE from "./vendor/three.module.min.js";
 import { GLTFLoader } from "./vendor/GLTFLoader.js";
 import { DRACOLoader } from "./vendor/DRACOLoader.js";
+import { performanceLow, PERFORMANCE_LOW_FPS } from "./perf-mode.js";
 
 const TARGET_HEIGHT = 2.35;
 const TARGET_WIDTH = 2.9;
@@ -221,18 +222,24 @@ function createStageViewer(canvas, options) {
   let chargeStart = -1;
   let chargeGlow = 0;
   let resizeObserver = null;
+  let lastDrawTime = 0;
+
+  // 低配模式下降采样：DPR 2 的屏幕上像素量降到 1/4，软件渲染下收益最大。
+  function pixelRatioCap() {
+    return performanceLow() ? 1 : 1.6;
+  }
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
     alpha: true,
-    antialias: true,
+    antialias: !performanceLow(),
     powerPreference: "low-power",
   });
   renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioCap()));
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 40);
@@ -280,7 +287,7 @@ function createStageViewer(canvas, options) {
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(1, Math.round(rect.width));
     const height = Math.max(1, Math.round(rect.height));
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioCap()));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
@@ -543,11 +550,18 @@ function createStageViewer(canvas, options) {
     }
   }
 
+  // 低配模式把渲染限到 PERFORMANCE_LOW_FPS（20fps）：软件渲染下逐帧全画
+  // 会占满 CPU，降帧后宠物跟随仍连贯，界面点击/切页不再被抢时间片。
   function frame(time) {
     if (!enabled || closed) {
       animationFrame = 0;
       return;
     }
+    if (performanceLow() && time - lastDrawTime < 1000 / PERFORMANCE_LOW_FPS) {
+      animationFrame = requestAnimationFrame(frame);
+      return;
+    }
+    lastDrawTime = time;
     const delta = Math.min(0.05, Math.max(0.001, (time - lastTime) / 1000));
     lastTime = time;
     elapsed += delta;
@@ -630,11 +644,21 @@ function createStageViewer(canvas, options) {
     effectIntensity = Math.max(1, Math.min(5, Number(value) || 1));
   }
 
+  // 性能模式切换（设置里改 auto/on/off 或页面启动检测完成）时重设分辨率：
+  // 低配降 DPR、恢复时回到原清晰度；resize 内部会补一帧。
+  function handlePerformanceChange() {
+    if (closed) return;
+    resize();
+  }
+
   function dispose() {
     if (closed) return;
     closed = true;
     stopLoop();
     if (resizeObserver) resizeObserver.disconnect();
+    if (typeof document !== "undefined" && document.removeEventListener) {
+      document.removeEventListener("qka-perf-changed", handlePerformanceChange);
+    }
     if (current) disposeObject(current.root);
     if (transition) disposeObject(transition.from.root);
     scene.traverse(function (object) {
@@ -654,6 +678,9 @@ function createStageViewer(canvas, options) {
     resizeObserver.observe(canvas);
   } else {
     window.addEventListener("resize", resize);
+  }
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener("qka-perf-changed", handlePerformanceChange);
   }
   canvas.addEventListener("webglcontextlost", function (event) {
     event.preventDefault();

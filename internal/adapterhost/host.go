@@ -9,6 +9,8 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+
+	"qka/internal/procattr"
 )
 
 const (
@@ -102,6 +104,8 @@ func LaunchWith(ctx context.Context, bunPath, adapterDir string, hooks HookHandl
 	}
 
 	cmd := newAdapterCommand(bunPath, "run", manifest.Entry)
+	// Windows 的 GUI 版 QKA 没有控制台，不隐藏会给 bun.exe 弹一个黑窗口。
+	procattr.Hide(cmd)
 	cmd.Dir = adapterDir
 
 	stdin, err := cmd.StdinPipe()

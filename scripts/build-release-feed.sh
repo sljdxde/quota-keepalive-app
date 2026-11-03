@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Collect already-built macOS DMGs and Windows ZIPs into the self-update feed.
+# Collect already-built macOS DMGs and Windows single-file EXEs into the self-update feed.
 # This script only reads release artifacts and atomically writes feed.json and
 # SHA256SUMS; it never rebuilds or deletes application bundles.
 set -euo pipefail
@@ -50,11 +50,12 @@ for path in "$DIST/dmg/QKA-$VERSION-"*.dmg; do
   esac
 done
 
-for path in "$DIST/QKA-$VERSION-windows-"*.zip; do
+# Windows 发行物是单个自包含 exe（和 magpie 一样，没有 zip / 安装器）。
+for path in "$DIST/QKA-$VERSION-windows-"*.exe; do
   [[ -f "$path" ]] || continue
   case "$(basename "$path")" in
-    *-windows-arm64.zip) add_artifact windows/arm64 "$path" ;;
-    *-windows-amd64.zip) add_artifact windows/amd64 "$path" ;;
+    *-windows-arm64.exe) add_artifact windows/arm64 "$path" ;;
+    *-windows-amd64.exe) add_artifact windows/amd64 "$path" ;;
     *)
       echo "unsupported Windows artifact name: $path" >&2
       exit 2

@@ -1,6 +1,6 @@
 ﻿# QKA Windows 冒烟测试
 #
-# 用法（在 Windows 上，解压 QKA-<version>-windows-<arch>.zip 后）：
+# 用法（在 Windows 上，针对 CI 组装的目录形态冒烟夹具；正式发行物是单文件 exe）：
 #   powershell -ExecutionPolicy Bypass -File windows-smoke.ps1 -PackageDir .\QKA-1.0.0-windows-amd64
 #
 # 它只做只读检查与 CLI 冒烟，不会写入真实账号，也不会调用任何供应商接口：
@@ -133,7 +133,7 @@ if (Test-Path -LiteralPath $bun) {
   if ($LASTEXITCODE -eq 0 -and $version.Trim()) { Pass "bun.exe 可执行：$($version.Trim())" }
   else { Fail "bun.exe 无法执行（退出码 $LASTEXITCODE）" }
 } else {
-  # CI 冒烟包不含 bun，正式发布包由 scripts/package-windows.sh 组装后再校验。
+  # CI 冒烟包不含 bun，正式发行物是单文件自包含 exe（scripts/build-windows-exe.sh），不在 CI 组装。
   Info 'bun.exe 不在包内（CI 包预期如此；正式发布包必须包含）'
 }
 

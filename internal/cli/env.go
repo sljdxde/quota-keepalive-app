@@ -12,6 +12,19 @@ type Env struct {
 	Stdout io.Writer
 	Stderr io.Writer
 	Getenv func(string) string
+
+	// ConfigDir 是本次命令已解析的配置目录。为空时按 QKA_CONFIG_DIR/HOME
+	// 推导；buildAppAt 在解析运行时路径前写入，保证内嵌运行时解压到的位置
+	// 与 app.ConfigDir 一致。
+	ConfigDir string
+}
+
+// configDir 返回本次命令生效的配置目录。
+func (e *Env) configDir() string {
+	if e.ConfigDir != "" {
+		return e.ConfigDir
+	}
+	return ResolveConfigDir(e.Getenv)
 }
 
 // DefaultEnv 从真实进程构造 Env。

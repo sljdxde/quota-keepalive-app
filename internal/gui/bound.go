@@ -49,6 +49,16 @@ type Deps struct {
 	UpdateInstall func(ctx context.Context) (selfupdate.Status, error)
 	// QuitApp exits QKA after the update helper can safely replace the bundle.
 	QuitApp func()
+	// PanelToggle 切换菜单栏吸附面板的显示状态。Windows 顶栏刘海（状态项）
+	// 点击时走这里，与 macOS 点菜单栏图标是同一条路径。
+	PanelToggle func()
+	// PanelToggleAt 在指定屏幕坐标（刘海所在位置）下方切换面板：Windows 上
+	// 面板要贴在常驻刘海下方，而不是屏幕右下角的托盘图标旁。
+	PanelToggleAt func(x, y int)
+	// BarToggle 是常驻刘海左键点击：在刘海下方切换吸附面板。
+	BarToggle func()
+	// BarMenu 是常驻刘海右键点击：在光标处弹出托盘菜单（含「退出」）。
+	BarMenu func()
 	// TokenSpeedGet 返回本机 Agent 日志的实时 token 吞吐快照。
 	TokenSpeedGet func(ctx context.Context) (tokenspeed.Snapshot, error)
 	// TokenSpeed 是本机 Agent 日志速度服务；为空时不启动菜单栏实时标签。
@@ -175,6 +185,12 @@ func (s *BoundService) SettingsSetString(key, value string) error {
 			app.Event.Emit("appearance-changed", map[string]string{"key": key, "value": value})
 		}
 	}
+	if key == "performance_mode" {
+		// 主窗口与设置窗口各自持有页面级检测结果，切换后广播让所有窗口即时生效。
+		if app := application.Get(); app != nil {
+			app.Event.Emit("performance-changed", value)
+		}
+	}
 	if key == "title_theme" {
 		if app := application.Get(); app != nil {
 			app.Event.Emit("title-theme-changed", value)
@@ -257,6 +273,40 @@ func (s *BoundService) UpdateInstall() (json.RawMessage, error) {
 		}()
 	}
 	return json.Marshal(status)
+}
+
+// PanelToggle 切换吸附面板：Windows 上顶栏刘海（菜单栏状态项）被点击时调用，
+// 与 macOS 点菜单栏图标共用同一实现，面板内容即同一份 panel.html。
+func (s *BoundService) PanelToggle() {
+	if s.deps.PanelToggle != nil {
+		s.deps.PanelToggle()
+	}
+}
+
+// BarToggle 是常驻刘海（Windows 菜单栏状态项）左键点击的入口。
+func (s *BoundService) BarToggle() {
+	if s.deps.BarToggle != nil {
+		s.deps.BarToggle()
+		return
+	}
+	s.PanelToggle()
+}
+
+// BarMenu 是常驻刘海右键点击的入口：弹出含「退出」的菜单。
+func (s *BoundService) BarMenu() {
+	if s.deps.BarMenu != nil {
+		s.deps.BarMenu()
+	}
+}
+
+// PanelToggleAt 在刘海所在的屏幕坐标下方切换面板。x/y 是刘海在窗口内的
+// CSS 像素坐标（DIP），由页面点击位置给出；没有该能力时退回普通 PanelToggle。
+func (s *BoundService) PanelToggleAt(x int, y int) {
+	if s.deps.PanelToggleAt != nil {
+		s.deps.PanelToggleAt(x, y)
+		return
+	}
+	s.PanelToggle()
 }
 
 // TokenSpeedGet 返回本机 Agent 日志的实时 token 吞吐快照。

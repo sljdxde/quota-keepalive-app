@@ -21,6 +21,7 @@ func TestPagesUseSharedFontScale(t *testing.T) {
 		"frontend/main.html",
 		"frontend/panel.html",
 		"frontend/settings.html",
+		"frontend/installer.html",
 	}
 	for _, name := range pages {
 		data, err := fs.ReadFile(frontendFS, name)
@@ -64,7 +65,7 @@ func TestPagesShareIdenticalScaleValues(t *testing.T) {
 		return strings.TrimSpace(rest[:end])
 	}
 	mainPage := read("frontend/main.html")
-	for _, page := range []string{"frontend/panel.html", "frontend/settings.html"} {
+	for _, page := range []string{"frontend/panel.html", "frontend/settings.html", "frontend/installer.html"} {
 		source := read(page)
 		for _, token := range shared {
 			want := valueOf(mainPage, token)

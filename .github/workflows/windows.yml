@@ -102,7 +102,7 @@ jobs:
           Copy-Item -Recurse provider-plugins "$stage/provider-plugins"
           Copy-Item packaging/windows/README.txt "$stage/README.txt"
           # bun.exe 在这层不打包：CI 里它只用于验证运行时存在性，真实发布包由
-          # scripts/package-windows.sh 用固定版本的 bun 组装。
+          # scripts/build-windows-exe.sh 用固定版本的 bun 内嵌。
 
       - name: Smoke test
         shell: pwsh

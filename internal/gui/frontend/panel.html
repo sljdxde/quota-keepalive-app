@@ -10,6 +10,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // 非 macOS：面板窗口是不透明背景（Win10 没有 DWM 半透明），body 必须铺上
+    // 面板底色，否则窗口四角会露出默认白/黑底。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-opaque");
+    }
   })();
 </script>
 <style>
@@ -1701,8 +1706,22 @@
     .pet-particle,
     .pet-stage.skill-electric { animation: none !important; }
   }
+  /* Windows：面板窗口是不透明的（Win10 没有 DWM 亚克力），用一层柔和的渐变
+     底色 + 半透明面板模拟 macOS 的磨砂玻璃观感，避免变成一块死板的纯色卡片。 */
+  html.platform-opaque, html.platform-opaque body {
+    background:
+      radial-gradient(circle at 14% 4%, rgba(79, 70, 229, .16), transparent 42%),
+      radial-gradient(circle at 92% 12%, rgba(14, 151, 194, .14), transparent 40%),
+      var(--bg);
+  }
+  html.platform-opaque .panel {
+    background: color-mix(in srgb, var(--bg) 74%, transparent);
+    backdrop-filter: blur(18px) saturate(1.2);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  }
 </style>
 <link rel="stylesheet" href="assets/liquid-ui.css">
+<link rel="stylesheet" href="assets/perf-mode.css">
 </head>
 <body>
   <div class="panel">

@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"qka/internal/atomicfile"
+	"qka/internal/procattr"
 )
 
 //go:embed js/host.js
@@ -263,6 +264,8 @@ func Launch(ctx context.Context, cfg LaunchConfig) (*Host, error) {
 		directory = cfg.ConfigDir
 	}
 	cmd := newCommand(cfg.Bun, "run", hostPath)
+	// Windows 的 GUI 版 QKA 没有控制台，不隐藏会给 bun.exe 弹一个黑窗口。
+	procattr.Hide(cmd)
 	cmd.Dir = directory
 	if len(cfg.Env) > 0 {
 		cmd.Env = append(os.Environ(), cfg.Env...)

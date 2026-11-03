@@ -1,0 +1,97 @@
+/*
+ * 性能模式（低配模式）：软件渲染 / 虚拟机下保留原有配色与布局，只去掉每次
+ * 重绘都要重新合成的毛玻璃、大面积阴影与装饰性模糊；不改变信息层级和控件位置。
+ *
+ * 由 assets/perf-mode.js 在检测到软件渲染或设置里强制开启时，给 body 加上
+ * perf-low 类。样式一律用 !important 覆盖 main.html / liquid-ui.css 里的原规则，
+ * 关闭性能模式后原样式完整恢复。
+ */
+
+/* 1. 毛玻璃退化为不透明底色：topbar、卡片、弹窗、命令面板。 */
+body.perf-low .topbar,
+body.perf-low .window .summary,
+body.perf-low .window .card,
+body.perf-low .window .schedule-strip,
+body.perf-low .window .metric-card,
+body.perf-low .window .settings-card,
+body.perf-low .window .settings-schedule,
+body.perf-low .window .provider-login-dialog,
+body.perf-low .window .title-dialog,
+body.perf-low .command-shell,
+body.perf-low .provider-login-pokemon-bubble {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+body.perf-low .topbar {
+  background: var(--topbar) !important;
+}
+body.perf-low .window .summary,
+body.perf-low .window .card,
+body.perf-low .window .schedule-strip,
+body.perf-low .window .metric-card,
+body.perf-low .window .settings-card,
+body.perf-low .window .settings-schedule,
+body.perf-low .window .provider-login-dialog,
+body.perf-low .window .title-dialog,
+body.perf-low .command-shell,
+body.perf-low .provider-login-pokemon-bubble {
+  background: var(--card) !important;
+}
+
+/* 弹窗遮罩只保留压暗，不再模糊背后的整窗内容。 */
+body.perf-low dialog::backdrop {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* 2. 大面积阴影与装饰性模糊：只留一条 0.5px 描边维持层次。 */
+body.perf-low .window .summary,
+body.perf-low .window .card,
+body.perf-low .window .schedule-strip,
+body.perf-low .window .metric-card,
+body.perf-low .window .settings-card,
+body.perf-low .window .settings-schedule,
+body.perf-low .window .provider-login-dialog,
+body.perf-low .window .title-dialog,
+body.perf-low .command-shell {
+  box-shadow: 0 0 0 0.5px var(--line) !important;
+}
+body.perf-low .window::before,
+body.perf-low .window::after,
+body.perf-low .liquid-sheen,
+body.perf-low .command-liquid-highlight,
+body.perf-low .main-pet-shockwave,
+body.perf-low .main-pet-viewer.is-charging::after {
+  display: none !important;
+}
+
+/* 3. 宠物：去掉容器上的 drop-shadow 与蓄力光晕，画布本身由 3D 视图限帧。 */
+body.perf-low .main-pet-viewer {
+  filter: none !important;
+}
+body.perf-low .main-pet-viewer.is-charging,
+body.perf-low .main-pet-viewer.is-ultimate,
+body.perf-low .main-pet-viewer.is-pouncing {
+  animation: none !important;
+}
+
+/* 4. 液态玻璃交互：关闭 tilt 位移/高光动画，标签指示块直接落位。 */
+body.perf-low .liquid-surface {
+  transform: none !important;
+}
+body.perf-low .liquid-tab-pill,
+body.perf-low .command-shell,
+body.perf-low [data-liquid-dock] > button,
+body.perf-low [data-liquid-dock] > button::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 5. 过渡压缩到 1ms：悬停/切页仍即时反馈，但不再逐帧合成渐变与位移。 */
+body.perf-low *,
+body.perf-low *::before,
+body.perf-low *::after {
+  transition-duration: 1ms !important;
+  transition-delay: 0s !important;
+}

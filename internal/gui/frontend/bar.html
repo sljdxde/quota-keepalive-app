@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: transparent; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  :root {
+    --notch-bg: linear-gradient(150deg, #163a43 0%, #0c2a32 58%, #071a21 100%);
+    --notch-fg: #F8F1DE;
+    --notch-hover: 1.16;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --notch-bg: linear-gradient(150deg, #0f2f37 0%, #0a242c 58%, #06171d 100%);
+    }
+  }
+  /* 常驻刘海：Windows 上的「菜单栏状态项」，只有 Q 图标和实时速度。
+     窗口本身已被 WindowMask 裁成圆角胶囊，这里把内容铺满并画渐变底；
+     按住可拖动窗口，单击弹面板，右键出菜单。 */
+  #bar {
+    height: 100%; width: 100%;
+    display: flex; align-items: center; gap: 7px;
+    padding: 0 13px; border: 0; border-radius: 15px;
+    background: var(--notch-bg);
+    color: var(--notch-fg);
+    cursor: default;
+    /* 顶栏空白处可拖动窗口：Wails 只有真正发生拖动时才吞掉 click，
+       所以「单击弹面板 / 按住拖动」可以共存。 */
+    --wails-draggable: drag;
+    transition: filter .14s ease;
+    box-shadow: inset 0 .5px 0 rgba(255,255,255,.10), inset 0 -.5px 0 rgba(0,0,0,.25);
+  }
+  #bar:hover { filter: brightness(var(--notch-hover)); }
+  #bar:active { filter: brightness(.94); }
+  /* 内部元素不参与拖动，避免误拖；点它们仍冒泡到 #bar 的 click。 */
+  #bar .icon, #bar .speed { --wails-draggable: no-drag; pointer-events: none; }
+  .icon { width: 18px; height: 18px; flex: none; display: block; }
+  .speed {
+    font: 600 12px/1 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: .01em;
+  }
+  .speed small { font-size: 10px; font-weight: 500; opacity: .72; margin-left: 2px; }
+</style>
+</head>
+<body>
+  <button type="button" id="bar" aria-haspopup="dialog" title="Quota Keepalive">
+    <svg class="icon" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="#F8F1DE" stroke-width="7.4"
+              stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
+      <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none"
+            stroke="#FFD06B" stroke-width="6.2" stroke-linecap="round"/>
+    </svg>
+    <span class="speed"><span id="speed-value">0</span><small>tok/s</small></span>
+  </button>
+
+<script type="module">
+  import { Events } from "/wails/runtime.js";
+  import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
+
+  function asJSON(v) {
+    return typeof v === "string" ? JSON.parse(v) : v;
+  }
+
+  function compact(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return "0";
+    if (number < 10) {
+      const rounded = Math.round(number * 10) / 10;
+      return rounded >= 10 ? "10" : rounded.toFixed(1);
+    }
+    if (number < 1000) return String(Math.round(number));
+    const units = [
+      { value: 1e9, suffix: "B" },
+      { value: 1e6, suffix: "M" },
+      { value: 1e3, suffix: "k" },
+    ];
+    for (const unit of units) {
+      if (number >= unit.value) {
+        const scaled = number / unit.value;
+        const text = scaled >= 10 ? String(Math.round(scaled)) : scaled.toFixed(1);
+        return text + unit.suffix;
+      }
+    }
+    return String(Math.round(number));
+  }
+
+  const valueNode = document.getElementById("speed-value");
+
+  function renderSpeed(value) {
+    valueNode.textContent = compact(value);
+  }
+
+  Events.On("tokenspeed-changed", function (event) {
+    if (!event || !event.data) return;
+    const view = asJSON(event.data);
+    renderSpeed(view && view.output_tokens_per_second);
+  });
+
+  Bound.TokenSpeedGet().then(function (view) {
+    const snapshot = asJSON(view);
+    renderSpeed(snapshot && snapshot.output_tokens_per_second);
+  }).catch(function () {});
+
+  const bar = document.getElementById("bar");
+  bar.addEventListener("click", function (event) {
+    event.stopPropagation();
+    try {
+      const p = Bound.BarToggle();
+      if (p && typeof p.catch === "function") p.catch(function () {});
+    } catch (_) {}
+  });
+  bar.addEventListener("contextmenu", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      const p = Bound.BarMenu();
+      if (p && typeof p.catch === "function") p.catch(function () {});
+    } catch (_) {}
+  });
+</script>
+</body>
+</html>

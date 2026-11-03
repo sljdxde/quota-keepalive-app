@@ -34,6 +34,10 @@ var (
 	openBrowser   = openurl.Open
 )
 
+// guiCurrentApp 返回当前正在运行的 gui.App；GUI 未启动时返回 nil。
+// 通过 gui 包里的包级指针拿，避免把 gui.App 实例再穿一层依赖。
+var guiCurrentApp = gui.Current
+
 // guiState 持有 GUI 运行期可变状态（设置、开发者模式、受限加载审计）。
 type guiState struct {
 	app *App
@@ -101,6 +105,29 @@ func (a *App) guiDeps() gui.Deps {
 		QuitApp: func() {
 			if app := application.Get(); app != nil {
 				app.Quit()
+			}
+		},
+		// Windows 顶栏刘海（菜单栏状态项）点击 → 切换吸附面板，面板贴在刘海下方。
+		// gui.App 在事件循环启动后才存在，这里用 application.Get() 现取。
+		PanelToggle: func() {
+			if app := guiCurrentApp(); app != nil {
+				app.PanelToggle()
+			}
+		},
+		PanelToggleAt: func(x, y int) {
+			if app := guiCurrentApp(); app != nil {
+				app.PanelToggleAt(x, y)
+			}
+		},
+		// 常驻刘海（Windows 菜单栏状态项）：左键弹面板、右键出菜单（含退出）。
+		BarToggle: func() {
+			if app := guiCurrentApp(); app != nil {
+				app.BarToggle()
+			}
+		},
+		BarMenu: func() {
+			if app := guiCurrentApp(); app != nil {
+				app.BarMenu()
 			}
 		},
 		TokenSpeedGet: func(context.Context) (tokenspeed.Snapshot, error) {

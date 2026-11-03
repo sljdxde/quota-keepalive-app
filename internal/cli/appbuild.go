@@ -51,6 +51,9 @@ func (c *commonFlags) buildApp(ctx context.Context, env *Env) (*app.App, error) 
 }
 
 func (c *commonFlags) buildAppAt(ctx context.Context, env *Env, configDir string) (*app.App, error) {
+	// 先记录已解析的配置目录：内嵌运行时解压路径基于它计算，必须与
+	// app.ConfigDir 一致（QKA_CONFIG_DIR 由调用方解析，可能不同于 Getenv）。
+	env.ConfigDir = configDir
 	cfg := app.Config{
 		ConfigDir:           configDir,
 		AdaptersRoot:        resolveAdaptersRoot(env, c.adapters),

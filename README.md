@@ -21,10 +21,30 @@
 
 | 平台 | 产物 | 说明 |
 | --- | --- | --- |
-| macOS（Apple Silicon） | `QKA-<version>-arm64.dmg` | 拖入「应用程序」即可 |
-| Windows x64 / ARM64 | `QKA-<version>-windows-<arch>.zip` | 便携包，解压即用；`QKA.exe` 是 GUI，`QKA-cli.exe` 是命令行 |
+| macOS（Apple Silicon） | `QKA-<version>-arm64.dmg` | 拖入「应用程序」即可（已签名并公证） |
+| Windows x64（Intel / AMD） | `QKA-<version>-windows-amd64.exe` | 单个 exe：双击进入安装向导，选安装路径后自动装完 |
+| Windows ARM64（骁龙 X 等） | `QKA-<version>-windows-arm64.exe` | 同上，仅架构不同 |
 
-Windows 需要 WebView2 运行时（Win11 自带，Win10 可能需要单独安装）。便携包内已含 `bun.exe` 与 `adapters/`，请勿拆开。
+Windows 版是**单文件自包含安装程序**：下载到的就是一个 exe，双击进入安装向导——选择安装路径（默认 `%LOCALAPPDATA%\Programs\Quota Keepalive`，不需要管理员权限），之后自动完成复制程序、解压运行时（Bun / `adapters/` / `provider-plugins/` 都内嵌在 exe 里，解压到 `%LOCALAPPDATA%\QKA\runtime\<version>\`）、创建开始菜单快捷方式与 `HKCU\...\App Paths\QKA.exe`（Win+R 输 `QKA` 可直接启动）。安装完成后可以立即启动 QKA，下次双击安装目录里的 QKA.exe 直接进托盘，不再弹向导。
+
+Windows 上双击启动会直接打开主窗口（macOS 保持菜单栏形态、不弹窗）；关闭主窗口只是隐藏，之后左键点托盘出面板、右键菜单「打开主窗口」都能再打开。重复双击 exe 不会起第二个实例，只会把已有实例的主窗口唤到前台。
+
+Windows 上有一个**常驻刘海**：主屏左上角的独立置顶小条，等价于 macOS 菜单栏上的 QKA 图标，只显示 Q 图标和实时 tok/s。左键点它弹出和 mac 上同一个吸附面板（面板贴在刘海正下方），**右键出菜单**（打开主窗口 / 设置 / 退出）。刘海随应用常驻，关闭主窗口也不消失。
+
+主窗口保留系统原生标题栏（关闭/最小化/最大化都交给 Windows）。
+
+Windows 需要 WebView2 运行时：Win11 自带，Win10 可能没有；缺失时程序会弹窗说明并引导安装，而不是静默退出。选错架构会提示「此应用无法在你的电脑上运行」——Intel / AMD 机器必须用 **amd64**，只有 ARM 机器才用 **arm64**。
+
+自更新同样是单文件语义：检查到新版本后下载新的 exe，退出旧进程、把旧 exe 改名备份、放入新 exe 并重启；新版本 5 秒内没起来就回滚到旧版。解压出来的运行时放在 `%LOCALAPPDATA%\QKA\runtime\<version>\`，删掉 `%LOCALAPPDATA%\QKA` 等于重置配置与运行时缓存。
+
+## 日志与排障
+
+两个平台的日志都落在配置目录下，默认 info 级别、按天轮转、保留 7 天：
+
+- Windows：`%LOCALAPPDATA%\QKA\logs\qka-YYYYMMDD.log`
+- macOS / Linux：`~/.qka/logs/qka-YYYYMMDD.log`
+
+排查时用 `QKA_LOG_LEVEL=debug` 启动（日志目录可用 `QKA_LOG_DIR` 覆盖）。程序 panic 会额外写 `crash-<时间>.log`（含 goroutine 栈），Windows 上同时弹窗显示日志目录。日志写入口统一脱敏，不落令牌、账号与提示词明文。
 
 ## 从源码构建
 
@@ -33,8 +53,13 @@ Windows 需要 WebView2 运行时（Win11 自带，Win10 可能需要单独安�
 ```sh
 make build-darwin-arm64     # macOS GUI
 make release-macos          # macOS DMG
-make release-windows        # Windows 便携包（amd64 + arm64，交叉编译）
+make release-windows        # Windows 单文件 exe（amd64 + arm64，内嵌运行时）
 ```
+
+`make release-windows` 会先用 `go run ./build/embedassets` 把 Bun、`adapters/` 与
+`provider-plugins/` 压成 `internal/runtimebundle/assets/` 下的 zstd 资源，再用
+`-tags embeddedruntime` 交叉编译出 `dist/QKA-<version>-windows-<arch>.exe`；资源目录
+是构建产物，不进版本库。
 
 版本号来自 `git describe --tags`，发布时也可显式指定，例如
 `VERSION=0.1.16 make release-windows`。

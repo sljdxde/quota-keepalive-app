@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"qka/internal/installer"
 )
 
 var executablePath = os.Executable
@@ -79,6 +81,15 @@ func Run(ctx context.Context, env *Env) int {
 		// 从 .app 或 Windows GUI 双击启动（无命令行参数）时进入菜单栏形态；
 		// 终端 CLI 无参数时打印用法。
 		if noArgsMode() == "tray" {
+			// Windows 单文件发行物的双击分流：没有安装记录 → 首次安装向导；
+			// 已有安装但当前运行的是下载目录里的另一个副本 → 升级向导（替换已
+			// 安装的程序，避免跑成第二个应用）；已安装的那份 → 托盘。
+			if installerPlan(env) != installer.ModeNone {
+				if err := runInstallWizard(env); err != nil {
+					return fail(env, nil, &ErrorInfo{Code: "install_failed", Message: err.Error()})
+				}
+				return 0
+			}
 			resp, err := trayModeHandler(ctx, env, nil)
 			if err != nil {
 				return fail(env, nil, &ErrorInfo{Code: "command_failed", Message: err.Error()})

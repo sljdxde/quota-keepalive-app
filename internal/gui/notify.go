@@ -4,6 +4,8 @@ import (
 	"context"
 	"os/exec"
 	"strconv"
+
+	"qka/internal/procattr"
 )
 
 // Notifier 发送系统通知。
@@ -26,7 +28,11 @@ type MacNotifier struct {
 func NewMacNotifier() *MacNotifier {
 	return &MacNotifier{
 		run: func(ctx context.Context, name string, args ...string) error {
-			return exec.CommandContext(ctx, name, args...).Run()
+			cmd := exec.CommandContext(ctx, name, args...)
+			// 通知命令是后台子进程；Windows 的 GUI 版 QKA 没有控制台，不隐藏
+			// 会弹一个黑窗口（macOS 上 Hide 是空操作）。
+			procattr.Hide(cmd)
+			return cmd.Run()
 		},
 	}
 }

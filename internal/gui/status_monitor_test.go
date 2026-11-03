@@ -138,3 +138,36 @@ func TestSetFailureStateDeduplicatesRepeatedState(t *testing.T) {
 		t.Fatal("failure state should be false at the end")
 	}
 }
+
+// TestStatusSignatureChangesWithCheckinState 保证指纹在签到状态/额度变化时改变，
+// 未变化时稳定 —— 后端据此决定是否推送「结果已更新」。
+func TestStatusSignatureChangesWithCheckinState(t *testing.T) {
+	credits := 100.0
+	balance := 2000.0
+	base := status.View{
+		LastInvocation: "2026-11-04T00:38:00Z",
+		Accounts: []status.AccountStatus{{
+			Target: "trae-cn", AccountID: "trae-cn", Enabled: true,
+			SourceHealth: "healthy",
+			Operations: []status.OpStatus{{
+				Operation: "checkin", State: "signed_provisional",
+				Credits: &credits, Balance: &balance,
+			}},
+		}},
+	}
+	if statusSignature(base) != statusSignature(base) {
+		t.Fatal("同一状态指纹必须稳定")
+	}
+	changed := base
+	changed.Accounts = []status.AccountStatus{{
+		Target: "trae-cn", AccountID: "trae-cn", Enabled: true,
+		SourceHealth: "healthy",
+		Operations: []status.OpStatus{{
+			Operation: "checkin", State: "signed_confirmed",
+			Credits: &credits, Balance: &balance,
+		}},
+	}}
+	if statusSignature(changed) == statusSignature(base) {
+		t.Fatal("状态从待复核变为已确认时指纹必须变化")
+	}
+}

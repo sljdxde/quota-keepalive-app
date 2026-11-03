@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Quota Keepalive 安装程序</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    color-scheme: light;
+    --bg: #f4f4f6;
+    --card: #ffffff;
+    --card-2: #f9f9fb;
+    --pill: #f1f1f4;
+    --pill-hover: #e9e9ee;
+    --line: #e3e3e8;
+    --line-2: #ececf0;
+    --fg: #1c1c21;
+    --fg-2: #4b4b53;
+    --muted: #707079;
+    --faint: #b9b9c2;
+    --accent: #4f46e5;
+    --accent-strong: #4338ca;
+    --accent-soft: #eeedfd;
+    --accent-fg: #fff;
+    --green: #137a48;
+    --green-soft: #e4f6ec;
+    --red: #c33b3b;
+    --red-soft: #fbe9e9;
+    --blue: #315fc4;
+    --wall-gradient:
+      radial-gradient(circle at 12% 8%, rgba(79,70,229,.18), transparent 32%),
+      radial-gradient(circle at 87% 16%, rgba(14,151,194,.18), transparent 30%),
+      linear-gradient(135deg, #d8e1ef, #e7e2ec 52%, #cbd7e9);
+    --shadow: 0 10px 28px rgba(20, 22, 30, .07), 0 1px 3px rgba(20, 22, 30, .04);
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    /* 字号阶梯与主窗口/菜单栏面板同源，禁止写死像素字号。 */
+    --fs-3xs: 8.5px;   /* 辅助小字 */
+    --fs-2xs: 9.5px;   /* 次级说明 */
+    --fs-xs: 10.5px;   /* 正文小字 */
+    --fs-sm: 11.5px;   /* 正文 */
+    --fs-md: 12.5px;   /* 强调正文、导航 */
+    --fs-lg: 14px;     /* 卡片/分组标题 */
+    --fs-xl: 16px;     /* 摘要数值、对话框标题 */
+    --fs-2xl: 18px;    /* 页面标题 */
+    --fs-3xl: 20px;    /* 徽标、图标字 */
+    --code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #1a1a1e;
+      --card: #232327;
+      --card-2: #1f1f23;
+      --pill: #2d2d33;
+      --pill-hover: #36363d;
+      --line: #333339;
+      --line-2: #2c2c32;
+      --fg: #ededf1;
+      --fg-2: #b9b9c1;
+      --muted: #9a9aa3;
+      --faint: #56565f;
+      --accent: #a5b4fc;
+      --accent-strong: #818cf8;
+      --accent-soft: #2c2e4a;
+      --accent-fg: #15152b;
+      --green: #6fd99b;
+      --green-soft: #1e3a2b;
+      --red: #f28b82;
+      --red-soft: #45272a;
+      --blue: #93c5fd;
+      --wall-gradient:
+        radial-gradient(circle at 12% 8%, rgba(91,82,255,.30), transparent 32%),
+        radial-gradient(circle at 87% 16%, rgba(24,140,180,.25), transparent 30%),
+        linear-gradient(135deg, #0d111b, #191425 52%, #121d28);
+      --shadow: 0 12px 34px rgba(0, 0, 0, .32), 0 1px 4px rgba(0, 0, 0, .2);
+    }
+  }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    padding: 20px 24px 18px;
+    overflow: hidden;
+    color: var(--fg);
+    background: var(--wall-gradient);
+    font: 400 var(--fs-md)/1.5 var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+  [hidden] { display: none !important; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: default; }
+  button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .head { display: flex; align-items: center; gap: 12px; flex: none; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 11px;
+    display: grid; place-items: center; flex: none;
+    color: var(--accent-fg); background: var(--accent);
+    box-shadow: var(--shadow);
+  }
+  .logo svg { width: 22px; height: 22px; display: block; }
+  .head h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 720; letter-spacing: -.01em; }
+  .head p { margin: 1px 0 0; color: var(--muted); font-size: var(--fs-sm); }
+
+  .body { flex: 1; min-height: 0; margin-top: 14px; display: flex; flex-direction: column; }
+  .panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  .lede { margin: 0 0 14px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.6; overflow-wrap: anywhere; }
+  #dir-field { display: flex; flex-direction: column; flex: none; }
+  .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; }
+  .dir-row { display: flex; gap: 8px; flex: none; }
+  .dir-row input {
+    flex: 1; min-width: 0; height: 34px; padding: 0 10px;
+    border: .5px solid var(--line); border-radius: 8px;
+    color: var(--fg); background: var(--card);
+    font-family: var(--code); font-size: var(--fs-sm);
+  }
+  .dir-row input::placeholder { color: var(--faint); }
+  .hint {
+    min-height: 17px; max-height: 52px; margin: 6px 0 0;
+    color: var(--muted); font-size: var(--fs-2xs);
+    overflow-y: auto; overflow-wrap: anywhere;
+  }
+  .hint.bad { color: var(--red); }
+  .checks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+  .checks li { position: relative; padding-left: 18px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
+  .checks li::before {
+    content: "✓"; position: absolute; left: 0; top: 0;
+    color: var(--green); font-size: var(--fs-xs); font-weight: 700;
+  }
+
+  .actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; flex: none; }
+  .spacer { flex: 1; }
+  .btn {
+    min-height: 32px; padding: 0 15px; border: 0; border-radius: 8px;
+    font-size: var(--fs-md); font-weight: 640; white-space: nowrap;
+    transition: background .12s ease, transform .12s ease, opacity .12s ease;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .5; }
+  .btn.primary {
+    color: var(--accent-fg); background: var(--accent);
+    box-shadow: 0 1px 2px rgba(20, 22, 30, .18);
+  }
+  .btn.primary:not(:disabled):hover { background: var(--accent-strong); }
+  .btn.ghost {
+    color: var(--fg-2); background: var(--pill);
+    box-shadow: inset 0 0 0 .5px var(--line);
+  }
+  .btn.ghost:not(:disabled):hover { background: var(--pill-hover); }
+
+  .steps { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 7px; }
+  .steps li {
+    display: flex; align-items: center; gap: 9px;
+    color: var(--muted); font-size: var(--fs-md);
+    transition: color .15s ease;
+  }
+  .steps .mark {
+    width: 19px; height: 19px; border-radius: 50%; flex: none;
+    display: grid; place-items: center;
+    color: var(--faint); background: var(--pill);
+    box-shadow: inset 0 0 0 .5px var(--line);
+    font-size: var(--fs-2xs); font-weight: 700;
+    transition: color .15s ease, background .15s ease;
+  }
+  .steps li[data-state="active"] { color: var(--fg); }
+  .steps li[data-state="active"] .mark { color: var(--accent-fg); background: var(--accent); box-shadow: none; }
+  .steps li[data-state="done"] { color: var(--fg-2); }
+  .steps li[data-state="done"] .mark { color: var(--green); background: var(--green-soft); box-shadow: none; }
+  .steps li[data-state="done"] .mark::before { content: "✓"; }
+  .steps li[data-state="failed"] { color: var(--red); }
+  .steps li[data-state="failed"] .mark { color: var(--red); background: var(--red-soft); box-shadow: none; }
+  .steps li[data-state="failed"] .mark::before { content: "!"; }
+
+  .bar { height: 5px; margin-top: 12px; border-radius: 999px; background: var(--pill); overflow: hidden; flex: none; }
+  .bar-fill { height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+  .status { margin: 8px 0 0; color: var(--muted); font-size: var(--fs-sm); min-height: 18px; }
+
+  .result {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    padding-bottom: 6px;
+  }
+  .result-icon {
+    width: 46px; height: 46px; border-radius: 50%;
+    display: grid; place-items: center; flex: none;
+    font-size: var(--fs-2xl); font-weight: 700;
+  }
+  .result-icon.ok { color: var(--green); background: var(--green-soft); }
+  .result-icon.bad { color: var(--red); background: var(--red-soft); }
+  .result h2 { margin: 12px 0 0; font-size: var(--fs-xl); font-weight: 700; }
+  .result p {
+    margin: 6px 0 0; max-width: 100%; color: var(--fg-2); font-size: var(--fs-sm);
+    overflow-wrap: anywhere;
+  }
+  .result .path {
+    margin-top: 8px; padding: 6px 10px; max-width: 100%;
+    border-radius: 7px; background: var(--card); box-shadow: inset 0 0 0 .5px var(--line);
+    color: var(--fg); font-family: var(--code); font-size: var(--fs-xs);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .result .error-text {
+    margin-top: 8px; padding: 8px 10px; max-width: 100%; max-height: 86px;
+    overflow: auto; border-radius: 7px;
+    color: var(--red); background: var(--red-soft); font-size: var(--fs-xs); line-height: 1.55;
+    text-align: left;
+  }
+  .result .footnote { margin-top: 8px; min-height: 16px; color: var(--muted); font-size: var(--fs-2xs); }
+</style>
+</head>
+<body>
+  <header class="head">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v11" />
+        <path d="m7 10 5 5 5-5" />
+        <path d="M4 18h16" />
+      </svg>
+    </span>
+    <div>
+      <h1>Quota Keepalive</h1>
+      <p id="head-sub">安装程序 · 无需管理员权限</p>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- 第一步：选择安装位置 -->
+    <section id="setup" class="panel">
+      <p id="intro" class="lede">
+        选择安装位置后点击「开始安装」。QKA 会复制程序、解压内置运行时，并创建开始菜单快捷方式；
+        全部在当前用户下完成，不需要管理员权限。
+      </p>
+      <div id="dir-field">
+        <label class="field-label" for="install-dir">安装位置</label>
+        <div class="dir-row">
+          <input id="install-dir" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="例如 C:\Users\你\AppData\Local\Programs\Quota Keepalive">
+          <button id="browse" class="btn ghost" type="button">浏览…</button>
+        </div>
+        <p id="dir-hint" class="hint"></p>
+      </div>
+      <ul class="checks">
+        <li id="check-copy">复制 QKA 程序到安装目录</li>
+        <li>解压内置运行时（Bun、适配器、供应商插件）</li>
+        <li>创建开始菜单快捷方式并注册 App Paths</li>
+      </ul>
+      <div class="actions">
+        <button id="start" class="btn primary" type="button">开始安装</button>
+      </div>
+    </section>
+
+    <!-- 第二步：进度 -->
+    <section id="progress" class="panel" hidden>
+      <ol class="steps">
+        <li data-step="check" data-state="pending"><span class="mark"></span><span class="label">检查安装位置</span></li>
+        <li data-step="copy" data-state="pending"><span class="mark"></span><span class="label">复制程序</span></li>
+        <li data-step="runtime" data-state="pending"><span class="mark"></span><span class="label">解压运行时</span></li>
+        <li data-step="shortcut" data-state="pending"><span class="mark"></span><span class="label">创建开始菜单快捷方式</span></li>
+        <li data-step="finish" data-state="pending"><span class="mark"></span><span class="label">完成</span></li>
+      </ol>
+      <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
+      <p id="status" class="status">准备安装</p>
+    </section>
+
+    <!-- 第三步：完成 -->
+    <section id="done" class="panel" hidden>
+      <div class="result">
+        <span class="result-icon ok" aria-hidden="true">✓</span>
+        <h2 id="done-title">安装完成</h2>
+        <p id="done-text">QKA 已安装到下面的位置，开始菜单和「运行」里都能找到它。</p>
+        <div class="path" id="done-path"></div>
+        <p class="footnote" id="launch-hint"></p>
+      </div>
+      <div class="actions">
+        <button id="close" class="btn ghost" type="button">仅完成</button>
+        <button id="launch" class="btn primary" type="button">完成并启动 QKA</button>
+      </div>
+    </section>
+
+    <!-- 第三步（失败）：错误 + 重试 -->
+    <section id="error" class="panel" hidden>
+      <div class="result">
+        <span class="result-icon bad" aria-hidden="true">!</span>
+        <h2 id="error-title">安装失败</h2>
+        <p>没有写入安装标记，可以修正后重试。</p>
+        <div class="error-text" id="error-text"></div>
+      </div>
+      <div class="actions">
+        <button id="quit" class="btn ghost" type="button">取消</button>
+        <button id="retry" class="btn primary" type="button">重试</button>
+      </div>
+    </section>
+  </div>
+
+<script type="module">
+  import * as Installer from "./bindings/qka/internal/gui/installerservice.js";
+  import { Events } from "/wails/runtime.js";
+
+  const STEPS = ["check", "copy", "runtime", "shortcut", "finish"];
+
+  const panels = {
+    setup: document.getElementById("setup"),
+    progress: document.getElementById("progress"),
+    done: document.getElementById("done"),
+    error: document.getElementById("error"),
+  };
+  const installInput = document.getElementById("install-dir");
+  const browseButton = document.getElementById("browse");
+  const startButton = document.getElementById("start");
+  const retryButton = document.getElementById("retry");
+  const launchButton = document.getElementById("launch");
+  const closeButton = document.getElementById("close");
+  const quitButton = document.getElementById("quit");
+  const headSub = document.getElementById("head-sub");
+  const introText = document.getElementById("intro");
+  const dirField = document.getElementById("dir-field");
+  const checkCopy = document.getElementById("check-copy");
+  const doneTitle = document.getElementById("done-title");
+  const doneText = document.getElementById("done-text");
+  const errorTitle = document.getElementById("error-title");
+  const dirHint = document.getElementById("dir-hint");
+  const statusLine = document.getElementById("status");
+  const barFill = document.getElementById("bar-fill");
+  const donePath = document.getElementById("done-path");
+  const errorText = document.getElementById("error-text");
+  const launchHint = document.getElementById("launch-hint");
+
+  let installDir = "";
+  let installing = false;
+  // 向导模式与展示信息由 Go 的 Status() 给出：install = 首次安装，upgrade = 已有
+  // 安装、当前运行的是下载目录里的新版 exe。
+  let mode = "install";
+  let status = { mode: "install", version: "", installed_version: "", install_dir: "" };
+
+  // applyStatus 把模式差异落到文案与布局上：升级模式固定安装目录，隐藏路径输入，
+  // 并把「检测到已安装版本 X（路径 Y），将升级到 Z」讲清楚。
+  function applyStatus(next) {
+    status = next || status;
+    mode = status.mode === "upgrade" ? "upgrade" : "install";
+    if (mode !== "upgrade") {
+      return;
+    }
+    const fromVersion = status.installed_version || "旧版";
+    const targetVersion = status.version || "新版本";
+    installDir = status.install_dir || "";
+    headSub.textContent = "升级程序 · 无需管理员权限";
+    introText.textContent =
+      `检测到已安装版本 ${fromVersion}（${status.install_dir || "未知路径"}）。` +
+      `将升级到 ${targetVersion}，安装目录保持不变；升级前请先退出正在运行的 QKA。`;
+    dirField.hidden = true;
+    startButton.textContent = "开始升级";
+    checkCopy.textContent = "用新版程序替换安装目录里的 QKA.exe";
+    doneTitle.textContent = "升级完成";
+    doneText.textContent =
+      `已升级到 ${targetVersion}。下载目录里的这个 exe 可以删除了，以后请从开始菜单启动 QKA。`;
+    errorTitle.textContent = "升级失败";
+  }
+
+  function showPanel(name) {
+    for (const [key, panel] of Object.entries(panels)) {
+      panel.hidden = key !== name;
+    }
+  }
+
+  function stepItem(step) {
+    return document.querySelector(`.steps li[data-step="${step}"]`);
+  }
+
+  function resetSteps() {
+    for (const step of STEPS) {
+      const item = stepItem(step);
+      if (item) item.dataset.state = "pending";
+    }
+    barFill.style.width = "0%";
+    statusLine.textContent = mode === "upgrade" ? "准备升级" : "准备安装";
+  }
+
+  function markStep(step, detail) {
+    const index = STEPS.indexOf(step);
+    if (index < 0) return;
+    STEPS.forEach((name, i) => {
+      const item = stepItem(name);
+      if (!item) return;
+      item.dataset.state = i < index ? "done" : i === index ? "active" : "pending";
+    });
+    barFill.style.width = `${(((index + 1) / STEPS.length) * 100).toFixed(1)}%`;
+    if (detail) statusLine.textContent = detail;
+  }
+
+  function markStepFailed(step) {
+    const item = stepItem(step);
+    if (item) item.dataset.state = "failed";
+  }
+
+  function completeProgress() {
+    for (const step of STEPS) {
+      const item = stepItem(step);
+      if (item) item.dataset.state = "done";
+    }
+    barFill.style.width = "100%";
+    statusLine.textContent = mode === "upgrade" ? "升级完成" : "安装完成";
+  }
+
+  function setBusy(busy) {
+    installing = busy;
+    installInput.disabled = busy;
+    browseButton.disabled = busy;
+    startButton.disabled = busy;
+  }
+
+  function setHint(message, bad) {
+    dirHint.textContent = message || "";
+    dirHint.classList.toggle("bad", Boolean(bad) && Boolean(message));
+  }
+
+  function resetControls() {
+    setBusy(false);
+    setHint("", false);
+    launchHint.textContent = "";
+    launchButton.disabled = false;
+    showPanel("setup");
+  }
+
+  function showDone() {
+    setBusy(false);
+    donePath.textContent = installDir;
+    donePath.title = installDir;
+    launchHint.textContent = "";
+    showPanel("done");
+  }
+
+  function showError(detail) {
+    setBusy(false);
+    errorText.textContent = detail || (mode === "upgrade" ? "升级失败，请重试。" : "安装失败，请重试。");
+    showPanel("error");
+  }
+
+  async function startInstall() {
+    if (installing) return;
+    let dir = installDir;
+    if (mode !== "upgrade") {
+      dir = installInput.value.trim();
+      if (!dir) {
+        setHint("请先选择安装位置。", true);
+        installInput.focus();
+        return;
+      }
+      installDir = dir;
+    }
+    setBusy(true);
+    setHint("", false);
+    resetSteps();
+    showPanel("progress");
+    markStep("check", mode === "upgrade" ? "正在检查已安装版本…" : "正在检查安装位置…");
+    try {
+      // 升级模式 Go 侧会忽略 dir，用 install.json 里的安装目录。
+      await Installer.StartInstall(dir);
+    } catch (err) {
+      showError(err && err.message ? err.message : String(err));
+    }
+  }
+
+  Events.On("installer-progress", (event) => {
+    const data = (event && event.data) || {};
+    const step = data.step || "";
+    const detail = data.detail || "";
+    if (step === "failed") {
+      markStepFailed(currentStep());
+      showError(detail);
+      return;
+    }
+    if (step === "finish") {
+      completeProgress();
+      window.setTimeout(showDone, 320);
+      return;
+    }
+    markStep(step, detail);
+  });
+
+  function currentStep() {
+    const active = document.querySelector('.steps li[data-state="active"]');
+    return active ? active.dataset.step : "";
+  }
+
+  browseButton.addEventListener("click", async () => {
+    browseButton.disabled = true;
+    try {
+      const picked = await Installer.BrowseDir(installInput.value.trim());
+      // 用户取消时 Go 侧返回空串：不提示错误，输入保持不变。
+      if (picked) {
+        installInput.value = picked;
+        setHint("", false);
+      }
+    } catch (err) {
+      // 直接把 Go 侧的中文错误原文显示出来，页面不再套一层前缀。
+      const detail = err && err.message ? err.message : String(err);
+      setHint(detail || "无法打开目录选择框，请直接输入安装路径。", true);
+    } finally {
+      browseButton.disabled = installing;
+    }
+  });
+
+  startButton.addEventListener("click", startInstall);
+  installInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      startInstall();
+    }
+  });
+
+  retryButton.addEventListener("click", resetControls);
+  closeButton.addEventListener("click", () => Installer.QuitInstaller());
+  quitButton.addEventListener("click", () => Installer.QuitInstaller());
+
+  launchButton.addEventListener("click", async () => {
+    launchButton.disabled = true;
+    launchHint.textContent = "正在启动 QKA…";
+    try {
+      await Installer.LaunchInstalled();
+    } catch (err) {
+      launchButton.disabled = false;
+      launchHint.textContent = err && err.message ? err.message : String(err);
+    }
+  });
+
+  (async () => {
+    try {
+      applyStatus(await Installer.Status());
+    } catch (err) {
+      // 取不到状态时按首次安装处理（默认文案已经是安装向导）。
+    }
+    if (mode !== "upgrade") {
+      try {
+        const dir = await Installer.DefaultDir();
+        if (dir) installInput.value = dir;
+      } catch (err) {
+        // 拿不到默认目录时留空，让用户自己选。
+      }
+      installInput.focus();
+    }
+  })();
+</script>
+</body>
+</html>

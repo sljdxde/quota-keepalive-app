@@ -1,6 +1,7 @@
 # QKA 发布构建矩阵。
 # - macOS 双架构（darwin/arm64、darwin/amd64）GUI 原生构建，需要 CGO。
-# - Windows 双架构 GUI/CLI 交叉构建并生成便携包；真实 Windows 行为需另机验收。
+# - Windows 双架构单文件发行物：一个自包含 exe（Bun/adapters/plugins 内嵌），
+#   和 magpie 一样没有 zip、没有安装器；真实 Windows 行为需另机验收。
 
 VERSION ?= $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' || echo dev)
 WINVER  := $(shell echo $(VERSION) | sed -E 's/^v//; s/[^0-9.].*//')
@@ -29,17 +30,20 @@ build-linux:
 
 build-windows:
 	@mkdir -p $(DIST)/build
-	@go run github.com/tc-hib/go-winres@v0.3.3 make \
-		--in build/windows/winres.json --arch amd64,arm64 --out rsrc \
+	@# go-winres 的 --out 只是文件名前缀、写到当前目录；Go 只识别被编译包目录
+	@# 里的 *.syso。主包在 ./cmd/qka，必须在那个目录生成，否则图标/版本/DPI
+	@# 清单不会进 exe（Windows 上表现为无图标、任务栏无法固定）。
+	@( cd cmd/qka && go run github.com/tc-hib/go-winres@v0.3.3 make \
+		--in ../../build/windows/winres.json --arch amd64,arm64 --out rsrc \
 		--file-version "$(or $(WINVER),0.0.0)" \
-		--product-version "$(or $(WINVER),0.0.0)"
+		--product-version "$(or $(WINVER),0.0.0)" )
 	@for arch in amd64 arm64; do \
 		echo "  windows/$$arch GUI"; \
 		CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -trimpath \
 			-ldflags "$(GUI_LDFLAGS) -s -w -H windowsgui" \
 			-o $(DIST)/build/QKA-windows-$$arch.exe $(PKG) || exit 1; \
 	done
-	@rm -f rsrc_windows_*.syso
+	@rm -f cmd/qka/rsrc_windows_*.syso rsrc_windows_*.syso
 
 # Windowless GUI builds cannot print to a terminal. Keep a console binary for
 # serve/task-run/doctor and other CLI-only workflows.
@@ -52,14 +56,13 @@ build-windows-cli:
 			-o $(DIST)/build/QKA-cli-windows-$$arch.exe $(PKG) || exit 1; \
 	done
 
-# Windows portable release: per-arch ZIP containing GUI, console CLI, adapters,
-# Bun and a short README. This cross-builds and packages; real Windows Task
-# Scheduler acceptance still requires a Windows machine.
-release-windows: build-windows build-windows-cli
-	@VERSION="$(VERSION)" DIST="$(DIST)" ARCH="$(WIN_ARCH)" \
-		scripts/package-windows.sh
+# Windows 单文件发行物：每个架构一个自包含 exe（内嵌 Bun、adapters/、
+# provider-plugins/，首次运行解压到配置目录）。没有 zip、没有安装器。
+release-windows:
+	@VERSION="$(VERSION)" DIST="$(DIST)" WIN_ARCH="$(WIN_ARCH)" \
+		scripts/build-windows-exe.sh
 
-# 汇总已生成的 macOS DMG 与 Windows ZIP，生成官方 feed.json 和 SHA256SUMS。
+# 汇总已生成的 macOS DMG 与 Windows 单文件 exe，生成官方 feed.json 和 SHA256SUMS。
 release-feed:
 	@VERSION="$(VERSION)" DIST="$(abspath $(DIST))" \
 		scripts/build-release-feed.sh

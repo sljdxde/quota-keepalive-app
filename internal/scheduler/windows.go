@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"qka/internal/procattr"
 )
 
 type commandRunner func(ctx context.Context, name string, args ...string) ([]byte, error)
@@ -23,7 +25,11 @@ type windowsScheduler struct {
 }
 
 func realRunner(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	// The GUI build of QKA has no console of its own; without this schtasks
+	// (and its children) would each flash a console window.
+	procattr.Hide(cmd)
+	return cmd.CombinedOutput()
 }
 
 // New returns the current-user Task Scheduler backend.

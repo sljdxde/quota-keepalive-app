@@ -14,6 +14,8 @@
 *.exe
 *.test
 *.out
+# go-winres 生成的 Windows 资源（图标/版本/DPI 清单），由发布脚本每次重建
+rsrc_windows_*.syso
 # 通用依赖目录；前端离线 3D 运行时是产品资源，必须入库。
 vendor/
 !internal/gui/frontend/assets/vendor/
@@ -24,6 +26,7 @@ build/
 !build/windows/
 !build/windows/winres.json
 !build/windows/icon-*.png
+!build/embedassets/
 dist/
 # 历史 dist 快照由 scripts/build-dmg.sh 之外的手工备份产生，不应进入版本库
 dist.backup-*/

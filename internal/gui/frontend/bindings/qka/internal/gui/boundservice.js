@@ -157,6 +157,24 @@ export function LogsTail(target, accountID, operation, state, limit, cursor) {
 }
 
 /**
+ * PanelToggle 切换吸附面板：Windows 顶栏刘海（菜单栏状态项）被点击时调用。
+ * @returns {$CancellablePromise<void>}
+ */
+export function PanelToggle() {
+    return $Call.ByID(2966289521);
+}
+
+/**
+ * PanelToggleAt 在刘海所在屏幕坐标下方切换面板。
+ * @param {number} x
+ * @param {number} y
+ * @returns {$CancellablePromise<void>}
+ */
+export function PanelToggleAt(x, y) {
+    return $Call.ByID(453759980, x, y);
+}
+
+/**
  * PlanValidate 返回只读预演。
  * @returns {$CancellablePromise<json$0.RawMessage>}
  */
@@ -287,6 +305,22 @@ export function ProvidersDeleteAccount(provider, account) {
  */
 export function ProvidersHistory(provider, account, limit) {
     return $Call.ByID(1011114083, provider, account, limit);
+}
+
+/**
+ * BarMenu 常驻刘海右键点击：弹出含「退出」的菜单。
+ * @returns {$CancellablePromise<void>}
+ */
+export function BarMenu() {
+    return $Call.ByID(2122654081);
+}
+
+/**
+ * BarToggle 常驻刘海左键点击：在刘海下方切换吸附面板。
+ * @returns {$CancellablePromise<void>}
+ */
+export function BarToggle() {
+    return $Call.ByID(3209248438);
 }
 
 /**
