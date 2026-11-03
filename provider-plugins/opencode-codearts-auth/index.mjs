@@ -1795,6 +1795,14 @@ function describeHttpFailure(status, text) {
   return detail ? `HTTP ${status}: ${detail}` : `HTTP ${status}`
 }
 
+/** Huawei answers a lapsed/revoked AK as 401 or an IAM authentication refusal. */
+function isAuthFailure(status, text) {
+  if (status === 401) return true
+  return /APIG\.0301|Incorrect IAM authentication|AK access failed/i.test(String(text ?? ""))
+}
+
+const SIGN_IN_AGAIN = "华为云登录已失效，请重新登录该账号"
+
 /**
  * A signed snap-access call the way the IDE's ActivityWelfarePane makes it:
  * `{ code, message, data }` back, `code !== 0` being a refusal.
@@ -1818,11 +1826,16 @@ async function snapRequest(method, url, cred, fetcher, payload) {
   } catch (e) {
     return { ok: false, message: e?.message ?? String(e) }
   }
-  if (!res.ok) return { ok: false, message: describeHttpFailure(res.status, text) }
+  if (!res.ok) {
+    if (isAuthFailure(res.status, text)) return { ok: false, authFailed: true, message: SIGN_IN_AGAIN }
+    return { ok: false, message: describeHttpFailure(res.status, text) }
+  }
   const raw = safeJson(text)
   if (!raw || Array.isArray(raw)) return { ok: false, message: "the answer could not be read" }
   if (raw.code !== undefined && Number(raw.code) !== 0) {
-    return { ok: false, message: firstOf(raw.message, raw.msg, `code ${raw.code}`) }
+    const message = firstOf(raw.message, raw.msg, `code ${raw.code}`)
+    if (isAuthFailure(0, message)) return { ok: false, authFailed: true, message: SIGN_IN_AGAIN }
+    return { ok: false, message }
   }
   return { ok: true, data: "data" in raw ? raw.data : raw }
 }
@@ -1832,7 +1845,10 @@ async function snapRequest(method, url, cred, fetcher, payload) {
 /** The account's 「每日领取」 campaign from the activity list, or a reason it can't be read. */
 async function dailyCampaign(cred, fetcher) {
   const listed = await snapRequest("GET", OPS_DELIVERY_URL, cred, fetcher)
-  if (!listed.ok) return { error: `活动列表读取失败：${listed.message}` }
+  if (!listed.ok) {
+    if (listed.authFailed) return { error: SIGN_IN_AGAIN }
+    return { error: `活动列表读取失败：${listed.message}` }
+  }
   const items = asRecord(listed.data).items
   if (!Array.isArray(items)) return { error: "活动列表缺少 items" }
   return { item: items.find((it) => asRecord(it).type === DAILY_CHECKIN_TYPE) }
@@ -2469,6 +2485,27 @@ export const CodeArtsAuthPlugin = async ({ client } = {}, options = {}) => {
   // The ledger's key: the signer, which outlives a sign-in; else the session.
   const ledgerKey = async (cred) => accountIdentityOf(cred).id || (await accountSessionIds(cred)).sessionId
 
+  // Huawei's temporary AK/SK lapses on a short clock. The host renews ahead of
+  // expiry but only waits RENEW_WAIT, so a slow STS can leave a usage read or
+  // the daily check-in signing with the old key, which Huawei answers 401
+  // APIG.0301 ("AK access failed ..."). Await the shared renewal here before
+  // signing; a permanent refresh failure becomes a plain "sign in again"
+  // instead of a raw gateway error.
+  const refreshIfStale = async (cred, auth) => {
+    if (!nearExpiry(cred)) return cred
+    try {
+      const renewed = await renewOnce(cred)
+      if (!renewed) return cred
+      await persistCredential(client, auth, renewed).catch(() => {})
+      return renewed
+    } catch (e) {
+      if (isPermanentRefreshFailure(e)) {
+        throw Object.assign(new Error(SIGN_IN_AGAIN), { signIn: "expired" })
+      }
+      return cred
+    }
+  }
+
   const configModel = (m) => ({
     name: m.name ?? m.id,
     // Declared so a caller never sends its own, larger default.
@@ -2650,9 +2687,10 @@ export const CodeArtsAuthPlugin = async ({ client } = {}, options = {}) => {
       // magpie's own hook: how much of the plan is left.
       async usage(getAuth) {
         const auth = await getAuth()
-        const cred = credentialOf(auth)
+        let cred = credentialOf(auth)
         if (!cred?.access_key_id) return { error: "not signed in", windows: [] }
         try {
+          cred = await refreshIfStale(cred, auth)
           const text = await signedGet(SNAP_STATISTICS_URL, cred, fetcher, SNAP_EXTRA_HEADERS)
           if (text === undefined) return { error: "CodeArts answered an error", windows: [] }
           const state = await stateOf(cred)
@@ -2686,8 +2724,14 @@ export const CodeArtsAuthPlugin = async ({ client } = {}, options = {}) => {
       // magpie's own hook: the daily 「每日领取」 check-in (OpenCode ignores it).
       // magpie renews the sign-in before asking, and asks once a Beijing day.
       async checkin(getAuth) {
-        const cred = credentialOf(await getAuth())
+        const auth = await getAuth()
+        let cred = credentialOf(auth)
         if (!cred?.access_key_id) return { outcome: "failed", message: "not signed in" }
+        try {
+          cred = await refreshIfStale(cred, auth)
+        } catch (e) {
+          return { outcome: "failed", message: e?.message ?? String(e) }
+        }
         const key = await ledgerKey(cred)
         const state = await stateOf(cred)
         const today = beijingDay()

@@ -130,6 +130,7 @@ func Build(ctx context.Context, cfg Config) (*App, error) {
 		a.now,
 	)
 	a.providers.SetRiskGuard(a.riskGuard)
+	a.providers.SetRuntimeAuthRecovery(a.recoverProviderAuth)
 	a.startLogPruner()
 
 	return a, nil

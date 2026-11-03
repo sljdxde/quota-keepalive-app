@@ -60,6 +60,12 @@ type dshEvent struct {
 	Type string `json:"type"`
 	Seq  int64  `json:"seq"`
 	Time int64  `json:"time"`
+	// ID 是 session 头事件的会话标识；ParentSession 出现在子代理会话头里，
+	// 指回顶层会话（on-disk 形式带 "session-" 前缀）。
+	ID              string `json:"id"`
+	ParentSession   string `json:"parentSession"`
+	DelegationDepth int64  `json:"delegationDepth"`
+	Origin          string `json:"origin"`
 	// Cwd 出现在 session 头事件里，是会话真实的工作目录——比从编码目录名
 	// 反推可靠（目录名用 "-" 同时表示路径分隔符和名称里的连字符，无法无损还原）。
 	Cwd  string   `json:"cwd"`
@@ -72,6 +78,7 @@ type dshData struct {
 	ID      string           `json:"id"`
 	Turn    int64            `json:"turn"`
 	Step    int64            `json:"step"`
+	Title   string           `json:"title"`
 	Header  *dshHeader       `json:"header"`
 	Message *dshMessage      `json:"message"`
 	Source  *dshSource       `json:"source"`
@@ -349,9 +356,40 @@ func (s *Service) dshDecoder() *dshDecoder {
 
 // ingestDSH 解析一条解压后的 JSONL 事件；只有带 usage 的 assistant 消息计入总量。
 func (s *Service) ingestDSH(path string, state *dshFileState, line []byte) {
+	// session/title 事件的 data.source.model 是对象，与 assistant 事件里
+	// source.model 的字符串形状不同；直接整体反序列化会因类型不匹配失败，
+	// 把真正的标题丢掉。先看事件类型，标题事件用最小结构单独解析。
+	var head struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(line, &head) != nil {
+		return
+	}
+	if head.Type == "session/title" {
+		var ev struct {
+			Data struct {
+				Title string `json:"title"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(line, &ev) == nil {
+			// 会话名来自会话自身的标题事件（LLM 生成或首条消息回退），只取标题
+			// 文本，不读取提示词或响应正文。后到的 provider 标题覆盖 fallback。
+			if title := strings.TrimSpace(ev.Data.Title); title != "" {
+				s.sessionTitles[dshSessionID(path)] = title
+			}
+		}
+		return
+	}
 	var event dshEvent
 	if json.Unmarshal(line, &event) != nil {
 		return
+	}
+	if event.Type == "session" && state != nil && state.view != nil {
+		// 子代理会话在会话头里给出 parentSession，记下来供快照折叠回顶层会话。
+		sid := dshSessionID(path)
+		if parent := normalizeSessionRef(event.ParentSession); parent != "" && parent != sid {
+			s.sessionParent[sid] = parent
+		}
 	}
 	if strings.TrimSpace(event.Cwd) != "" && state != nil && state.view != nil {
 		// 会话头里的 cwd 是权威来源：拿到它就覆盖路径猜测的结果，

@@ -3,6 +3,7 @@ package tokenspeed
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"qka/internal/applog"
 )
 
 type usage struct {
@@ -139,9 +142,13 @@ type Service struct {
 	opencode           map[string]*opencodeSourceState
 	// projectByAgent 记住每个 agent 的项目名，供会话行展示（不使用提示词内容）。
 	projectByAgent map[string]string
-	dsh            map[string]*dshFileState
-	dshDec         *dshDecoder
-	snapshot       Snapshot
+	// sessionParent / sessionTitles 来自 DSH 会话自身的元数据事件：
+	// parentSession 把子代理会话折叠回顶层会话，session/title 提供会话名。
+	sessionParent map[string]string
+	sessionTitles map[string]string
+	dsh           map[string]*dshFileState
+	dshDec        *dshDecoder
+	snapshot      Snapshot
 
 	started bool
 	done    chan struct{}
@@ -168,6 +175,8 @@ func New(cfg Config) *Service {
 		todayBySource:      make(map[string]usage),
 		availableSources:   make(map[string]bool),
 		projectByAgent:     make(map[string]string),
+		sessionParent:      make(map[string]string),
+		sessionTitles:      make(map[string]string),
 		opencode:           make(map[string]*opencodeSourceState),
 		dsh:                make(map[string]*dshFileState),
 		snapshot: Snapshot{
@@ -238,8 +247,31 @@ func (s *Service) SetTitleTheme(theme string) {
 	s.snapshot = s.computeSnapshot(s.cfg.Now())
 }
 
+// slowPollThreshold 是单次轮询的告警阈值：超过它说明扫描本机日志偏慢，
+// 每 750ms 一次的界面刷新可能被拖慢，写一条 perf 告警便于事后排查。
+const slowPollThreshold = 150 * time.Millisecond
+
+// slowPollWarning 返回需要记录的性能告警；未超过阈值时 ok 为 false。
+func slowPollWarning(elapsed time.Duration) (message string, ok bool) {
+	if elapsed <= slowPollThreshold {
+		return "", false
+	}
+	return fmt.Sprintf("单次轮询耗时 %s（阈值 %s），界面刷新可能被拖慢",
+		elapsed.Round(time.Millisecond), slowPollThreshold), true
+}
+
 // Poll performs one discovery, incremental read, and recomputation pass.
 func (s *Service) Poll() {
+	started := time.Now()
+	s.pollLocked()
+	if message, ok := slowPollWarning(time.Since(started)); ok {
+		applog.Warnf("perf", "tokenspeed: %s", message)
+	}
+}
+
+// pollLocked 是 Poll 的加锁主体：耗时的统计放在锁外记录，避免日志写盘时
+// 继续持有服务锁。
+func (s *Service) pollLocked() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

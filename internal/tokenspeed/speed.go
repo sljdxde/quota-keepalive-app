@@ -183,6 +183,12 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	nowMS := now.UnixMilli()
 	records := make([]responseRecord, 0, len(s.records))
 	for _, record := range s.records {
+		// Fold sub-agent sessions into their top-level session so the panel
+		// shows one row per conversation, and use the root's project name.
+		record.agentID = s.canonicalAgentID(record.agentID)
+		if project := s.projectByAgent[record.agentID]; project != "" {
+			record.project = project
+		}
 		records = append(records, record)
 	}
 	sortedRecent(records)
@@ -231,7 +237,14 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	}
 
 	generatingAgents := 0
-	for agentID, state := range s.files {
+	for _, state := range s.files {
+		// s.files 的键是文件路径，会话身份必须用 state.agentID：DSH 一个会话
+		// 一个文件，用路径会把同一个会话拆成「路径哈希」的额外一行；子代理
+		// 会话再经 canonicalAgentID 折叠回顶层会话。
+		agentID := s.canonicalAgentID(state.agentID)
+		if agentID == "" {
+			continue
+		}
 		if !state.active || state.lastLineMS == 0 ||
 			nowMS-state.lastLineMS > staleAfter.Milliseconds() {
 			if state.lastLineMS > lastActiveByAgent[agentID] {
@@ -249,11 +262,17 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 			}
 			continue
 		}
+		if generatingByAgent[agentID] {
+			if state.lastLineMS > lastActiveByAgent[agentID] {
+				lastActiveByAgent[agentID] = state.lastLineMS
+			}
+			continue
+		}
 		generatingAgents++
 		generatingBySource[state.source]++
 		generatingByAgent[agentID] = true
 		delete(ratesByAgent, agentID)
-		if estimate, ok := referenceFor(state.agentID, state.source, recentByAgent, fallbackBySource); ok {
+		if estimate, ok := referenceFor(agentID, state.source, recentByAgent, fallbackBySource); ok {
 			installRate(agentID, liveRate{
 				source: state.source,
 				model:  state.model,
@@ -310,9 +329,9 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 		session := SessionSnapshot{
 			ID:      sessionID(agentID),
 			Project: project,
-			// 会话名优先用项目/工作区名；拿不到时回退到模型名，
+			// 会话名优先用会话自身的标题；拿不到时回退到项目名、模型名，
 			// 最后才是短 ID（避免面板里出现一排含义不明的哈希）。
-			Label:                 sessionDisplayLabel(project, rate.model, agentID),
+			Label:                 s.sessionLabel(agentID, project, rate.model),
 			Source:                rate.source,
 			SourceLabel:           sourceLabel(rate.source),
 			Model:                 rate.model,
@@ -408,7 +427,7 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 			view: SessionSnapshot{
 				ID:          sessionID(agentID),
 				Project:     project,
-				Label:       sessionDisplayLabel(project, response.model, agentID),
+				Label:       s.sessionLabel(agentID, project, response.model),
 				Source:      response.source,
 				SourceLabel: sourceLabel(response.source),
 				Model:       response.model,
@@ -421,7 +440,7 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	// s.files 的键是文件路径，会话身份必须用 state.agentID——否则同一个会话会
 	// 以「路径哈希」和「agentID 哈希」出现两次，且名字永远退回短 ID。
 	for _, state := range s.files {
-		agentID := state.agentID
+		agentID := s.canonicalAgentID(state.agentID)
 		if agentID == "" || seenSession[agentID] || state.lastLineMS == 0 ||
 			nowMS-state.lastLineMS > sessionVisible.Milliseconds() {
 			continue
@@ -435,7 +454,7 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 			view: SessionSnapshot{
 				ID:          sessionID(agentID),
 				Project:     project,
-				Label:       sessionDisplayLabel(project, state.model, agentID),
+				Label:       s.sessionLabel(agentID, project, state.model),
 				Source:      state.source,
 				SourceLabel: sourceLabel(state.source),
 				Model:       state.model,

@@ -9,6 +9,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // Windows/Linux 上主窗口是无边框窗口，顶栏就是标题栏：不需要为 macOS
+    // 红绿灯留左侧空间，改为在右侧渲染最小化/最大化/关闭三个按钮。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-native-titlebar");
+    }
   })();
 </script>
 <style>
@@ -144,7 +149,8 @@
     --line: #333339; --line-2: #2c2c32; --glass-border: rgba(255,255,255,.11);
     --glass-shadow: 0 12px 34px rgba(0,0,0,.32), 0 1px 4px rgba(0,0,0,.2);
     --glass-shadow-soft: 0 6px 20px rgba(0,0,0,.22), 0 1px 3px rgba(0,0,0,.16);
-    --topbar: #202027; --fg: #ededf1; --fg-2: #b9b9c1; --muted: #9a9aa3; --faint: #56565f;
+    --topbar: #202027;
+    --fg: #ededf1; --fg-2: #b9b9c1; --muted: #9a9aa3; --faint: #56565f;
     --accent: #a5b4fc; --accent-strong: #818cf8; --accent-soft: #2c2e4a; --accent-fg: #15152b;
     --green: #6fd99b; --green-soft: #1e3a2b; --red: #f28b82; --red-soft: #45272a;
     --amber: #f2b544; --amber-soft: #3f3220; --blue: #93c5fd; --blue-soft: #23304a;
@@ -321,8 +327,15 @@
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
     --wails-draggable: drag;
+    overflow: hidden; /* 凹口与顶栏一起裁出圆角，避免凹口越界到内容区 */
   }
   .topbar button, .nav { --wails-draggable: no-drag; }
+  /* Windows/Linux 主窗口无边框，顶栏就是标题栏：去掉 macOS 的左侧安全区，
+     右侧给页面内的最小化/最大化/关闭按钮留位。 */
+  /* Windows/Linux 主窗口用系统原生标题栏：顶栏不再需要 macOS 红绿灯的安全区。 */
+  html.platform-native-titlebar .topbar { padding-left: 14px; }
+  /* 常驻刘海是独立的置顶窗口（bar.html），主窗口顶栏不再承载它：左侧恢复为
+     正常品牌区，右侧是自绘的最小化/最大化/关闭按钮。 */
   .brand {
     min-width: 0;
     display: flex; align-items: center; gap: 9px;
@@ -2346,6 +2359,7 @@
 </style>
 <link rel="stylesheet" href="assets/liquid-ui.css">
 <link rel="stylesheet" href="assets/title-system.css">
+<link rel="stylesheet" href="assets/perf-mode.css">
 </head>
 <body>
   <div class="window">
@@ -2639,7 +2653,7 @@
           </table>
         </div>
         <p class="footnote">
-          输出速度按每个响应首个正文到完成的时间计算；输入速度按请求墙钟时间计算。首 token 等待和供应商攒包不冒充解码速度，流式阶段只借用最近一次可靠实测值。会话仅用不可逆短标识展示，不读取提示词或响应正文。
+          输出速度按每个响应首个正文到完成的时间计算；输入速度按请求墙钟时间计算。首 token 等待和供应商攒包不冒充解码速度，流式阶段只借用最近一次可靠实测值。会话按顶层对话聚合，子代理会话并入所属会话；名称取自会话自身的标题事件（由首条消息生成），不读取提示词或响应正文。
         </p>
       </section>
 
@@ -2984,6 +2998,10 @@
   import { resolveAccountProviderView } from "./assets/account-view.js";
   import { createPokemon3D } from "./assets/pokemon-3d.js";
   import {
+    initPerformanceMode,
+    PERFORMANCE_MODE_KEY,
+  } from "./assets/perf-mode.js";
+  import {
   accountStateKey,
   nextAccountExpansion,
   shouldCollapseAccount,
@@ -3062,6 +3080,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     document.documentElement.dataset.background = background;
     document.documentElement.dataset.glass = glass;
     applyCustomBackground(background);
+    applyPerformanceSetting(settings[PERFORMANCE_MODE_KEY]);
   }
 
   async function syncAppearance() {
@@ -3081,7 +3100,28 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       document.documentElement.dataset[change.key] = change.value;
     }
   });
+
+  // 性能模式：设置值 auto/on/off，与检测到的渲染器合并后决定是否给 body 加
+  // perf-low。auto 在软件渲染/虚拟机下自动降级；on/off 供用户手动覆盖。
+  let performanceModeSetting = "auto";
+  let performanceModeApplied = false;
+
+  function applyPerformanceSetting(value) {
+    const next = value || "auto";
+    if (performanceModeApplied && next === performanceModeSetting) return;
+    performanceModeSetting = next;
+    performanceModeApplied = true;
+    initPerformanceMode({ setting: next });
+  }
+
+  Events.On("performance-changed", function (event) {
+    applyPerformanceSetting(event && event.data);
+  });
+  // 默认保留全部特效（与 macOS 一致）；设置异步读回后按用户的选择再校正。
+  // 先按 off 预置，避免在用户已选「低配优先」时先闪一帧毛玻璃。
+  applyPerformanceSetting("off");
   syncAppearance();
+
 
   document.getElementById("settings-custom-bg-pick").onclick = function () {
     document.getElementById("settings-custom-bg-file").click();
@@ -3135,7 +3175,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       btn.classList.add("active");
       btn.setAttribute("aria-current", "page");
       document.getElementById(btn.dataset.tab).classList.add("active");
-      if (btn.dataset.tab === "speed") refreshTokenSpeed();
+      if (btn.dataset.tab === "speed") {
+        // 隐藏期间缓存的最新快照先上屏，随后再拉一次实时值。
+        if (pendingSpeedSnapshot) {
+          renderTokenSpeed(pendingSpeedSnapshot);
+          pendingSpeedSnapshot = null;
+        }
+        refreshTokenSpeed();
+      }
       if (btn.dataset.tab === "pet") {
         refreshMainPet();
       } else if (mainPetViewer) {
@@ -3530,6 +3577,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   document.getElementById("settings-shortcut").onclick = function () {
     openTab("settings");
   };
+
   document.getElementById("schedule-settings").onclick = function () {
     openTab("settings");
   };
@@ -3788,6 +3836,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         try {
           await Bound.SettingsSetString(field.key, next);
           current = next;
+          if (field.key === PERFORMANCE_MODE_KEY) applyPerformanceSetting(next);
         } catch (_) {
           select.value = current;
           settingsMessage("设置保存失败；已恢复为当前生效值。", true);
@@ -3823,6 +3872,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           await Bound.SettingsSetString(field.key, option.value);
           current = option.value;
           if (field.key === "theme") applyTheme(option.value);
+          if (field.key === PERFORMANCE_MODE_KEY) applyPerformanceSetting(option.value);
           group.querySelectorAll("button").forEach(function (item) {
             const active = item === button;
             item.classList.toggle("active", active);
@@ -4765,8 +4815,53 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     });
   }
 
+  // 速度快照每 750ms 到达一次。速度页不可见时不再重建两张隐藏表格，只缓存
+  // 最新快照并更新宠物页需要的两个数字；切回速度页会主动拉取最新值。
+  let pendingSpeedSnapshot = null;
+  let lastPetSpeedTokens = -1;
+  let lastPetSpeedRate = -1;
+
+  function speedTabVisible() {
+    const page = document.getElementById("speed");
+    return !!page && page.classList.contains("active");
+  }
+
+  function petTabVisible() {
+    const page = document.getElementById("pet");
+    return !!page && page.classList.contains("active");
+  }
+
+  function applySpeedToPet(view) {
+    mainPetOutputSpeed = Number(view.output_tokens_per_second) || 0;
+    mainPetTodayTokens = Math.max(0, Number(view.today_total_tokens) || 0);
+    if (!petTabVisible()) return;
+    if (mainPetTodayTokens === lastPetSpeedTokens &&
+        mainPetOutputSpeed === lastPetSpeedRate) return;
+    lastPetSpeedTokens = mainPetTodayTokens;
+    lastPetSpeedRate = mainPetOutputSpeed;
+    renderMainPet();
+  }
+
+  // 定时巡检在独立进程里完成时由后端推来「结果已变化」，这里只刷新当前可见的
+  // 页面，避免隐藏页做无谓重绘（后端做传感器，前端不放轮询定时器）。
+  Events.On("accounts-changed", function () {
+    if (document.getElementById("checkin").classList.contains("active")) {
+      renderAccounts();
+    }
+    if (document.getElementById("apps").classList.contains("active")) {
+      renderApps();
+    }
+  });
+
   Events.On("tokenspeed-changed", function (event) {
-    if (event && event.data) renderTokenSpeed(event.data);
+    if (!event || !event.data) return;
+    if (speedTabVisible()) {
+      pendingSpeedSnapshot = null;
+      renderTokenSpeed(event.data);
+      return;
+    }
+    pendingSpeedSnapshot = event.data;
+    applySpeedToPet(asJSON(event.data));
   });
 
   loadTitleTheme();
@@ -5762,6 +5857,24 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
     const actions = document.createElement("div");
     actions.className = "account-actions";
+    const refreshStatus = document.createElement("button");
+    refreshStatus.className = "secondary";
+    refreshStatus.textContent = "刷新状态";
+    refreshStatus.onclick = async function () {
+      refreshStatus.disabled = true;
+      showAccountsMessage("正在刷新账号状态…", "pending");
+      try {
+        await Bound.ProvidersRun(provider.id, account.key, "refresh");
+        await renderAccounts();
+        await renderApps();
+        showAccountsMessage("状态已刷新", "success");
+      } catch (err) {
+        showAccountsMessage(accountErrorMessage(err, "刷新状态失败，请重试。"));
+      } finally {
+        refreshStatus.disabled = false;
+      }
+    };
+    actions.appendChild(refreshStatus);
     const refresh = document.createElement("button");
     refresh.className = "secondary";
     refresh.textContent = "刷新额度";
@@ -6644,6 +6757,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   refreshTokenSpeed();
   refreshMainPet();
   appendLogs(true);
+
 </script>
 </body>
 </html>

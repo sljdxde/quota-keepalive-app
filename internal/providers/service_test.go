@@ -1432,12 +1432,16 @@ func TestSyncRemovesMissingPluginSourcesOnly(t *testing.T) {
 		t.Fatalf("non-plugin source must survive: %+v", account.Sources)
 	}
 
+	// An empty runtime view is ambiguous: the auth view file may simply be
+	// missing, so the remaining plugin account must survive rather than be
+	// mistaken for a sign-out. Per-account removal while others remain is
+	// covered above.
 	f.runtime.providers[0].Accounts = nil
 	if _, err := f.service.List(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.account.Get(ctx, "fixture", "a1"); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("missing sole plugin source should remove account: %v", err)
+	if _, err := f.account.Get(ctx, "fixture", "a1"); err != nil {
+		t.Fatalf("account must survive an empty runtime view: %v", err)
 	}
 	if _, err := f.account.Get(ctx, "fixture", "a2"); err != nil {
 		t.Fatalf("imported account must survive empty runtime: %v", err)

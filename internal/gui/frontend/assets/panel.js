@@ -10,6 +10,7 @@ import {
 import { nextGroupExpansion } from "./group-collapse.js";
 import { petAimPoint } from "./pet-gaze.js";
 import { createPokemon3D } from "./pokemon-3d.js";
+import { initPerformanceMode, PERFORMANCE_MODE_KEY } from "./perf-mode.js";
 import { populateProviderIcon, providerIconSpec } from "./provider-icons.js";
 import {
   normalizeTitleTheme,
@@ -1616,8 +1617,13 @@ function applyTheme(theme) {
 
 async function syncTheme() {
   try {
-    applyTheme(asJSON(await Bound.SettingsGet()).theme || "system");
-  } catch (_) {}
+    const values = asJSON(await Bound.SettingsGet());
+    applyTheme(values.theme || "system");
+    // 面板与主窗口共用同一份性能模式设置；软件渲染时面板的玻璃也会降级。
+    initPerformanceMode({ setting: values[PERFORMANCE_MODE_KEY] });
+  } catch (_) {
+    initPerformanceMode({ setting: "auto" });
+  }
 }
 
 function hidePanel() {
@@ -1696,6 +1702,10 @@ document.getElementById("quit").addEventListener("click", function () {
 Events.On("accounts-updated", function () {
   if (activeTab === "checkin") refresh();
 });
+Events.On("accounts-changed", function () {
+  if (activeTab === "checkin") refresh();
+});
+
 Events.On("common:WindowShow", function (event) {
   if (event.sender !== "panel") return;
   if (activeTab === "checkin") refresh();
@@ -1707,6 +1717,9 @@ Events.On("tokenspeed-changed", function (event) {
 });
 Events.On("theme-changed", function (event) {
   applyTheme(event && event.data);
+});
+Events.On("performance-changed", function (event) {
+  initPerformanceMode({ setting: event && event.data });
 });
 renderSparkline();
 renderPet();

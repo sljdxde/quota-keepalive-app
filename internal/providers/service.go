@@ -208,6 +208,12 @@ type Service struct {
 	creditSynced map[string]bool
 
 	riskGuard *requestguard.Guard
+
+	// recoverAuth rebuilds the transient runtime auth view file from the
+	// durable credential store. List calls it when the runtime reports no
+	// accounts for a provider that still has stored accounts, which happens
+	// when that file is missing or unreadable rather than genuinely empty.
+	recoverAuth func(context.Context) error
 }
 
 // NewService constructs the provider service.
@@ -238,6 +244,18 @@ func (s *Service) SetRiskGuard(guard *requestguard.Guard) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.riskGuard = guard
+}
+
+// SetRuntimeAuthRecovery installs a hook that rewrites the runtime auth view
+// file from the durable credential store. The provider runtime reads its
+// accounts from that volatile file; if it goes missing (or is momentarily
+// unreadable) the runtime reports every provider as signed out with zero
+// accounts. List uses this hook to recover the view in place instead of
+// mistaking the outage for account deletion.
+func (s *Service) SetRuntimeAuthRecovery(fn func(context.Context) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recoverAuth = fn
 }
 
 func (s *Service) runtime(ctx context.Context) (Runtime, error) {
@@ -445,6 +463,16 @@ func (s *Service) List(ctx context.Context) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
+	if s.recoverAuth != nil && s.runtimeOmitsStoredAccounts(ctx, items) {
+		// The runtime account view is built from a transient auth file; a
+		// missing/unreadable file reports zero accounts. Rebuild it from the
+		// durable credential store and retry before treating it as truth.
+		if recoverErr := s.recoverAuth(ctx); recoverErr == nil {
+			if retried, retryErr := host.Providers(ctx); retryErr == nil {
+				items = retried
+			}
+		}
+	}
 	for _, provider := range items {
 		if err := s.upsertProvider(ctx, provider); err != nil {
 			return View{}, err
@@ -452,6 +480,13 @@ func (s *Service) List(ctx context.Context) (View, error) {
 		if err := s.syncAccounts(ctx, provider); err != nil {
 			return View{}, err
 		}
+	}
+	// A morning claim is recorded as provisional by the shared state machine.
+	// When the plugin also handed back the explicit grant amount (credits differ
+	// from the balance), that is the vendor's own receipt: promote it so the
+	// account stops showing "待复核" for a check-in that already succeeded.
+	if err := s.confirmEvidencedCheckins(ctx); err != nil {
+		return View{}, err
 	}
 	view, err := s.view(ctx, items)
 	if err != nil {
@@ -466,6 +501,28 @@ func (s *Service) List(ctx context.Context) (View, error) {
 		}
 	}
 	return view, nil
+}
+
+// runtimeOmitsStoredAccounts reports whether the runtime's provider list
+// silently dropped accounts that the durable projection still holds. An empty
+// account list for a provider that has stored accounts is the ambiguous case
+// caused by a missing/unreadable auth view file; it must not be trusted as a
+// sign-out. A provider that still reports at least one account is left to the
+// normal per-account prune path.
+func (s *Service) runtimeOmitsStoredAccounts(
+	ctx context.Context, items []providerruntime.Provider,
+) bool {
+	for _, provider := range items {
+		if len(provider.Accounts) > 0 {
+			continue
+		}
+		stored, err := s.accounts.List(ctx, provider.ID)
+		if err != nil || len(stored) == 0 {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // reconcileMissingCheckinGrowth asks a check-in plugin for today's grant when
@@ -534,6 +591,32 @@ func (s *Service) reconcileMissingCheckinGrowth(
 			}
 		}
 	}
+}
+
+// confirmEvidencedCheckins promotes today's provisional provider check-ins that
+// carry an explicit grant amount. The shared state machine marks a success
+// before Beijing noon as provisional (the vendor might still roll a morning
+// claim back), and a provisional row is terminal, so nothing ever promotes it —
+// the account kept showing "待复核" for a check-in that had already paid out.
+// A recorded grant that differs from the account balance is the plugin's own
+// receipt of +N credits, so it is safe to confirm. A receipt-less claim
+// (credits unknown, or equal to the balance) stays provisional.
+func (s *Service) confirmEvidencedCheckins(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `
+UPDATE daily_ops
+SET state = 'signed_confirmed',
+    message = CASE
+      WHEN message = '' THEN '已确认到账'
+      ELSE message || ' · 已确认到账'
+    END,
+    updated_at = ?
+WHERE operation = 'checkin' AND day_key = ?
+  AND state = 'signed_provisional'
+  AND credits_known = 1 AND credits > 0
+  AND balance_known = 1 AND credits <> balance
+  AND target IN (SELECT id FROM providers)`,
+		s.now().UTC().Format(time.RFC3339), engine.BeijingDay(s.now()))
+	return err
 }
 
 func isCheckinCreditState(state string) bool {
@@ -609,6 +692,16 @@ func (s *Service) syncAccounts(ctx context.Context, p providerruntime.Provider) 
 		if err := s.accounts.Discover(ctx, p.ID, found); err != nil {
 			return err
 		}
+	}
+	// An empty account list is not proof that the accounts were removed: the
+	// runtime reads them from a volatile auth view file, so a missing or
+	// momentarily unreadable file makes every provider report zero accounts.
+	// Pruning on that would delete the durable projection and its history, so
+	// only prune vanished plugin sources when the runtime actually reported at
+	// least one account for this provider. List first attempts to rebuild the
+	// auth view, so a genuine empty view still clears nothing already empty.
+	if len(found) == 0 {
+		return nil
 	}
 	return s.pruneMissingPluginSources(ctx, p.ID, runtimeKeys)
 }
@@ -960,6 +1053,7 @@ func (s *Service) FinishLogin(ctx context.Context, session, code string) (LoginV
 		s.writeAuditFailure(ctx, saved.Provider, saved.Account, "login", err)
 		return LoginView{}, err
 	}
+	_ = s.clearStaleFailure(ctx, saved.Provider, saved.Account)
 	s.writeAuditLog(ctx, saved.Provider, saved.Account, "login", "completed", "info", "登录完成")
 	return LoginView{Provider: saved.Provider, Status: "verified", Saved: &saved, Message: "登录完成"}, nil
 }
@@ -986,8 +1080,50 @@ func (s *Service) LoginAPIKey(
 		s.writeAuditFailure(ctx, saved.Provider, saved.Account, "login", err)
 		return LoginView{}, err
 	}
+	_ = s.clearStaleFailure(ctx, saved.Provider, saved.Account)
 	s.writeAuditLog(ctx, saved.Provider, saved.Account, "login", "completed", "info", "登录完成")
 	return LoginView{Provider: saved.Provider, Status: "verified", Saved: &saved, Message: "登录完成"}, nil
+}
+
+// clearStaleFailure drops today's failed projection for a freshly signed-in
+// account. A check-in that failed on an expired credential leaves a
+// failed_final/manual row; after the user signs in again that row is stale and
+// would keep the account card red until the next successful run. Successful
+// states (already/signed/…) are left untouched so real progress is kept.
+func (s *Service) clearStaleFailure(ctx context.Context, provider, account string) error {
+	if strings.TrimSpace(account) == "" {
+		return nil
+	}
+	day := engine.BeijingDay(s.now())
+	_, err := s.db.ExecContext(ctx, `
+DELETE FROM daily_ops
+WHERE target = ? AND account_id = ? AND day_key = ?
+  AND state IN ('failed_retryable', 'failed_final', 'manual_required')`,
+		provider, account, day)
+	return err
+}
+
+// clearAuthFailure drops today's failure row only when it was an authentication
+// failure (expired AK / IAM refused / sign-in lost). A successful usage refresh
+// proves the sign-in works again, so that stale error is safe to clear; a
+// check-in that failed for another reason (ineligible, upstream 5xx, …) is left
+// so it is not silently hidden.
+func (s *Service) clearAuthFailure(ctx context.Context, provider, account string) error {
+	if strings.TrimSpace(account) == "" {
+		return nil
+	}
+	day := engine.BeijingDay(s.now())
+	_, err := s.db.ExecContext(ctx, `
+DELETE FROM daily_ops
+WHERE target = ? AND account_id = ? AND day_key = ?
+  AND state IN ('failed_retryable', 'failed_final', 'manual_required')
+  AND (
+    message LIKE '%APIG.0301%' OR message LIKE '%Incorrect IAM authentication%'
+    OR message LIKE '%AK access failed%' OR message LIKE '%401%'
+    OR message LIKE '%登录已失效%' OR message LIKE '%not signed in%'
+  )`,
+		provider, account, day)
+	return err
 }
 
 // DeleteAccount signs out and removes only QKA's account projection.
@@ -1545,6 +1681,10 @@ func (s *Service) runOne(
 					Target: provider, AccountID: account, Operation: engine.Checkin,
 				}, obs.State, message)
 			}
+			// A morning claim lands as provisional; when the plugin also gave an
+			// explicit grant, confirm it right here so the stored state is final
+			// without waiting for the next GUI list.
+			_ = s.confirmEvidencedCheckins(ctx)
 		}
 	case "keepalive":
 		// 保活当前由 features.KeepaliveAvailable=false 全局停用：
@@ -1583,6 +1723,9 @@ func (s *Service) runOne(
 		result.State = "completed"
 		result.Executed = true
 		result.Credits, result.Balance = usageValues(usage)
+		// A live usage read proves the sign-in works again; drop today's stale
+		// auth failure so the card stops showing a pre-re-login error.
+		_ = s.clearAuthFailure(ctx, provider, account)
 	default:
 		result.Err = fmt.Errorf("unsupported provider operation %q", operation)
 	}
