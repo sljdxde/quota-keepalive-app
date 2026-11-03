@@ -52,7 +52,7 @@ func TestFeedbackBindingsPreviewAndSubmit(t *testing.T) {
 		if r.Header.Get("X-QKA-Key") == "" {
 			t.Error("site key header missing")
 		}
-		_, _ = w.Write([]byte(`{"ok":true,"number":17,"url":"https://github.com/sljdxde/quota-keepalive/issues/17"}`))
+		_, _ = w.Write([]byte(`{"ok":true,"number":17,"url":"https://github.com/sljdxde/quota-keepalive-app/issues/17"}`))
 	}))
 	defer server.Close()
 	submitService := &feedback.Service{Endpoint: server.URL, SiteKey: "test"}

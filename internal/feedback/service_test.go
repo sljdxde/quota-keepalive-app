@@ -84,7 +84,7 @@ func TestSubmitRedactsAndPostsPayload(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 			t.Fatal(err)
 		}
-		_, _ = w.Write([]byte(`{"ok":true,"number":42,"url":"https://github.com/sljdxde/quota-keepalive/issues/42"}`))
+		_, _ = w.Write([]byte(`{"ok":true,"number":42,"url":"https://github.com/sljdxde/quota-keepalive-app/issues/42"}`))
 	}))
 	defer server.Close()
 
