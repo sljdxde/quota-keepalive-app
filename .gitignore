@@ -37,3 +37,8 @@ out/
 
 # 插件是独立仓库（sljdxde/quota-keepalive），不再放应用仓库。
 /packages/quota-keepalive-plugin/
+
+# 设计文档与内部资料：只留在本地，不进代码仓库。
+# 仓库只放可构建、可发布的代码与运行时资源。
+/docs/
+/GLOSSARY.md
