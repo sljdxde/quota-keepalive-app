@@ -27,20 +27,21 @@ var frontendFS embed.FS
 
 // App 持有 Wails 应用与运行期窗口。
 type App struct {
-	wails      *application.App
-	tray       *application.SystemTray
-	panel      *application.WebviewWindow
-	bar        *application.WebviewWindow
-	main       *application.WebviewWindow
-	theme      string
-	tokenSpeed *tokenspeed.Service
-	status     func(context.Context) (status.View, error)
-	windowMu   sync.Mutex
-	startedAt  atomic.Int64
-	dockShow   atomic.Bool
-	failureOn  atomic.Bool
-	dockApply  func(bool)
-	quitStop   func()
+	wails         *application.App
+	tray          *application.SystemTray
+	panel         *application.WebviewWindow
+	bar           *application.WebviewWindow
+	main          *application.WebviewWindow
+	theme         string
+	tokenSpeed    *tokenspeed.Service
+	status        func(context.Context) (status.View, error)
+	providersWarm func(context.Context) error
+	windowMu      sync.Mutex
+	startedAt     atomic.Int64
+	dockShow      atomic.Bool
+	failureOn     atomic.Bool
+	dockApply     func(bool)
+	quitStop      func()
 }
 
 const panelGap = 8
@@ -101,7 +102,8 @@ func New(deps Deps) *App {
 	}
 	result := &App{
 		theme: theme, tokenSpeed: deps.TokenSpeed,
-		status: deps.Status, dockApply: dockApply,
+		status: deps.Status, providersWarm: deps.ProvidersWarm,
+		dockApply: dockApply,
 	}
 	result.dockShow.Store(showDock)
 	deps.DockIconVisible = result.setDockPreference
@@ -570,6 +572,11 @@ func (a *App) Run() error {
 	if a.tokenSpeed != nil {
 		a.tokenSpeed.Start(ctx)
 		go a.monitorTokenSpeed(ctx)
+	}
+	// 打开窗口时才读供应商列表会现场冷启动随包 Bun 运行时，首屏因此空几秒。
+	// 启动即预热一次，把运行时与模型目录都准备好，首次打开就是现成的投影。
+	if a.providersWarm != nil {
+		go func() { _ = a.providersWarm(ctx) }()
 	}
 	if a.status != nil {
 		statusDone = make(chan struct{})

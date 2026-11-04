@@ -136,6 +136,10 @@ func (a *App) guiDeps() gui.Deps {
 		TokenSpeed:    tokenSpeed,
 		Accounts:      bridge,
 		ProvidersList: a.providers.List,
+		ProvidersWarm: func(ctx context.Context) error {
+			_, err := a.providers.List(ctx)
+			return err
+		},
 		ProviderBeginLogin: func(ctx context.Context, provider string, method int, inputs map[string]string) (providers.LoginView, error) {
 			view, err := a.providers.BeginLogin(ctx, provider, method, inputs)
 			if err == nil && view.Status == "authorized" && view.URL != "" {

@@ -67,6 +67,9 @@ type Deps struct {
 	Accounts AccountBridge
 	// Providers 是随包供应商插件的统一管理投影。
 	ProvidersList func(ctx context.Context) (providers.View, error)
+	// ProvidersWarm 在启动时预热供应商运行时与模型目录，避免首次打开页面
+	// 现场冷启动 Bun 进程导致首屏空白。
+	ProvidersWarm func(ctx context.Context) error
 	// ProviderBeginLogin starts or advances a provider login.
 	ProviderBeginLogin func(ctx context.Context, provider string, method int, inputs map[string]string) (providers.LoginView, error)
 	// ProviderFinishLogin completes an OAuth callback.

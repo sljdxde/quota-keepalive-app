@@ -203,6 +203,11 @@ type Service struct {
 	host    Runtime
 	authRef capabilities.CredentialRef
 	runMu   sync.Mutex
+	// listMu serializes page loads: the app opens the check-in and app pages
+	// together, and each one reads/synchronizes accounts. Letting two Lists
+	// overlap doubles the runtime round-trip and races their SQLite writes,
+	// which made the first paint come and go.
+	listMu sync.Mutex
 
 	creditMu     sync.Mutex
 	creditSynced map[string]bool
@@ -273,6 +278,13 @@ func (s *Service) runtime(ctx context.Context) (Runtime, error) {
 	}
 	s.host = host
 	return host, nil
+}
+
+// Warm starts the provider runtime ahead of the first page load so the UI does
+// not wait for the Bun host to come up while it has nothing to show.
+func (s *Service) Warm(ctx context.Context) error {
+	_, err := s.runtime(ctx)
+	return err
 }
 
 func (s *Service) persistAuth(ctx context.Context, host Runtime) error {
@@ -455,6 +467,8 @@ func (s *Service) Close() error {
 
 // List synchronizes provider metadata and accounts, then returns the page view.
 func (s *Service) List(ctx context.Context) (View, error) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
 	host, err := s.runtime(ctx)
 	if err != nil {
 		return View{}, err

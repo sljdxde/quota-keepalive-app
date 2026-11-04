@@ -545,21 +545,35 @@ async function loadProviderInfo() {
   } catch (_) {}
 }
 
+// 供应商运行时是随包 Bun 进程，首次读取要冷启动；首次加载时先把状态行写成
+// “加载中”，并在失败时做有限次自动重试，避免面板一直停在默认的空状态。
+let panelLoadedOnce = false;
+let panelRetryCount = 0;
+
 function refresh() {
   if (refreshInFlight) return refreshInFlight;
   const button = document.getElementById("refresh");
   button.disabled = true;
+  if (!panelLoadedOnce) {
+    document.getElementById("checkin-updated").textContent = "加载中…";
+  }
   refreshInFlight = (async function () {
     try {
       const status = asJSON(await Bound.Status());
       await loadProviderInfo();
       render(status);
+      panelLoadedOnce = true;
+      panelRetryCount = 0;
     } catch (_) {
       fillEmpty(
         document.getElementById("targets"),
         "加载失败",
-        "请稍后重试，或打开主窗口检查供应商状态。"
+        "供应商运行时尚未就绪，正在自动重试；也可打开主窗口检查供应商状态。"
       );
+      if (!panelLoadedOnce && panelRetryCount < 5) {
+        panelRetryCount += 1;
+        window.setTimeout(function () { refresh(); }, 2500);
+      }
     } finally {
       button.disabled = false;
       refreshInFlight = null;

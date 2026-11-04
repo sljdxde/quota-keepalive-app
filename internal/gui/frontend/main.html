@@ -4874,15 +4874,33 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   let appsDisabledOpen = false;
 
+  // 供应商运行时冷启动期间读取可能失败；这里做有限次自动重试，避免首屏停在
+  // 错误提示上要用户手动刷新。失败次数有上限，真坏时不会无限重试。
+  const renderRetryCounts = {};
+  function retryRenderOnce(key, fn) {
+    const count = renderRetryCounts[key] || 0;
+    if (count >= 5) return;
+    renderRetryCounts[key] = count + 1;
+    window.setTimeout(function () { fn(); }, 2500);
+  }
+
   async function renderApps() {
     const body = document.getElementById("apps-body");
-    body.innerHTML = "";
+    // 供应商运行时是随包 Bun 进程，首次读取要冷启动；在没有数据之前先说明
+    // 正在加载，而不是让用户看到一片空白以为是坏了。
+    if (!body.dataset.loaded) {
+      body.innerHTML = '<div class="empty"><b>正在加载供应商…</b>首次打开需要启动随包供应商运行时，请稍候。</div>';
+    } else {
+      body.innerHTML = "";
+    }
     let view;
     try {
       view = asJSON(await Bound.ProvidersList());
+      body.dataset.loaded = "1";
     } catch (_) {
-      body.innerHTML = '<div class="empty"><b>无法读取供应商</b>请检查随包供应商插件后刷新重试。</div>';
+      body.innerHTML = '<div class="empty"><b>无法读取供应商</b>供应商运行时尚未就绪，正在自动重试；也可点右上角刷新。</div>';
       document.getElementById("apps-badge").textContent = "读取失败";
+      retryRenderOnce("apps", renderApps);
       return;
     }
 
@@ -5314,9 +5332,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   async function renderAccounts() {
     const request = ++accountsRenderGeneration;
+    const preloadBody = document.getElementById("accounts-body");
+    if (!preloadBody.dataset.loaded) {
+      preloadBody.innerHTML = '<div class="empty"><b>正在加载供应商账号…</b>首次打开需要启动随包供应商运行时，请稍候。</div>';
+    }
     let view;
     try {
       view = await loadProviders();
+      preloadBody.dataset.loaded = "1";
       if (request !== accountsRenderGeneration) return;
       const resolved = resolveAccountProviderView(
         view.providers || [],
@@ -5326,7 +5349,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       showAccountsMessage("");
     } catch (_) {
       if (request !== accountsRenderGeneration) return;
-      showAccountsMessage("无法读取供应商账号，请重试。");
+      showAccountsMessage("供应商运行时尚未就绪，正在自动重试…");
+      retryRenderOnce("accounts", renderAccounts);
       return;
     }
     updateAccountsSummary(view);
