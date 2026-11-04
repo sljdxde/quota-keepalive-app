@@ -106,10 +106,14 @@ func TestFirstRunInstalls(t *testing.T) {
 	if len(f.registered) != 1 || f.registered[0] != exe {
 		t.Errorf("App Paths 注册 %v，期望 [%s]", f.registered, exe)
 	}
-	if st := readState(t, configDir); st != (state{
-		Schema: schemaVersion, ExePath: exe, Version: "1.2.3", ShortcutCreated: true,
-	}) {
+	st := readState(t, configDir)
+	if st.Schema != schemaVersion || st.ExePath != exe ||
+		st.Version != "1.2.3" || !st.ShortcutCreated {
 		t.Errorf("状态文件内容 = %+v", st)
+	}
+	// 首次安装后记录快捷方式指纹，供后续启动跳过 COM 校验。
+	if st.ShortcutModNS == 0 || st.ShortcutSize == 0 {
+		t.Errorf("状态文件缺少快捷方式指纹: %+v", st)
 	}
 	if perm := filePerm(t, filepath.Join(configDir, stateName)); perm != 0o600 {
 		t.Errorf("状态文件权限 = %#o，期望 0600", perm)
@@ -147,9 +151,59 @@ func TestSecondRunIsIdempotent(t *testing.T) {
 	if got := readFile(t, filepath.Join(configDir, stateName)); got != stateBefore {
 		t.Errorf("状态文件被重写:\nbefore=%q\nafter =%q", stateBefore, got)
 	}
-	// 每次都会检查现有快捷方式是否还指向 exe，这是幂等实现的读路径。
+	// 第二次启动时快捷方式指纹未变：应跳过 COM 校验，只做状态比对。
+	if len(f.seen) != 1 {
+		t.Errorf("快捷方式检查次数 = %d，期望 1（第二次跳过 COM 校验）", len(f.seen))
+	}
+}
+
+// 快捷方式被外部改动（mtime 变化）后：必须重新走校验，不能一直跳过。
+func TestChangedShortcutIsRechecked(t *testing.T) {
+	f, sys := newFake(t)
+	configDir, exe := config(t)
+	if err := ensure(configDir, exe, "1.2.3", sys); err != nil {
+		t.Fatal(err)
+	}
+	// 模拟其它程序重写快捷方式：内容与 mtime 都变。
+	if err := os.WriteFile(f.lnk(), []byte(exe+"-changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensure(configDir, exe, "1.2.3", sys); err != nil {
+		t.Fatal(err)
+	}
 	if len(f.seen) != 2 {
-		t.Errorf("快捷方式检查次数 = %d，期望 2", len(f.seen))
+		t.Errorf("快捷方式检查次数 = %d，期望 2（改动后重新校验）", len(f.seen))
+	}
+	if got := readFile(t, f.lnk()); got != exe {
+		t.Errorf("快捷方式应被指回 %q，实际 %q", exe, got)
+	}
+}
+
+// 旧版状态文件没有指纹记录：必须校验一次并补上，之后才能走快路径。
+func TestLegacyStateIsValidatedOnce(t *testing.T) {
+	f, sys := newFake(t)
+	configDir, exe := config(t)
+	if err := ensure(configDir, exe, "1.2.3", sys); err != nil {
+		t.Fatal(err)
+	}
+	// 去掉指纹，模拟旧版本写下的状态文件。
+	st := readState(t, configDir)
+	st.ShortcutModNS, st.ShortcutSize = 0, 0
+	data, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, stateName), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensure(configDir, exe, "1.2.3", sys); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.seen) != 2 {
+		t.Errorf("旧状态应触发一次校验，检查次数 = %d，期望 2", len(f.seen))
+	}
+	if st := readState(t, configDir); st.ShortcutModNS == 0 || st.ShortcutSize == 0 {
+		t.Errorf("校验后应补上指纹: %+v", st)
 	}
 }
 
@@ -349,6 +403,11 @@ func TestShortcutRepairFailure(t *testing.T) {
 	f, sys := newFake(t)
 	configDir, exe := config(t)
 	if err := ensure(configDir, exe, "1.2.3", sys); err != nil {
+		t.Fatal(err)
+	}
+	// 先让快捷方式发生变化（mtime/内容都变），确保本轮真的走修复路径；
+	// 指纹未变时 ensure 会跳过 COM 校验（见 TestSecondRunIsIdempotent）。
+	if err := os.WriteFile(f.lnk(), []byte(exe+"-changed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	f.shortcutErr = errors.New("controlled repair failure")

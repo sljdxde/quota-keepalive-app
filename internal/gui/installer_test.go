@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -50,8 +51,16 @@ func TestInstallerWindowOptions(t *testing.T) {
 	}
 }
 
+// noExistingInstall 是安装向导测试用的探测接缝：恒未命中。
+// 否则结果会取决于跑测试的机器上是否恰好装过 QKA（issue #8 的兜底探测会
+// 命中 %LOCALAPPDATA%\Programs\Quota Keepalive\QKA.exe）。
+func noExistingInstall() string { return "" }
+
 func TestNewInstallerWiresWindowAndService(t *testing.T) {
-	deps := InstallerDeps{ConfigDir: t.TempDir(), Version: "0.1.16", SelfPath: "/tmp/QKA.exe"}
+	deps := InstallerDeps{
+		ConfigDir: t.TempDir(), Version: "0.1.16", SelfPath: "/tmp/QKA.exe",
+		DetectExisting: noExistingInstall,
+	}
 	inst := NewInstaller(deps)
 	if inst.wails == nil || inst.window == nil || inst.service == nil {
 		t.Fatal("NewInstaller 未装配完整")
@@ -68,13 +77,22 @@ func TestNewInstallerWiresWindowAndService(t *testing.T) {
 		t.Fatalf("没有安装记录时 Status = %+v，want install 模式", got)
 	}
 
-	inst.onApplicationStarted(nil)
+	// Windows 上不能在没有事件循环的测试进程里调 onApplicationStarted：
+	// 它内部的 Show 会 dispatchOnMainThread，没有 Run() 建立的主线程时直接
+	// 空指针 panic，并中断整个包的测试进程（后续测试全被吞掉）。
+	if runtime.GOOS != "windows" {
+		inst.onApplicationStarted(nil)
+	}
 
 	if dir := inst.service.DefaultDir(); dir == "" {
 		t.Fatal("默认安装目录不应为空（测试机 HOME 一定存在）")
 	}
-	if _, err := inst.service.BrowseDir(""); err == nil || !strings.Contains(err.Error(), "不支持目录选择") {
-		t.Fatalf("非 Windows 平台的目录选择应给出清晰错误，err=%v", err)
+	// 只有非 Windows 才走「不支持目录选择」的兜底分支；Windows 上会真的弹
+	// 系统文件夹对话框，在无事件循环的测试进程里调它必然 panic。
+	if runtime.GOOS != "windows" {
+		if _, err := inst.service.BrowseDir(""); err == nil || !strings.Contains(err.Error(), "不支持目录选择") {
+			t.Fatalf("非 Windows 平台的目录选择应给出清晰错误，err=%v", err)
+		}
 	}
 	// 默认 quit/事件实现也不应 panic。
 	inst.service.QuitInstaller()
@@ -247,6 +265,11 @@ func TestInstallerReportWithoutEmitter(t *testing.T) {
 }
 
 func TestLaunchInstalledRunsProgram(t *testing.T) {
+	// 用例靠一个 shebang 脚本冒充「已安装的 QKA」来验证真的启动了进程，
+	// Windows 上 .exe 不能是 shell 脚本（会报「不是有效的 Win32 应用」）。
+	if runtime.GOOS == "windows" {
+		t.Skip("用 sh 脚本冒充 exe 只在类 Unix 上成立")
+	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "launched")
 	script := "#!/bin/sh\nprintf '%s' \"$*\" > \"$QKA_INSTALLER_LAUNCH_MARKER\"\n"
@@ -372,26 +395,30 @@ func TestInstallerBindingsMatchServiceMethods(t *testing.T) {
 }
 
 func TestResolveStartDir(t *testing.T) {
+	// 路径一律用 filepath.Join 拼：case 里写死 POSIX 绝对路径时，Windows 的
+	// filepath.Clean 会把 "/a/b" 规整成 "\a\b"，与夹具键对不上而误判。
+	base := filepath.Join("home", "me")
+	local := filepath.Join(base, "AppData", "Local")
+	deep := filepath.Join(local, "Programs", "Quota Keepalive")
 	existing := map[string]bool{
-		"/home/me":               true,
-		"/home/me/AppData/Local": true,
-		"/home/me/AppData/Local/Programs/Quota Keepalive": false,
+		filepath.Clean(base):  true,
+		filepath.Clean(local): true,
 	}
 	exists := func(path string) bool { return existing[path] }
 
 	if got := resolveStartDir("  ", exists); got != "" {
 		t.Fatalf("空初始目录应返回空串，实际 %q", got)
 	}
-	if got := resolveStartDir("/home/me/AppData/Local/Programs/Quota Keepalive", exists); got != "/home/me/AppData/Local" {
+	if got := resolveStartDir(deep, exists); got != local {
 		t.Fatalf("不存在的目录应向上收敛到最近存在的父目录，实际 %q", got)
 	}
-	if got := resolveStartDir("/home/me/AppData/Local/Programs/Quota Keepalive/", exists); got != "/home/me/AppData/Local" {
+	if got := resolveStartDir(deep+string(filepath.Separator), exists); got != local {
 		t.Fatalf("末尾分隔符不应影响结果，实际 %q", got)
 	}
-	if got := resolveStartDir("/home/me", exists); got != "/home/me" {
+	if got := resolveStartDir(base, exists); got != base {
 		t.Fatalf("已存在的目录应原样返回，实际 %q", got)
 	}
-	if got := resolveStartDir("/nowhere/at/all", exists); got != "" {
+	if got := resolveStartDir(filepath.Join("nowhere", "at", "all"), exists); got != "" {
 		t.Fatalf("整条路径都不存在时应返回空串，实际 %q", got)
 	}
 }
@@ -415,9 +442,23 @@ func TestDirExists(t *testing.T) {
 
 func TestInstallerStatusFor(t *testing.T) {
 	configDir := t.TempDir()
-	status := installerStatusFor(InstallerDeps{ConfigDir: configDir, Version: "0.1.16", SelfPath: "/downloads/QKA.exe"})
+	status := installerStatusFor(InstallerDeps{
+		ConfigDir: configDir, Version: "0.1.16", SelfPath: "/downloads/QKA.exe",
+		DetectExisting: noExistingInstall,
+	})
 	if status.Mode != "install" || status.Version != "0.1.16" || status.InstalledVersion != "" || status.InstallDir != "" {
 		t.Fatalf("无记录时 Status = %+v", status)
+	}
+
+	// 记录丢失但探测到残留安装：应判为升级，并把面板锁定到探测到的目录。
+	status = installerStatusFor(InstallerDeps{
+		ConfigDir: configDir, Version: "0.1.16", SelfPath: "/downloads/QKA.exe",
+		DetectExisting: func() string {
+			return filepath.Join(configDir, "Programs", "Quota Keepalive", "QKA.exe")
+		},
+	})
+	if status.Mode != "upgrade" || status.InstallDir != filepath.Join(configDir, "Programs", "Quota Keepalive") {
+		t.Fatalf("探测到残留安装时应判为就地升级，Status = %+v", status)
 	}
 
 	installedExe := filepath.Join(configDir, "Programs", "Quota Keepalive", "QKA.exe")
@@ -428,11 +469,17 @@ func TestInstallerStatusFor(t *testing.T) {
 		ExePath:     installedExe,
 		InstalledAt: "2026-01-01T00:00:00Z",
 	})
-	status = installerStatusFor(InstallerDeps{ConfigDir: configDir, Version: "0.1.16", SelfPath: "/downloads/QKA.exe"})
+	status = installerStatusFor(InstallerDeps{
+		ConfigDir: configDir, Version: "0.1.16", SelfPath: "/downloads/QKA.exe",
+		DetectExisting: noExistingInstall,
+	})
 	if status.Mode != "upgrade" || status.InstalledVersion != "0.1.15" || status.InstallDir != filepath.Dir(installedExe) {
 		t.Fatalf("下载副本应判定为升级，Status = %+v", status)
 	}
-	status = installerStatusFor(InstallerDeps{ConfigDir: configDir, Version: "0.1.16", SelfPath: installedExe})
+	status = installerStatusFor(InstallerDeps{
+		ConfigDir: configDir, Version: "0.1.16", SelfPath: installedExe,
+		DetectExisting: noExistingInstall,
+	})
 	if status.Mode != "none" {
 		t.Fatalf("已安装的 exe 应判定为 none，Status = %+v", status)
 	}

@@ -105,14 +105,20 @@ func TestRunNoArgsInstallerMode(t *testing.T) {
 	oldGOOS, oldFlavor := runtimeGOOS, BuildFlavor
 	oldPlan, oldNew, oldRunGoroutine := planInstall, newInstallerWizard, runInstallWizardApp
 	oldTray, oldExecutable := trayModeHandler, executablePath
+	oldRuntimeReady := runtimeReady
 	t.Cleanup(func() {
 		runtimeGOOS, BuildFlavor = oldGOOS, oldFlavor
 		planInstall, newInstallerWizard, runInstallWizardApp = oldPlan, oldNew, oldRunGoroutine
 		trayModeHandler, executablePath = oldTray, oldExecutable
+		runtimeReady = oldRuntimeReady
 	})
 
 	runtimeGOOS = "windows"
 	BuildFlavor = "gui"
+	// 测试二进制没有 embeddedruntime 标签，显式声明「这次构建可安装」，
+	// 否则向导会在前置检查处提前失败（那条分支由
+	// TestRunInstallWizardRequiresEmbeddedRuntime 覆盖）。
+	runtimeReady = func() bool { return true }
 	executablePath = func() (string, error) { return "/downloads/QKA-0.1.16.exe", nil }
 
 	configDir := t.TempDir()
@@ -186,10 +192,13 @@ func TestRunNoArgsInstallerMode(t *testing.T) {
 
 func TestRunInstallWizardResolvesSelfPath(t *testing.T) {
 	oldNew, oldRunGoroutine, oldExecutable := newInstallerWizard, runInstallWizardApp, executablePath
+	oldRuntimeReady := runtimeReady
 	t.Cleanup(func() {
 		newInstallerWizard, runInstallWizardApp = oldNew, oldRunGoroutine
 		executablePath = oldExecutable
+		runtimeReady = oldRuntimeReady
 	})
+	runtimeReady = func() bool { return true }
 
 	configDir := t.TempDir()
 	env := installerTestEnv(configDir)
@@ -218,6 +227,51 @@ func TestRunInstallWizardResolvesSelfPath(t *testing.T) {
 	runInstallWizardApp = func(*gui.Installer) error { return errors.New("loop failed") }
 	if err := runInstallWizard(env); err == nil || !strings.Contains(err.Error(), "loop failed") {
 		t.Fatalf("事件循环错误应向上抛，err=%v", err)
+	}
+}
+
+// TestRunInstallWizardRequiresEmbeddedRuntime 覆盖「GUI 版但没嵌运行时」：
+// 必须在打开向导之前就失败并给出可执行的修法，而不是让用户在最后一步
+// 看到「解压运行时失败」。
+func TestRunInstallWizardRequiresEmbeddedRuntime(t *testing.T) {
+	oldNew, oldRunGoroutine, oldRuntimeReady := newInstallerWizard, runInstallWizardApp, runtimeReady
+	oldShowBlocked := showInstallBlocked
+	t.Cleanup(func() {
+		newInstallerWizard, runInstallWizardApp = oldNew, oldRunGoroutine
+		runtimeReady = oldRuntimeReady
+		showInstallBlocked = oldShowBlocked
+	})
+
+	wizardCreated := false
+	newInstallerWizard = func(gui.InstallerDeps) *gui.Installer {
+		wizardCreated = true
+		return &gui.Installer{}
+	}
+	runInstallWizardApp = func(*gui.Installer) error {
+		t.Fatal("未内嵌运行时时不应进入向导事件循环")
+		return nil
+	}
+	runtimeReady = func() bool { return false }
+	// windowsgui 没有可见 stderr：拦截原生弹窗，断言用户确实被告知原因。
+	var dialogTitle, dialogBody string
+	showInstallBlocked = func(title, body string) {
+		dialogTitle, dialogBody = title, body
+	}
+
+	err := runInstallWizard(installerTestEnv(t.TempDir()))
+	if err == nil {
+		t.Fatal("未内嵌运行时必须失败")
+	}
+	for _, want := range []string{"没有内嵌运行时", "build-windows"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("错误消息缺少 %q: %v", want, err)
+		}
+	}
+	if dialogTitle == "" || !strings.Contains(dialogBody, "没有内嵌运行时") {
+		t.Fatalf("应弹出原生提示说明原因，实际 title=%q body=%q", dialogTitle, dialogBody)
+	}
+	if wizardCreated {
+		t.Fatal("应在创建向导之前就拦住")
 	}
 }
 

@@ -28,6 +28,10 @@ type InstallerDeps struct {
 	Version string
 	// SelfPath 是当前正在运行的 exe 路径，安装时复制到安装目录。
 	SelfPath string
+	// DetectExisting 是「无安装记录时探测既有安装」的接缝；nil 表示用默认
+	// 实现（默认目录/App Paths/开始菜单快捷方式）。单测注入空实现，避免
+	// 结果取决于真机是否恰好装过 QKA。
+	DetectExisting func() string
 }
 
 // Installer 是安装向导的 Wails 应用与窗口。
@@ -174,17 +178,28 @@ func newInstallerService(deps InstallerDeps) *InstallerService {
 // installerStatusFor 根据安装记录与当前 exe 路径判定向导模式，并把升级展示需要
 // 的旧版本与安装目录一并算好（页面加载时通过 Status() 取）。
 func installerStatusFor(deps InstallerDeps) InstallerStatus {
+	detect := deps.DetectExisting
+	if detect == nil {
+		detect = installer.DetectExistingInstall
+	}
 	status := InstallerStatus{
-		Mode:    installer.Plan(deps.ConfigDir, deps.SelfPath).String(),
+		Mode:    installer.PlanWith(deps.ConfigDir, deps.SelfPath, detect).String(),
 		Version: deps.Version,
 	}
 	if status.Mode != installer.ModeUpgrade.String() {
 		return status
 	}
-	// Plan 返回 upgrade 的前提就是记录可读，这里再读一次拿展示字段。
+	// Plan 返回 upgrade 的前提是记录可读，或探测到了残留安装（install.json 被
+	// 用户删掉/写坏，见 installer 的 detect.go）；这里再读一次拿展示字段。
 	if record, ok := installer.Load(deps.ConfigDir); ok {
 		status.InstalledVersion = record.Version
 		status.InstallDir = record.InstallDir
+		return status
+	}
+	// 记录丢失但探测到残留安装：已安装版本号探测不出来，留空由页面显示
+	// 「旧版」；安装位置用探测到的目录，向用户讲清楚「将就地升级」。
+	if detected := detect(); detected != "" {
+		status.InstallDir = filepath.Dir(detected)
 	}
 	return status
 }

@@ -74,6 +74,24 @@ type state struct {
 	Version string `json:"version"`
 	// ShortcutCreated 记录我们建过快捷方式：用户删掉后不再重建。
 	ShortcutCreated bool `json:"shortcut_created"`
+	// ShortcutModNS/ShortcutSize 记录上次校验后快捷方式文件的 mtime 与大小。
+	// 两者都没变说明没有其它程序改过它，下一轮启动可以跳过 COM 校验
+	// （WScript.Shell 冷启动在 Windows 上要几十到几百毫秒）。
+	ShortcutModNS int64 `json:"shortcut_mod_ns,omitempty"`
+	ShortcutSize  int64 `json:"shortcut_size,omitempty"`
+}
+
+// shortcutUnchanged 报告 lnk 的 mtime/大小是否与状态文件记录一致。
+// 记录缺失（旧版状态文件）时返回 false，走一次完整校验并补上记录。
+func shortcutUnchanged(lnk string, st state) bool {
+	if st.ShortcutModNS == 0 || st.ShortcutSize == 0 {
+		return false
+	}
+	info, err := os.Stat(lnk)
+	if err != nil || info.IsDir() {
+		return false
+	}
+	return info.ModTime().UnixNano() == st.ShortcutModNS && info.Size() == st.ShortcutSize
 }
 
 // ensure 是 Ensure 的平台无关主体：校验入参、读状态、按需注册 App Paths、
@@ -130,6 +148,13 @@ func ensure(configDir, exePath, version string, sys system) (err error) {
 	created := st.ShortcutCreated
 	switch {
 	case fileExists(lnk):
+		// 快路径：状态文件记录的是当前 exe，且 lnk 自上次写入后没被改动，
+		// 说明它仍指向正确位置——跳过 COM 校验。
+		if found && st.ShortcutCreated && samePath(st.ExePath, exe) && shortcutUnchanged(lnk, st) {
+			applog.Debugf("selfinstall", "开始菜单快捷方式未变化，跳过校验: %s", lnk)
+			created = true
+			break
+		}
 		// 快捷方式还在：把它指回当前 exe（已经指向时底层实现不动它）。
 		if err := sys.writeShortcut(lnk, exe); err != nil {
 			return fmt.Errorf("selfinstall: 修复开始菜单快捷方式: %w", err)
@@ -152,6 +177,10 @@ func ensure(configDir, exePath, version string, sys system) (err error) {
 	}
 
 	next := state{Schema: schemaVersion, ExePath: exe, Version: version, ShortcutCreated: created}
+	if info, err := os.Stat(lnk); err == nil && !info.IsDir() {
+		next.ShortcutModNS = info.ModTime().UnixNano()
+		next.ShortcutSize = info.Size()
+	}
 	if found && next == st {
 		applog.Debugf("selfinstall", "自安装状态未变化，跳过写入")
 		return nil // 内容没变：不重写状态文件，保证重复 Ensure 无副作用

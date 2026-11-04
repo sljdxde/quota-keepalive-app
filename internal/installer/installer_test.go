@@ -434,6 +434,27 @@ func TestInstallFailureLeavesRetryableState(t *testing.T) {
 		assertInstallFails(t, opts, "解压运行时失败", configDir)
 	})
 
+	// 构建没内嵌运行时（漏了 embeddedruntime 标签）是最常见的一类失败：
+	// 错误消息必须带可执行的修法，而不是只有一句技术描述。
+	t.Run("未内嵌运行时应给出修法", func(t *testing.T) {
+		opts, configDir, _ := newSetup(t)
+		ensureRuntime = func(string, string) (runtimebundle.Paths, error) {
+			return runtimebundle.Paths{}, runtimebundle.ErrUnavailable
+		}
+		_, err := Install(context.Background(), opts)
+		if err == nil {
+			t.Fatal("未内嵌运行时必须失败")
+		}
+		for _, want := range []string{"解压运行时失败", "没有内嵌运行时", "build-windows"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("错误消息缺少 %q: %v", want, err)
+			}
+		}
+		if record, ok := Load(configDir); ok {
+			t.Fatalf("失败后不应写安装记录: %+v", record)
+		}
+	})
+
 	t.Run("快捷方式失败", func(t *testing.T) {
 		opts, configDir, _ := newSetup(t)
 		ensureRuntime = func(string, string) (runtimebundle.Paths, error) { return runtimebundle.Paths{}, nil }
@@ -575,6 +596,10 @@ func TestModeString(t *testing.T) {
 }
 
 func TestPlan(t *testing.T) {
+	// 记录缺失分支现在会探测真机残留安装；固定接缝保证测试不受
+	// 运行测试的机器是否恰好装过 QKA 影响。
+	withDetect(t, func() string { return "" })
+
 	configDir := t.TempDir()
 	installedExe := filepath.Join(configDir, "Programs", "Quota Keepalive", ExeName)
 	record := Record{
@@ -592,6 +617,23 @@ func TestPlan(t *testing.T) {
 		t.Fatalf("空配置目录时 Plan = %v，want install", got)
 	}
 
+	// 记录缺失但探测到残留安装（用户手删配置目录后重跑）→ 升级/修复，
+	// 而不是弹全新安装向导让用户装出第二份。
+	detectedExe := filepath.Join(t.TempDir(), "Quota Keepalive", ExeName)
+	withDetect(t, func() string { return detectedExe })
+	if got := Plan(configDir, filepath.Join(configDir, "Downloads", "QKA-0.1.16.exe")); got != ModeUpgrade {
+		t.Fatalf("记录缺失但探测到残留安装时 Plan = %v，want upgrade", got)
+	}
+	// 但若探测到的就是正在运行的这份（用户双击的就是已安装副本，只是记录丢了），
+	// 必须直接运行：否则每次启动都弹一次升级向导。
+	if got := Plan(configDir, detectedExe); got != ModeNone {
+		t.Fatalf("记录丢失但运行的正是已安装副本时 Plan = %v，want none", got)
+	}
+	if got := Plan(configDir, strings.ToUpper(detectedExe)); got != ModeNone {
+		t.Fatalf("同一个 exe 的大小写差异也应判 none，Plan = %v", got)
+	}
+	withDetect(t, func() string { return "" })
+
 	seedRecord(t, configDir, record)
 
 	if got := Plan(configDir, installedExe); got != ModeNone {
@@ -608,11 +650,17 @@ func TestPlan(t *testing.T) {
 		t.Fatalf("已有记录但拿不到当前 exe 路径时按升级处理，Plan = %v", got)
 	}
 
-	// 记录损坏 → 当作没装过。
+	// 记录损坏、探测也未命中 → 当作没装过。
 	writeFile(t, filepath.Join(configDir, stateName), []byte("{broken"), 0o600)
 	if got := Plan(configDir, installedExe); got != ModeInstall {
 		t.Fatalf("损坏记录时 Plan = %v，want install", got)
 	}
+	// 记录损坏但探测到残留安装 → 修复，而不是全新安装。
+	withDetect(t, func() string { return detectedExe })
+	if got := Plan(configDir, installedExe); got != ModeUpgrade {
+		t.Fatalf("损坏记录但探测到残留安装时 Plan = %v，want upgrade", got)
+	}
+	withDetect(t, func() string { return "" })
 }
 
 // upgradeSetup 造出「已安装旧版本 + 下载目录里有新版本」的现场。
@@ -787,6 +835,8 @@ func TestUpgradeFailures(t *testing.T) {
 	now = time.Now
 
 	t.Run("没有安装记录", func(t *testing.T) {
+		// 记录缺失时 Upgrade 会兜底探测；固定为未命中，隔离真机状态。
+		withDetect(t, func() string { return "" })
 		root := t.TempDir()
 		selfPath := filepath.Join(root, "new.exe")
 		writeFile(t, selfPath, []byte("x"), 0o700)

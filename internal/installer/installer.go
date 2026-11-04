@@ -5,7 +5,9 @@
 // 「第一次双击」就是安装：本包负责把当前 exe 复制到用户选定的安装目录、解压
 // 内嵌运行时、创建开始菜单快捷方式与 App Paths，最后把结果写进
 // <configDir>/install.json。之后再次运行（包括从安装目录启动）看到这条记录就
-// 直接进托盘，不再弹安装向导。
+// 直接进托盘，不再弹安装向导。记录丢失/损坏时不直接断定「没装过」，而是先做
+// 一次低成本探测（detect.go：默认目录/App Paths/开始菜单快捷方式），探测到
+// 残留安装就按升级/修复处理，避免装出第二份。
 //
 // 状态记录最后写：任何一步失败都只留下「可重试」的中间状态，不会出现
 // 「标记已安装但程序没复制好」的半成品。
@@ -245,16 +247,50 @@ func (m Mode) String() string {
 	}
 }
 
-// Plan 判定这次启动应进入哪种模式：install.json 缺失或损坏 → 首次安装；记录
-// 里的 exe 正是当前进程 → 不需要向导（托盘）；否则（用户双击了下载目录里的
-// 另一个副本）→ 升级。
+// runtimeStepError 给「解压运行时」失败补诊断。最常见的原因是构建时漏了
+// embeddedruntime 标签（GUI 版但没嵌 Bun/adapters/plugins）：那种 exe 无论
+// 重试多少次都装不上，错误原文却只有一句技术描述，用户无从下手。
+func runtimeStepError(err error) error {
+	if errors.Is(err, runtimebundle.ErrUnavailable) {
+		return fmt.Errorf("解压运行时失败：%w；这个 exe 没有内嵌运行时，"+
+			"请用 make build-windows 或 scripts/build-windows-exe.sh 重新构建", err)
+	}
+	return fmt.Errorf("解压运行时失败：%w", err)
+}
+
+// Plan 判定这次启动应进入哪种模式：install.json 缺失或损坏时不能直接断定
+// 「没装过」（issue #8：用户手删配置目录/文件写坏/跨机器拷贝）——再做一次
+// 低成本探测（默认目录/App Paths/开始菜单快捷方式，见 detect.go），探测到
+// 残留安装就按升级/修复处理，把安装目录锁定在探测到的位置，避免装出第二份；
+// 全部未命中才是首次安装。记录可读时：记录里的 exe 正是当前进程 → 不需要
+// 向导（托盘）；否则（用户双击了下载目录里的另一个副本）→ 升级。
 //
 // selfPath 为空时不按「已安装」处理：无法证明当前就是安装目录里的那份，宁可让
 // 用户确认一次升级，也不要把新下载的 exe 当成第二个独立应用跑起来。
 func Plan(configDir, selfPath string) Mode {
+	return PlanWith(configDir, selfPath, DetectExistingInstall)
+}
+
+// PlanWith 是 Plan 的可注入版本：detect 负责「记录缺失时探测既有安装」，
+// 传 nil 表示不做探测（等同「探测未命中」）。GUI 向导把检测接缝透传进来，
+// 单测因此不必依赖真机是否恰好装过 QKA。
+func PlanWith(configDir, selfPath string, detect func() string) Mode {
 	record, ok := Load(configDir)
 	if !ok {
-		return ModeInstall
+		detected := ""
+		if detect != nil {
+			detected = detect()
+		}
+		if detected == "" {
+			return ModeInstall
+		}
+		// 探测到的就是正在运行的这份：说明用户双击的是已安装副本、只是安装
+		// 记录丢了（手删配置目录/文件写坏）。此时不需要向导——运行时早已解压
+		// 好，直接进托盘即可，否则每次启动都要弹一次「升级」。
+		if strings.TrimSpace(selfPath) != "" && samePath(selfPath, detected) {
+			return ModeNone
+		}
+		return ModeUpgrade
 	}
 	if strings.TrimSpace(selfPath) == "" {
 		return ModeUpgrade
@@ -340,7 +376,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 
 	report(StepRuntime, "正在解压运行时…")
 	if _, err := ensureRuntime(opts.ConfigDir, opts.Version); err != nil {
-		return fail(fmt.Errorf("解压运行时失败：%w", err))
+		return fail(runtimeStepError(err))
 	}
 
 	report(StepShortcut, "正在创建开始菜单快捷方式…")
@@ -368,7 +404,8 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 }
 
 // Upgrade 把已安装的程序替换成当前 exe——用户在下载目录双击新版 exe 的场景。
-// 安装目录固定为 install.json 里记录的目录，不提供修改；步骤与 Install 相同，
+// 安装目录固定为 install.json 里记录的目录，不提供修改；记录丢失/损坏但探测
+// 到残留安装（issue #8）时锁定在探测到的目录，就地修复。步骤与 Install 相同，
 // 但「复制」换成「替换」：先确认旧版没在运行，再用临时文件+rename 换掉
 // <InstallDir>\QKA.exe，最后更新 install.json 的版本。
 //
@@ -391,7 +428,14 @@ func Upgrade(ctx context.Context, opts Options) (Result, error) {
 	}
 	record, ok := Load(opts.ConfigDir)
 	if !ok {
-		return fail(errors.New("没有找到已安装版本的记录，无法升级；请重新运行安装向导"))
+		// install.json 丢了不代表程序没了（用户手删配置目录/文件写坏）：按
+		// Plan 的同一套探测找残留安装，找到就锁定探测到的目录就地修复，
+		// 等同一次升级；探测不到才是真的没装过。
+		detected := detectExistingInstall()
+		if detected == "" {
+			return fail(errors.New("没有找到已安装版本的记录，无法升级；请重新运行安装向导"))
+		}
+		record = Record{InstallDir: filepath.Dir(detected), ExePath: detected}
 	}
 	if strings.TrimSpace(opts.SelfPath) == "" {
 		return fail(errors.New("无法定位当前程序路径，不能开始升级"))
@@ -422,7 +466,7 @@ func Upgrade(ctx context.Context, opts Options) (Result, error) {
 
 	report(StepRuntime, "正在解压运行时…")
 	if _, err := ensureRuntime(opts.ConfigDir, opts.Version); err != nil {
-		return fail(fmt.Errorf("解压运行时失败：%w", err))
+		return fail(runtimeStepError(err))
 	}
 
 	report(StepShortcut, "正在刷新开始菜单快捷方式…")
