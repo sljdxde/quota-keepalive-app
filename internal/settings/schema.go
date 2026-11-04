@@ -116,6 +116,20 @@ var Schema = []Field{
 		},
 	},
 	{
+		Key:         "ui_scale",
+		Type:        FieldSelect,
+		Label:       "界面缩放",
+		Description: "「自动」按窗口可用高度收缩整个界面，适合 150% 缩放的笔记本（内容区常常只有 600 像素高，字显得大、内容要被裁掉）。觉得字太小或想更紧凑可手动固定。",
+		Default:     "auto",
+		Options: []Option{
+			{Value: "auto", Label: "自动（推荐）"},
+			{Value: "1", Label: "100%"},
+			{Value: "0.9", Label: "90%"},
+			{Value: "0.85", Label: "85%"},
+			{Value: "0.8", Label: "80%"},
+		},
+	},
+	{
 		Key:         "show_dock_icon",
 		Type:        FieldBool,
 		Label:       "在 Dock 中显示图标",
@@ -135,12 +149,5 @@ var Schema = []Field{
 		Label:       "系统通知",
 		Description: "执行完成后发送系统通知；默认关闭，不打扰。",
 		Default:     false,
-	},
-	{
-		Key:         "feedback_endpoint",
-		Type:        FieldText,
-		Label:       "反馈服务地址",
-		Description: "留空使用内置地址。当前网络打不开内置地址时，可填入自己的转发/代理地址（须 https）。",
-		Default:     "",
 	},
 }
