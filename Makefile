@@ -3,7 +3,9 @@
 # - Windows 双架构单文件发行物：一个自包含 exe（Bun/adapters/plugins 内嵌），
 #   和 magpie 一样没有 zip、没有安装器；真实 Windows 行为需另机验收。
 
-VERSION ?= $(shell git describe --tags --always 2>/dev/null | sed 's/^v//' || echo dev)
+# 版本号单一来源（issue #2）：仓库根 VERSION 文件。环境变量/命令行可覆盖；
+# 发行脚本在 RELEASE=1 或 CI 环境下会拒绝 git describe/dev 兜底。
+VERSION ?= $(shell cat VERSION 2>/dev/null)
 WINVER  := $(shell echo $(VERSION) | sed -E 's/^v//; s/[^0-9.].*//')
 WIN_ARCH ?= all
 DIST    ?= dist
@@ -11,6 +13,15 @@ PKG     := ./cmd/qka
 BUN     := $(shell which bun)
 LDFLAGS := -X qka/internal/cli.Version=$(VERSION)
 GUI_LDFLAGS := $(LDFLAGS) -X qka/internal/cli.BuildFlavor=gui
+# Windows GUI 产物只能在带 embeddedruntime 标签、且先跑过 build/embedassets
+# 的构建里使用：否则双击会进安装向导，却在「解压运行时」一步失败
+# （runtimebundle: 本次构建未内嵌运行时）。这里不再自己拼这两步，统一交给
+# scripts/build-windows-exe.sh（Bun 缓存 + 构建锁 + embedassets + 标签 + verifype）。
+ifeq ($(WIN_ARCH),all)
+WIN_ARCHES := amd64 arm64
+else
+WIN_ARCHES := $(WIN_ARCH)
+endif
 
 .PHONY: build-darwin-arm64 build-darwin-amd64 build-linux build-windows \
 	build-windows-cli release-windows release-macos-arm64 release-macos-amd64 \
@@ -28,22 +39,18 @@ build-linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 		-ldflags "$(LDFLAGS)" -o $(DIST)/build/qka-linux-amd64 $(PKG)
 
+# Windows GUI 产物：必须是自包含 exe（内嵌 Bun/adapters/provider-plugins）。
+# 统一走发行脚本，避免再出现「GUI 版但没嵌运行时」的 exe——那种包能弹安装
+# 向导，却必然在最后一步失败，用户侧表现为「安装失败：解压运行时失败」。
 build-windows:
-	@mkdir -p $(DIST)/build
-	@# go-winres 的 --out 只是文件名前缀、写到当前目录；Go 只识别被编译包目录
-	@# 里的 *.syso。主包在 ./cmd/qka，必须在那个目录生成，否则图标/版本/DPI
-	@# 清单不会进 exe（Windows 上表现为无图标、任务栏无法固定）。
-	@( cd cmd/qka && go run github.com/tc-hib/go-winres@v0.3.3 make \
-		--in ../../build/windows/winres.json --arch amd64,arm64 --out rsrc \
-		--file-version "$(or $(WINVER),0.0.0)" \
-		--product-version "$(or $(WINVER),0.0.0)" )
-	@for arch in amd64 arm64; do \
-		echo "  windows/$$arch GUI"; \
-		CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -trimpath \
-			-ldflags "$(GUI_LDFLAGS) -s -w -H windowsgui" \
-			-o $(DIST)/build/QKA-windows-$$arch.exe $(PKG) || exit 1; \
+	@VERSION="$(VERSION)" DIST="$(abspath $(DIST))" WIN_ARCH="$(WIN_ARCH)" \
+		scripts/build-windows-exe.sh
+	@mkdir -p "$(DIST)/build"
+	@for arch in $(WIN_ARCHES); do \
+		cp "$(DIST)/QKA-$(VERSION)-windows-$$arch.exe" \
+			"$(DIST)/build/QKA-windows-$$arch.exe" || exit 1; \
+		echo "  $(DIST)/build/QKA-windows-$$arch.exe"; \
 	done
-	@rm -f cmd/qka/rsrc_windows_*.syso rsrc_windows_*.syso
 
 # Windowless GUI builds cannot print to a terminal. Keep a console binary for
 # serve/task-run/doctor and other CLI-only workflows.
@@ -69,10 +76,10 @@ release-feed:
 
 # macOS 发布使用可安装 DMG，不再把裸二进制当作更新制品。
 release-macos-arm64:
-	@QKA_VERSION="$(VERSION)" ARCH=arm64 scripts/build-dmg.sh
+	@VERSION="$(VERSION)" ARCH=arm64 scripts/build-dmg.sh
 
 release-macos-amd64:
-	@QKA_VERSION="$(VERSION)" ARCH=amd64 scripts/build-dmg.sh
+	@VERSION="$(VERSION)" ARCH=amd64 scripts/build-dmg.sh
 
 release-macos: release-macos-arm64 release-macos-amd64
 

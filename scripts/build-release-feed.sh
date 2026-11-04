@@ -6,8 +6,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${DIST:-$ROOT/dist}"
-VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --always 2>/dev/null || echo dev)}"
+
+# 版本号（issue #2）：仓库根 VERSION 文件是单一来源，与两个发行脚本一致。
+# 解析顺序：VERSION 环境变量 > VERSION 文件 > git describe（仅本地兜底）；
+# RELEASE=1 / CI 环境下不允许静默回退。
+VERSION="${VERSION:-}"
+if [[ -z "$VERSION" && -f "$ROOT/VERSION" ]]; then
+  VERSION="$(head -n1 "$ROOT/VERSION" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+fi
 VERSION="${VERSION#v}"
+if [[ -z "$VERSION" ]]; then
+  if [[ "${RELEASE:-0}" == "1" || "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "release feed 无法确定版本：缺少 VERSION 环境变量与仓库根 VERSION 文件（CI/RELEASE 不允许回退）" >&2
+    exit 2
+  fi
+  VERSION="$(git -C "$ROOT" describe --tags --always 2>/dev/null || echo dev)"
+fi
+if [[ ! "$VERSION" =~ ^[0-9A-Za-z._+-]+$ ]]; then
+  echo "invalid version: $VERSION" >&2
+  exit 2
+fi
 BASE_URL="${QKA_RELEASE_BASE_URL:-https://github.com/sljdxde/quota-keepalive-app/releases/latest/download}"
 REQUIRE_PLATFORMS="${QKA_REQUIRE_PLATFORMS:-darwin/arm64,darwin/amd64,windows/amd64,windows/arm64}"
 

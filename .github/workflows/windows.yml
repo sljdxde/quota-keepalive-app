@@ -5,6 +5,10 @@ name: windows
 #   - 所有包与测试代码能在 Windows 编译（含 GUI/CLI 双架构）
 #   - CLI 产物真实可执行：用法输出、doctor、task-run 空跑
 #   - 便携包结构与 PE 子系统正确
+#   - GUI 产物是真正的自包含单文件 exe：Bun/adapters/provider-plugins 内嵌
+#     （-tags embeddedruntime + build/embedassets），并经 build/verifype 校验
+#     .rsrc/图标/版本号/manifest。曾发生过「GUI 版但没嵌运行时」的 exe：
+#     能弹安装向导，却在最后一步必然失败（issue #3 同类回归）。
 # 不覆盖：完整单元测试（大量用例断言 POSIX 语义，见下方步骤注释）、
 # WebView2 渲染、托盘、任务计划程序、更新替换——这些必须在 Windows 真机验收。
 
@@ -17,6 +21,8 @@ on:
       - 'internal/**'
       - 'packaging/**'
       - 'scripts/**'
+      - 'build/**'
+      - 'VERSION'
       - 'go.mod'
       - 'go.sum'
       - 'Makefile'
@@ -78,18 +84,32 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "CLI build failed for $arch" }
           }
 
-      - name: Build GUI (requires WebView2 headers from wails)
-        shell: pwsh
+      - name: Cache Bun download (shared with release builds)
+        uses: actions/cache@v4
+        with:
+          # 与 scripts/build-windows-exe.sh 的缓存目录一致（Git Bash 的 $HOME/.cache）。
+          # 命中后不再重复下载 2×53MB 的 Bun 包。
+          path: ~/.cache/qka
+          key: qka-bun-${{ runner.os }}-1.4.4-${{ hashFiles('scripts/build-windows-exe.sh') }}
+
+      - name: Build GUI (self-contained, embedded runtime) and verify PE
+        shell: bash
         env:
           CGO_ENABLED: '0'
         run: |
-          foreach ($arch in @('amd64', 'arm64')) {
-            $env:GOOS = 'windows'
-            $env:GOARCH = $arch
-            $ldflags = "-X qka/internal/cli.Version=0.0.0-ci -X qka/internal/cli.BuildFlavor=gui -s -w -H windowsgui"
-            go build -trimpath -ldflags $ldflags -o "dist/build/QKA-windows-$arch.exe" ./cmd/qka
-            if ($LASTEXITCODE -ne 0) { throw "GUI build failed for $arch" }
-          }
+          set -euo pipefail
+          # 版本号单一来源（issue #2）：仓库根 VERSION 文件；CI 产物加 -ci 后缀，
+          # 避免和正式发行版混淆（脚本会把它规整成 x.y.z 的版本资源）。
+          version="$(head -n1 VERSION | tr -d '\r' | tr -d '[:space:]')-ci"
+          # 必须走发行脚本，不能自己拼 go build：GUI 版依赖内嵌运行时，
+          # 漏掉 build/embedassets 或 -tags embeddedruntime 会产出「能弹安装
+          # 向导、但在解压运行时一步必失败」的 exe（用户侧表现为安装失败）。
+          # 脚本同时负责 go-winres、体积自检与 build/verifype。
+          VERSION="$version" WIN_ARCH=all scripts/build-windows-exe.sh
+          mkdir -p dist/build
+          for arch in amd64 arm64; do
+            cp "dist/QKA-$version-windows-$arch.exe" "dist/build/QKA-windows-$arch.exe"
+          done
 
       - name: Stage portable package (amd64)
         shell: pwsh

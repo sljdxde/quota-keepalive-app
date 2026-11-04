@@ -27,6 +27,7 @@ build/
 !build/windows/winres.json
 !build/windows/icon-*.png
 !build/embedassets/
+!build/verifype/
 dist/
 # 历史 dist 快照由 scripts/build-dmg.sh 之外的手工备份产生，不应进入版本库
 dist.backup-*/
