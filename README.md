@@ -1,6 +1,6 @@
 # Quota Keepalive（桌面应用）
 
-本地 Agent 的额度签到与 Token 速度仪表：一个 Go + Wails v3 的桌面应用，macOS 常驻菜单栏、Windows 常驻托盘。
+本地 Agent 的额度签到与 Token 速度仪表：一个 Go + Wails v3 的桌面应用，macOS 常驻菜单栏，Windows 常驻托盘并提供屏幕顶栏入口。
 
 > 供应商插件（Magpie 用的 npm 包 `quota-keepalive`）是另一个项目：
 > [sljdxde/quota-keepalive-magpie-plugin](https://github.com/sljdxde/quota-keepalive-magpie-plugin)。
@@ -8,8 +8,10 @@
 
 ## 功能
 
-- **签到管理**：供应商 → 账号两级折叠；按账号控制自动签到、查看今日状态与额度；WorkBuddy CN 走官方浏览器登录，账号只在只读验证通过后创建
-- **Token 速度**：实时吞吐与今日总量，覆盖 9 个本地 Agent 数据源（Codex / Claude / Qoder / Qoder CN / WorkBuddy / CodeBuddy / ZCode / OpenCode / DeepSeek Harness）；会话行显示项目名而不是哈希
+- **签到管理**：随包 7 个供应商插件（WorkBuddy / CodeArts / MiniMax / Qoder / Trae / ZCode / OpenCode Zen Free，共 13 个供应商目标）→ 账号两级折叠；按账号控制自动签到、查看今日状态与额度；官方浏览器登录，账号只在只读验证通过后创建，签到结果写入后页面自动刷新
+- **应用管理**：按供应商查看账号与模型数量、启用状态；开关只影响该供应商下的全部账号
+- **Token 速度**：实时吞吐与今日总量，覆盖 9 个本地 Agent 数据源（Codex / Claude / Qoder / Qoder CN / WorkBuddy / CodeBuddy / ZCode / OpenCode / DeepSeek Harness）；按对话聚合，子代理会话并入所属会话，会话行显示会话标题
+- **性能模式**：自动识别软件渲染并按需降级毛玻璃、阴影与 3D 宠物开销，也可在设置里强制开启/关闭
 - **模型测试**：批量多选 + 全选/反选，结论以绿/红点标在模型名上，失败原因在悬停提示里
 - **3D 宠物**：材质归一与骨骼跟随，短按放小技能、长按蓄力放大招
 - **日志**：滚动保留 48 小时，写入口统一脱敏，不落盘密码、令牌与提示词
@@ -21,7 +23,7 @@
 
 | 平台 | 产物 | 说明 |
 | --- | --- | --- |
-| macOS（Apple Silicon） | `QKA-<version>-arm64.dmg` | 拖入「应用程序」即可（已签名并公证） |
+| macOS（Apple Silicon） | `QKA-<version>-arm64.dmg` | 拖入「应用程序」即可（ad-hoc 签名；若系统拦截，右键「打开」或在「隐私与安全性」里放行） |
 | Windows x64（Intel / AMD） | `QKA-<version>-windows-amd64.exe` | 单个 exe：双击进入安装向导，选安装路径后自动装完 |
 | Windows ARM64（骁龙 X 等） | `QKA-<version>-windows-arm64.exe` | 同上，仅架构不同 |
 
@@ -39,7 +41,7 @@ Windows 需要 WebView2 运行时：Win11 自带，Win10 可能没有；缺失�
 
 ## 日志与排障
 
-两个平台的日志都落在配置目录下，默认 info 级别、按天轮转、保留 7 天：
+各平台的日志都落在配置目录下，默认 info 级别、按天轮转、保留 7 天：
 
 - Windows：`%LOCALAPPDATA%\QKA\logs\qka-YYYYMMDD.log`
 - macOS / Linux：`~/.qka/logs/qka-YYYYMMDD.log`
@@ -62,7 +64,7 @@ make release-windows        # Windows 单文件 exe（amd64 + arm64，内嵌运�
 是构建产物，不进版本库。
 
 版本号来自 `git describe --tags`，发布时也可显式指定，例如
-`VERSION=0.1.16 make release-windows`。
+`VERSION=0.1.23 make release-windows`。
 
 ## 开发
 
@@ -73,7 +75,7 @@ node --test internal/gui/frontend-js-tests/*.test.mjs   # 前端 JS 单测
 go vet ./... && gofmt -l .
 ```
 
-仓库保持 100% 语句覆盖率。测试优先使用真实行为（真实 SQLite、真实 zstd 会话文件、真实子进程），不为覆盖率造 mock；确实不可达的分支直接删除而不是硬凑。
+目标保持 100% 语句覆盖率，当前全量约 98.6%：缺口集中在仅 Windows 生效的分支（安装器、WebView2、窗口 chrome）与少量平台桩。测试优先使用真实行为（真实 SQLite、真实 zstd 会话文件、真实子进程），不为覆盖率造 mock；确实不可达的分支直接删除而不是硬凑。
 
 目录速览：
 
@@ -85,6 +87,9 @@ go vet ./... && gofmt -l .
 | `internal/tokenspeed` | Token 统计与速率测量 |
 | `internal/workbuddy` | WorkBuddy CN 官方登录协议移植 |
 | `internal/providerruntime` | bun 托管的适配器运行时 |
+| `internal/applog` | 落盘日志：按天轮转、写入统一脱敏 |
+| `internal/installer`、`internal/runtimebundle`、`internal/selfinstall` | Windows 单文件安装器与内嵌运行时 |
+| `internal/settings`、`internal/schedule`、`internal/scheduler` | 设置项与自动巡检调度 |
 | `adapters/`、`provider-plugins/` | 运行时适配器，打包时必须随程序一起发布 |
 
 ## 发布
@@ -93,8 +98,9 @@ go vet ./... && gofmt -l .
 
 ## 已知限制
 
-- **Windows GUI 未经真机验收**：CI 覆盖「全部包与测试在 Windows 编译通过」与「CLI 真实可执行」，WebView2 渲染、托盘、任务计划程序仍需实机确认
+- **Windows GUI 未经真机验收**：CI 覆盖「全部包与测试在 Windows 编译通过」与「CLI 真实可执行」；WebView2 渲染、托盘、常驻刘海、安装向导与自更新仍需实机确认
 - **反馈入口默认隐藏**：内置反馈服务端尚未部署，提交会失败；功能代码保留，服务可用后由 `FEEDBACK_AVAILABLE` 开关恢复
+- **macOS 包未公证**：DMG 使用 ad-hoc 签名，换机或从网上下载后首次打开可能被 Gatekeeper 拦截，需右键「打开」或在「隐私与安全性」放行
 - Qoder 上游 token 字段恒为 0；OpenCode 无首 token 时间戳，不出实测速率
 - 保活（真实对话续期）功能全局停用
 
