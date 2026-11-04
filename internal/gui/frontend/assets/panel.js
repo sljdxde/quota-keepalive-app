@@ -37,6 +37,9 @@ let currentTargets = [];
 let latestSpeedOutput = 0;
 let latestSpeedActive = false;
 let latestTodayTokens = 0;
+// pendingSpeedSnapshot 暂存非速度页/窗口隐藏时到达的最新快照，
+// 切回速度页时再渲染一次，避免每 750ms 重建隐藏页的 DOM。
+let pendingSpeedSnapshot = null;
 let animationFrame = 0;
 let animatedOutput = 0;
 let speedSeen = false;
@@ -193,6 +196,12 @@ function activateTab(tabId, options) {
     page.classList.toggle("active", active);
   });
   if (petViewer) petViewer.setEnabled(selected === "pet");
+  // 隐藏期间丢弃了速度事件：切回速度页时用最新快照补一次渲染。
+  if (selected === "speed" && pendingSpeedSnapshot) {
+    const pending = pendingSpeedSnapshot;
+    pendingSpeedSnapshot = null;
+    renderSpeed(pending);
+  }
   if (selected === "pet") {
     resetPetGaze();
     renderPet();
@@ -946,12 +955,18 @@ function renderSpeed(raw) {
   badge.textContent = generating > 0 ? String(generating) : compactTokenRate(output);
   if (output > previousOutput + 0.5 && latestSpeedActive) {
     card.classList.remove("rate-bump");
-    void card.offsetWidth;
-    card.classList.add("rate-bump");
+    // 双 rAF 等下一帧再挂 class：不用 void offsetWidth 强制同步 reflow。
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        if (latestSpeedActive) card.classList.add("rate-bump");
+      });
+    });
+    // 监听只挂在真正触发动画的路径上：此前每次 renderSpeed 都注册一个
+    // animationend（无动画时永不触发），空闲一整天会累积数万个闭包。
+    card.addEventListener("animationend", function () {
+      card.classList.remove("rate-bump");
+    }, { once: true });
   }
-  card.addEventListener("animationend", function () {
-    card.classList.remove("rate-bump");
-  }, { once: true });
   seedSpeedHistory(output);
   speedHistory.shift();
   speedHistory.push(output);
@@ -1727,7 +1742,14 @@ Events.On("common:WindowShow", function (event) {
   if (activeTab === "pet") renderPet();
 });
 Events.On("tokenspeed-changed", function (event) {
-  if (event && event.data) renderSpeed(event.data);
+  if (!event || !event.data) return;
+  // 只在速度页可见时渲染；否则只存最新快照。
+  if (activeTab === "speed" && document.visibilityState !== "hidden") {
+    pendingSpeedSnapshot = null;
+    renderSpeed(event.data);
+    return;
+  }
+  pendingSpeedSnapshot = event.data;
 });
 Events.On("theme-changed", function (event) {
   applyTheme(event && event.data);

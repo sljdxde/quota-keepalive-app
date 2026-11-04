@@ -8,7 +8,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"qka/internal/features"
-	"qka/internal/feedback"
 	"qka/internal/providers"
 	"qka/internal/schedule"
 	"qka/internal/selfupdate"
@@ -83,8 +82,6 @@ type Deps struct {
 	ProviderTestModel         func(ctx context.Context, provider, account, model string) (providers.ModelTestView, error)
 	ProviderDeleteAccount     func(ctx context.Context, provider, account string) error
 	ProviderHistory           func(ctx context.Context, provider, account string, limit int) ([]providers.RunItemView, []providers.QuotaReadingView, error)
-	// Feedback is the privacy-safe GitHub issue submission service.
-	Feedback *feedback.Service
 	// Logs 按筛选条件查询日志（logtail）。
 	Logs func(ctx context.Context, filter LogFilter, limit int, cursor int64) (LogPage, error)
 	// AgentStatus 返回宿主接入信息（配对/连通/最近调用/计划指引）。
@@ -468,37 +465,6 @@ func (s *BoundService) ProvidersHistory(
 	return json.Marshal(map[string]any{
 		"items": items, "quota": readings,
 	})
-}
-
-// FeedbackContext returns the redacted recent-log preview used by the report
-// dialog. It never returns credentials or full account identifiers.
-func (s *BoundService) FeedbackContext() (json.RawMessage, error) {
-	if s.deps.Feedback == nil {
-		return nil, errNotWired
-	}
-	view, err := s.deps.Feedback.Preview(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(view)
-}
-
-// FeedbackSubmit sends a redacted bug report through the Cloudflare proxy.
-func (s *BoundService) FeedbackSubmit(
-	description string, images []feedback.Image, includeLogs bool,
-) (json.RawMessage, error) {
-	if s.deps.Feedback == nil {
-		return nil, errNotWired
-	}
-	result, err := s.deps.Feedback.Submit(context.Background(), feedback.Request{
-		Description: description,
-		Images:      images,
-		IncludeLogs: includeLogs,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(result)
 }
 
 // AccountsList 返回所有账号（含来源）。

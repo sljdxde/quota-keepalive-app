@@ -143,6 +143,35 @@ export function AppsList() {
 }
 
 /**
+ * DiagnosticsGet 返回设置页「诊断」区块的后端元数据（版本/平台/路径/慢轮询）。
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function DiagnosticsGet() {
+    return $Call.ByID(2606577501);
+}
+
+/**
+ * DiagnosticsOpenLogDir 用系统文件管理器打开日志目录。
+ * @returns {$CancellablePromise<void>}
+ */
+export function DiagnosticsOpenLogDir() {
+    return $Call.ByID(290522766);
+}
+
+/**
+ * ReportViewport 由页面在加载完成时调用，记录真实 CSS 视口、devicePixelRatio 与
+ * 实际界面缩放，用于排查「界面被裁掉/字体过大」是窗口尺寸、系统 DPI 还是缩放策略。
+ * @param {number} width
+ * @param {number} height
+ * @param {number} dpr
+ * @param {number} scale
+ * @returns {$CancellablePromise<void>}
+ */
+export function ReportViewport(width, height, dpr, scale) {
+    return $Call.ByID(4185818293, width, height, dpr, scale);
+}
+
+/**
  * LogsTail 按四类筛选查询日志（有界、游标）。
  * @param {string} target
  * @param {string} accountID
@@ -321,25 +350,6 @@ export function BarMenu() {
  */
 export function BarToggle() {
     return $Call.ByID(3209248438);
-}
-
-/**
- * FeedbackContext returns the redacted recent-log preview used by the report dialog.
- * @returns {$CancellablePromise<json$0.RawMessage>}
- */
-export function FeedbackContext() {
-    return $Call.ByID(654170201);
-}
-
-/**
- * FeedbackSubmit sends a redacted bug report through the Cloudflare proxy.
- * @param {string} description
- * @param {Array<feedback.Image>} images
- * @param {boolean} includeLogs
- * @returns {$CancellablePromise<json$0.RawMessage>}
- */
-export function FeedbackSubmit(description, images, includeLogs) {
-    return $Call.ByID(1874302078, description, images, includeLogs);
 }
 
 /**

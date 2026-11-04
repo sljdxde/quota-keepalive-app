@@ -9,8 +9,8 @@ import (
 
 const logPruneInterval = time.Hour
 
-// startLogPruner removes expired audit rows on startup and then rolls the
-// window forward hourly while the app is running.
+// startLogPruner removes expired audit rows shortly after startup (in the
+// background) and then rolls the window forward hourly while the app runs.
 func (a *App) startLogPruner() {
 	if a == nil || a.store == nil {
 		return
@@ -20,12 +20,16 @@ func (a *App) startLogPruner() {
 	a.logPruneCancel = cancel
 	a.logPruneDone = done
 
-	a.pruneLogs(ctx)
 	go a.runLogPruner(ctx, done, logPruneInterval)
 }
 
 func (a *App) runLogPruner(ctx context.Context, done chan struct{}, interval time.Duration) {
 	defer close(done)
+	// 启动首跑放进后台 goroutine，避免同步 DELETE 叠在 Build/首窗关键路径上；
+	// ctx 已取消（app 已关闭）时跳过，不在关闭后仍跑。
+	if ctx.Err() == nil {
+		a.pruneLogs(ctx)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

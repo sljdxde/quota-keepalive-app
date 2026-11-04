@@ -62,7 +62,11 @@ func setInstanceWakeHandler(handler func()) {
 func startInstanceWake() {
 	event, err := windows.CreateEvent(nil, 0, 0, windows.StringToUTF16Ptr(instanceEventName))
 	if err != nil {
-		_ = windows.CloseHandle(event)
+		// 失败时句柄为 NULL（不会是有效值）：仅对有效句柄补 Close，
+		// 避免关闭 0/INVALID_HANDLE_VALUE。
+		if event != 0 && event != windows.InvalidHandle {
+			_ = windows.CloseHandle(event)
+		}
 		return
 	}
 	go func() {

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -68,6 +69,12 @@ func TestApplicationIconIsPNG(t *testing.T) {
 }
 
 func TestPanelUsesMacMenuBarBehavior(t *testing.T) {
+	// Windows 的 panelOptions 会经 applyPanelChrome 覆盖成实心背景、关闭
+	// HideOnFocusLost（Win10 上该开关不可靠，改由 panelFocusGuard 收起，
+	// 见 panel_focus_close_test.go）。本用例断言的是 macOS 形态。
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 面板形态由 applyPanelChrome 覆盖，另有用例覆盖")
+	}
 	opts := panelOptions("system")
 	if opts.Width != 392 || opts.Height != 620 ||
 		opts.MinWidth != opts.Width || opts.MaxWidth != opts.Width ||

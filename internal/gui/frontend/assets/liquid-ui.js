@@ -23,14 +23,38 @@ function activeTab(root) {
   }) || null;
 }
 
+// zoomScale 返回 node 所处的累计 CSS zoom 系数（未缩放时为 1）。
+//
+// 为什么必须换算：getBoundingClientRect() 返回的坐标是「已含 zoom 的视觉 CSS
+// 像素」，而把值写回 style（width/height/transform/自定义属性）时，浏览器会
+// 按 zoom 再缩放一次。直接透传就是二次缩放——主窗口在 150% 缩放的笔记本上把
+// 界面缩放设成 0.85 时，白色滑动胶囊会缩成 0.85² ≈ 72%，看起来「胶囊比文字
+// 小、也没对齐」。除以 zoom 后写回，胶囊才与按钮的边框盒完全重合。
+//
+// 优先用「rect 宽 / 布局宽」的比值（通用、不依赖属性是否被设置），退回读根元素
+// 的 computed zoom。
+function zoomScale(node) {
+  const el = node && node.getBoundingClientRect ? node : document.documentElement;
+  if (!el) return 1;
+  const rect = el.getBoundingClientRect();
+  const layoutWidth = el.offsetWidth;
+  if (layoutWidth > 0 && rect.width > 0) {
+    const ratio = rect.width / layoutWidth;
+    if (Number.isFinite(ratio) && ratio > 0) return ratio;
+  }
+  const zoom = parseFloat(window.getComputedStyle(document.documentElement).zoom);
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+}
+
 function tabGeometry(root, button) {
   const rootRect = root.getBoundingClientRect();
   const buttonRect = button.getBoundingClientRect();
+  const scale = zoomScale(root);
   return {
-    x: buttonRect.left - rootRect.left,
-    y: buttonRect.top - rootRect.top,
-    width: buttonRect.width,
-    height: buttonRect.height,
+    x: (buttonRect.left - rootRect.left) / scale,
+    y: (buttonRect.top - rootRect.top) / scale,
+    width: buttonRect.width / scale,
+    height: buttonRect.height / scale,
   };
 }
 
@@ -252,12 +276,15 @@ export function initLiquidSurfaces(root) {
     function applyPointer(event) {
       const rect = surface.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
-      const x = clamp(event.clientX - rect.left, 0, rect.width);
-      const y = clamp(event.clientY - rect.top, 0, rect.height);
-      const nx = x / rect.width * 2 - 1;
-      const ny = y / rect.height * 2 - 1;
-      surface.style.setProperty("--liquid-x", x + "px");
-      surface.style.setProperty("--liquid-y", y + "px");
+      const rawX = clamp(event.clientX - rect.left, 0, rect.width);
+      const rawY = clamp(event.clientY - rect.top, 0, rect.height);
+      const nx = rawX / rect.width * 2 - 1;
+      const ny = rawY / rect.height * 2 - 1;
+      // 同 zoomScale：rect 已含 zoom，而写回的自定义属性会被再缩放一次，
+      // 换算回「元素自己的 CSS 像素」才能让高光跟着指针走。
+      const scale = zoomScale(surface);
+      surface.style.setProperty("--liquid-x", rawX / scale + "px");
+      surface.style.setProperty("--liquid-y", rawY / scale + "px");
       if (!reducedMotion() && event.pointerType === "mouse") {
         surface.style.setProperty(
           "--liquid-tilt-x",

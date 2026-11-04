@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -153,6 +154,10 @@ func TestMonitorTokenSpeedAndRunLifecycle(t *testing.T) {
 }
 
 func TestNewMacNotifierUsesDefaultCommandRunner(t *testing.T) {
+	// 用例靠伪造的 osascript + sh 脚本验证默认命令执行，Windows 上两者都没有。
+	if runtime.GOOS == "windows" {
+		t.Skip("osascript 通知只在 macOS 上存在")
+	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "notified")
 	script := "#!/bin/sh\nprintf '%s' \"$*\" > \"$QKA_NOTIFY_MARKER\"\n"

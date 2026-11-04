@@ -4,13 +4,11 @@ import (
 	"context"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"qka/internal/autostart"
 	"qka/internal/capabilities"
-	"qka/internal/feedback"
 	"qka/internal/gui"
 	"qka/internal/install"
 	"qka/internal/logtail"
@@ -70,12 +68,6 @@ func (a *App) guiDeps() gui.Deps {
 	tokenSpeed := tokenspeed.New(tokenspeed.DefaultConfig())
 	tokenSpeed.SetTitleTheme(st.GetString("title_theme"))
 	updateService := a.updateService()
-	feedbackService := feedback.New(a.cfg.Version)
-	feedbackService.Logs = state.feedbackLogs
-	// 设置页允许填自定义反馈地址；每次提交都重新读一次，改完立即生效。
-	feedbackService.EndpointProvider = func() string {
-		return st.GetString("feedback_endpoint")
-	}
 
 	bridge := gui.NewAccountBridge(
 		a.accounts,
@@ -159,52 +151,12 @@ func (a *App) guiDeps() gui.Deps {
 		ProviderTestModel:     a.providers.TestModel,
 		ProviderDeleteAccount: a.providers.DeleteAccount,
 		ProviderHistory:       a.providers.History,
-		Feedback:              feedbackService,
 		Logs:                  state.logs,
 		AgentStatus:           state.agentStatus,
 		Plugins:               state.plugins,
 		SetDevMode:            state.setDevMode,
 	}
 	return deps
-}
-
-func (s *guiState) feedbackLogs(ctx context.Context) ([]feedback.LogEntry, error) {
-	if s == nil || s.app == nil || s.app.store == nil || s.app.store.DB() == nil {
-		return nil, nil
-	}
-	now := time.Now()
-	if s.app.now != nil {
-		now = s.app.now()
-	}
-	cutoff := now.Add(-logtail.Retention).UTC().Format(time.RFC3339)
-	rows, err := s.app.store.DB().QueryContext(ctx, `
-SELECT ts, target, account_id, operation, state, level, message
-FROM logs
-WHERE ts >= ? AND (
-  state IN ('failed_retryable', 'failed_final', 'manual_required')
-  OR lower(level) IN ('error', 'warn', 'warning')
-)
-ORDER BY id DESC
-LIMIT 80`, cutoff)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	entries := make([]feedback.LogEntry, 0, 80)
-	for rows.Next() {
-		var entry feedback.LogEntry
-		if err := rows.Scan(&entry.TS, &entry.Target, &entry.AccountID,
-			&entry.Operation, &entry.State, &entry.Level, &entry.Message); err != nil {
-			return nil, err
-		}
-		entries = append(entries, entry)
-	}
-	for left, right := 0, len(entries)-1; left < right; left, right = left+1, right-1 {
-		entries[left], entries[right] = entries[right], entries[left]
-	}
-	// 行迭代错误随结果一并返回：收敛正常时 rows.Err() 为 nil，无需一段永远
-	// 走不到的 if 分支；调用方仍按 err 判断。
-	return entries, rows.Err()
 }
 
 // RunProviderAccount sends one provider action through the config-directory
@@ -321,7 +273,7 @@ func (s *guiState) afterSaveSettings(st *settings.Settings) error {
 }
 
 func (s *guiState) logs(ctx context.Context, filter gui.LogFilter, limit int, cursor int64) (gui.LogPage, error) {
-	s.app.pruneLogs(ctx)
+	// 过期日志由 startLogPruner 的定时任务清理，翻页不再触发同步 DELETE。
 	page, err := logtail.Tail(ctx, s.app.store.DB(), logtail.Filter{
 		Target:    filter.Target,
 		AccountID: filter.AccountID,

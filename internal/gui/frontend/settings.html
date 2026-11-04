@@ -304,12 +304,41 @@
       </span>
     </div>
   </section>
+  <section class="schedule-card" aria-labelledby="settings-diagnostics-title">
+    <div class="schedule-head">
+      <div class="copy">
+        <b id="settings-diagnostics-title">诊断</b>
+        <small>反馈「卡」时自助取证：版本、渲染器、慢轮询与日志位置，一键复制后贴进 issue。不含任何凭据或会话内容。</small>
+      </div>
+      <span class="sched-state" id="diagnostics-state">读取中</span>
+    </div>
+    <dl class="schedule-status" id="diagnostics-status">
+      <dt>版本</dt><dd id="diagnostics-version">—</dd>
+      <dt>运行时目录</dt><dd id="diagnostics-runtime">—</dd>
+      <dt>渲染器</dt><dd id="diagnostics-renderer">—</dd>
+      <dt>性能模式</dt><dd id="diagnostics-perf-mode">—</dd>
+      <dt>3D 宠物帧率</dt><dd id="diagnostics-pet-fps">—</dd>
+      <dt>慢轮询</dt><dd id="diagnostics-slow-polls">—</dd>
+      <dt>日志目录</dt><dd id="diagnostics-logdir">—</dd>
+    </dl>
+    <div class="row select-row">
+      <span class="copy">
+        <b>自助取证</b>
+        <span class="desc">复制完整诊断信息（纯文本），或直接打开日志目录。</span>
+      </span>
+      <span class="choice">
+        <button type="button" id="diagnostics-copy">复制诊断信息</button>
+        <button type="button" id="diagnostics-open-logdir">打开日志目录</button>
+      </span>
+    </div>
+  </section>
   <p class="hint">设置切换后立即保存；系统任务安装或删除失败时，会恢复为当前生效值。</p>
 
 <script type="module">
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
   import { Events } from "/wails/runtime.js";
   import { initPerformanceMode, PERFORMANCE_MODE_KEY } from "./assets/perf-mode.js";
+  import { initDiagnostics } from "./assets/diagnostics.js";
 
   function asJSON(v) {
     if (typeof v === "string") return JSON.parse(v);
@@ -652,6 +681,8 @@
     });
     await loadSchedule();
     checkUpdate();
+    // 诊断区块独立初始化：失败时它自己显示「读取失败」，不拖垮设置表单。
+    initDiagnostics().catch(function () {});
   }
 
   init().catch(function () {

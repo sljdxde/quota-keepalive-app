@@ -509,13 +509,6 @@ func TestGUIDependenciesAndState(t *testing.T) {
 		deps.ProviderBeginLogin == nil || deps.ProviderRun == nil {
 		t.Fatalf("GUI deps 不完整: %+v", deps)
 	}
-	// 反馈地址提供器每次提交时重新读设置；默认未配置时返回空串（跟随内置地址）。
-	if deps.Feedback == nil || deps.Feedback.EndpointProvider == nil {
-		t.Fatal("反馈地址提供器未接线")
-	}
-	if got := deps.Feedback.EndpointProvider(); got != "" {
-		t.Fatalf("默认反馈地址应为空，实际 %q", got)
-	}
 	if token, err := deps.TokenSpeedGet(context.Background()); err != nil || token.OutputTokensPerSecond != 0 {
 		t.Fatalf("TokenSpeedGet = %+v err=%v", token, err)
 	}

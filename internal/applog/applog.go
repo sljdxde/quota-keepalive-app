@@ -72,7 +72,10 @@ type core struct {
 	writer *fileWriter
 	logger *slog.Logger
 	dir    string
-	closed atomic.Bool
+	// configDir 是 Init 收到的配置目录（日志目录的父级，QKA_LOG_DIR 覆盖时
+	// 与 dir 无派生关系）；诊断区块用它定位运行时等兄弟目录。
+	configDir string
+	closed    atomic.Bool
 }
 
 // current 是进程级当前日志状态。用原子指针让 Logger() 无锁、Init 可替换。
@@ -98,9 +101,10 @@ func Init(configDir, buildVersion string) (func() error, error) {
 	}
 	level := parseLevel(os.Getenv(levelEnv))
 	c := &core{
-		writer: writer,
-		logger: slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{Level: level})),
-		dir:    dir,
+		writer:    writer,
+		logger:    slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{Level: level})),
+		dir:       dir,
+		configDir: strings.TrimSpace(configDir),
 	}
 	// 先换上新状态再关闭旧的：关闭函数只清自己，不碰后来的日志。
 	if old := current.Swap(c); old != nil {
@@ -156,6 +160,24 @@ func Module(name string) *slog.Logger {
 		return c.logger.With("module", name)
 	}
 	return discardLogger
+}
+
+// Dir 返回当前日志目录；未 Init 或 Init 失败时返回空串。设置页的诊断区块
+// 用它展示日志位置并提供「打开日志目录」入口。
+func Dir() string {
+	if c := current.Load(); c != nil {
+		return c.dir
+	}
+	return ""
+}
+
+// ConfigDir 返回 Init 收到的配置目录；未 Init 或 Init 失败时返回空串。
+// 诊断区块用它定位运行时解压目录等配置目录下的兄弟目录。
+func ConfigDir() string {
+	if c := current.Load(); c != nil {
+		return c.configDir
+	}
+	return ""
 }
 
 // Infof 写一行 info 日志。module 是模块标签（如 runtimebundle），format 后的

@@ -16,6 +16,7 @@ var (
 	gdi32DLL               = windows.NewLazySystemDLL("gdi32.dll")
 	procCreateRoundRectRgn = gdi32DLL.NewProc("CreateRoundRectRgn")
 	procSetWindowRgn       = user32DLL.NewProc("SetWindowRgn")
+	procDeleteObject       = gdi32DLL.NewProc("DeleteObject")
 	procGetDpiForWindow    = user32DLL.NewProc("GetDpiForWindow")
 )
 
@@ -94,8 +95,10 @@ func shapeBarWindow(window *application.WebviewWindow) {
 		applog.Warnf("gui", "创建刘海窗口圆角区域失败：%v", err)
 		return
 	}
-	// SetWindowRgn 接管 rgn 的所有权，不需要（也不能）再 DeleteObject。
+	// SetWindowRgn 成功时接管 rgn 的所有权，不需要（也不能）再 DeleteObject；
+	// 失败时所有权仍在调用方，必须补删，否则每次失败泄漏一个 HRGN。
 	if ret, _, callErr := procSetWindowRgn.Call(uintptr(unsafe.Pointer(hwnd)), rgn, 1); ret == 0 {
 		applog.Warnf("gui", "设置刘海窗口圆角失败：%v", callErr)
+		_, _, _ = procDeleteObject.Call(rgn)
 	}
 }

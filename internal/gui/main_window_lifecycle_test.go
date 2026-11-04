@@ -9,17 +9,18 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
-// Windows 上用页面顶栏充当标题栏（无边框窗口 + 页面内窗口按钮），这样和
-// macOS 一样有完整顶部栏，不会出现「原生标题栏 + 页面顶栏」两层；其它平台
-// 保持各自的既有形态。
+// Windows 主窗口保留系统原生标题栏（applyWindowChrome 故意不改成无边框：
+// Wails v3 的 frameless 在 Windows 上出错时表现为「窗口创建了但看不见」，
+// 见 window_chrome_windows.go）；页面顶栏只负责应用内导航。其它平台保持各自
+// 的既有形态。
 func TestMainWindowChromeFollowsPlatform(t *testing.T) {
 	opts := mainOptions("system")
 	if runtime.GOOS == "windows" {
-		if !opts.Frameless {
-			t.Fatal("Windows 主窗口应为无边框（由页面顶栏充当标题栏）")
+		if opts.Frameless {
+			t.Fatal("Windows 主窗口应保留原生标题栏，不应无边框")
 		}
 		if opts.Windows.NonClientRegionSupport {
-			t.Error("Windows 主窗口不应开 NonClientRegionSupport：拖动走 --wails-draggable 通道")
+			t.Error("Windows 主窗口不应开 NonClientRegionSupport")
 		}
 		return
 	}

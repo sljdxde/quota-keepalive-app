@@ -9,11 +9,19 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
-    // Windows/Linux 上主窗口是无边框窗口，顶栏就是标题栏：不需要为 macOS
-    // 红绿灯留左侧空间，改为在右侧渲染最小化/最大化/关闭三个按钮。
+    // Windows/Linux 主窗口保留系统原生标题栏：顶栏不需要为 macOS 红绿灯
+    // 留左侧安全区，直接贴边。
     if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
       document.documentElement.classList.add("platform-native-titlebar");
     }
+    // 界面缩放：先按上次生效的比例同步套用，避免「先按 100% 画一帧再缩回去」
+    // 的闪烁。真实值随后由 assets/ui-scale.js 按设置项与视口重新计算。
+    try {
+      var cached = parseFloat(window.localStorage.getItem("qka.uiScale") || "");
+      if (cached > 0 && Math.abs(cached - 1) >= 0.001) {
+        document.documentElement.style.zoom = String(cached);
+      }
+    } catch (_) {}
   })();
 </script>
 <style>
@@ -330,12 +338,10 @@
     overflow: hidden; /* 凹口与顶栏一起裁出圆角，避免凹口越界到内容区 */
   }
   .topbar button, .nav { --wails-draggable: no-drag; }
-  /* Windows/Linux 主窗口无边框，顶栏就是标题栏：去掉 macOS 的左侧安全区，
-     右侧给页面内的最小化/最大化/关闭按钮留位。 */
   /* Windows/Linux 主窗口用系统原生标题栏：顶栏不再需要 macOS 红绿灯的安全区。 */
   html.platform-native-titlebar .topbar { padding-left: 14px; }
-  /* 常驻刘海是独立的置顶窗口（bar.html），主窗口顶栏不再承载它：左侧恢复为
-     正常品牌区，右侧是自绘的最小化/最大化/关闭按钮。 */
+  /* 常驻刘海是独立的置顶窗口（bar.html），主窗口顶栏不再承载它；只有主窗口
+     不可见时才显示刘海，避免它压住顶栏居中的导航。 */
   .brand {
     min-width: 0;
     display: flex; align-items: center; gap: 9px;
@@ -360,7 +366,11 @@
   }
   .brand-tile svg { width: 19px; height: 19px; }
   .topbar .nav {
-    position: absolute; left: 50%; transform: translateX(-50%);
+    /* 显式定住垂直位置：绝对定位的子元素如果只写 left，纵向位置来自 flex
+       的「静态位置」推导，在界面缩放（zoom 0.85 等）下容易差半像素到一像素，
+       表现为导航文字与白色胶囊、与右侧图标没对齐。 */
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
     display: flex; align-items: center; gap: 2px;
     padding: 3px; border-radius: 9px;
     background: var(--seg-track);
@@ -382,7 +392,16 @@
     flex: 1; min-height: 0; overflow: auto; overflow-x: hidden;
     scroll-behavior: smooth; overscroll-behavior: contain;
   }
-  .page { display: none; padding: 24px max(30px, calc(50% - 520px)) 38px; animation: page-in .22s cubic-bezier(.23,1,.32,1); }
+  /* 页面留白：按比例的小边距 + 一个「别把卡片拉长」的上限。
+     窗口默认不再铺满屏幕（见 window_size.go），所以这里的上限只需防止用户
+     最大化后卡片被拉成又长又扁的一条：超过 1180px 就居中收拢。 */
+  .page {
+    display: none;
+    padding: 18px clamp(16px, 2%, 56px) 30px;
+    max-width: 1180px;
+    margin-inline: auto;
+    animation: page-in .22s cubic-bezier(.23,1,.32,1);
+  }
   .page.active { display: block; }
   @keyframes page-in { from { opacity: .75; transform: translateY(2px); } }
   @media (prefers-reduced-motion: reduce) {
@@ -2122,18 +2141,35 @@
     box-shadow: inset 0 0 0 .5px var(--line-2);
   }
   .metric-card {
-    min-height: 58px; padding: 9px 16px;
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; gap: 3px 12px;
+    min-width: 0; min-height: 58px; padding: 10px 18px;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: center; gap: 3px 14px;
     background: transparent; box-shadow: none;
   }
   .metric-card + .metric-card { border-left: .5px solid var(--line-2); }
-  .metric-card .label { color: var(--fg-2); font-size: var(--fs-xs); font-weight: 600; }
-  .metric-card .value {
-    grid-column: 2; grid-row: 1 / span 2; align-self: center;
-    margin-top: 0; font-size: var(--fs-2xl); line-height: 1; font-weight: 680;
-    letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  /* 三张卡片共享一行时，窄窗口（150% 缩放的笔记本内容区常只有 600~1000 CSS px）
+     里标签/提示很容易顶到卡片右边界。统一单行 + 省略号：宁可截断也不溢出，
+     既不压住数值，也不会看起来「字体超过边界」。 */
+  .metric-card .label {
+    min-width: 0; color: var(--fg-2); font-size: var(--fs-xs); font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  .metric-card .hint { margin-top: 0; color: var(--muted); font-size: var(--fs-2xs); }
+  .metric-card .value {
+    grid-column: 2; grid-row: 1 / span 2; align-self: center; justify-self: end;
+    /* 数值绝不截断/换行：它是这一格的信息本体（38.1k、1.00k、3 之类），
+       截成 "3…" 比溢出更糟。空间不够时由左边的标签/提示让位。 */
+    margin-top: 0; font-size: var(--fs-2xl); line-height: 1.05; font-weight: 680;
+    letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .metric-card .hint {
+    min-width: 0; margin-top: 0; color: var(--muted); font-size: var(--fs-2xs);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 窗口不够宽时提前切单列：三列并排在 ~1000 CSS px 以下会挤到文字贴边。 */
+  @media (max-width: 1080px) {
+    .metric-grid { grid-template-columns: 1fr; padding: 4px 0; }
+    .metric-card + .metric-card { border-left: 0; border-top: .5px solid var(--line-2); }
+  }
   .speed-source-name {
     display: flex; align-items: center; gap: 8px; font-weight: 600;
     min-width: 0;
@@ -2194,7 +2230,8 @@
     }
     .brand-name { display: none; }
     .topbar .nav {
-      position: absolute; left: 50%; transform: translateX(-50%);
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
       gap: 0;
     }
     .nav button { padding: 0 7px; font-size: var(--fs-sm); }
@@ -2234,94 +2271,6 @@
   @media (max-width: 700px) {
     .brand { display: none; }
   }
-  dialog.feedback-dialog {
-    width: min(640px, calc(100vw - 24px));
-    max-height: min(760px, calc(100vh - 24px));
-    padding: 0; border: 0; border-radius: 16px; color: var(--fg);
-    background: var(--card); box-shadow: 0 28px 80px rgba(0,0,0,.30);
-    overflow: hidden;
-  }
-  dialog.feedback-dialog::backdrop {
-    background: rgba(12, 17, 24, .28);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
-  .feedback-shell { display: flex; flex-direction: column; max-height: inherit; }
-  .feedback-head {
-    display: flex; align-items: flex-start; gap: 10px;
-    padding: 15px 17px; border-bottom: .5px solid var(--line-2);
-  }
-  .feedback-mark {
-    width: 30px; height: 30px; flex: none; display: grid; place-items: center;
-    border-radius: 9px; color: var(--accent); background: var(--accent-soft);
-  }
-  .feedback-mark svg { width: 16px; height: 16px; }
-  .feedback-head > div { flex: 1; min-width: 0; }
-  .feedback-head h2 { margin: 0; font-size: var(--fs-xl); line-height: 1.25; font-weight: 650; }
-  .feedback-head p { margin: 3px 0 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
-  .feedback-close {
-    width: 28px; height: 28px; border: 0; border-radius: 8px;
-    color: var(--muted); background: transparent; font-size: var(--fs-3xl);
-  }
-  .feedback-close:hover { color: var(--fg); background: var(--pill); }
-  .feedback-body {
-    display: flex; flex-direction: column; gap: 11px;
-    padding: 15px 17px; overflow: auto; overscroll-behavior: contain;
-  }
-  .feedback-field { display: grid; gap: 6px; color: var(--fg-2); font-size: var(--fs-sm); font-weight: 600; }
-  .feedback-field textarea {
-    width: 100%; min-height: 116px; resize: vertical; padding: 10px 11px;
-    border: 0; border-radius: 9px; color: var(--fg); background: var(--card-2);
-    box-shadow: inset 0 0 0 .5px var(--line); font: inherit; font-weight: 450;
-    line-height: 1.5; outline: none;
-  }
-  .feedback-field textarea:focus { box-shadow: inset 0 0 0 1px var(--accent); }
-  .feedback-upload {
-    display: grid; justify-items: center; gap: 4px; padding: 16px;
-    border-radius: 10px; color: var(--fg-2); background: var(--card-2);
-    box-shadow: inset 0 0 0 .5px var(--line); text-align: center;
-    transition: background .15s ease, box-shadow .15s ease;
-  }
-  .feedback-upload.dragging {
-    background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-  .feedback-upload b { color: var(--fg); font-size: var(--fs-sm); }
-  .feedback-upload small { max-width: 430px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.45; }
-  .feedback-upload button { margin-top: 6px; }
-  .feedback-images { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-  .feedback-image {
-    position: relative; overflow: hidden; border-radius: 9px;
-    background: var(--card-2); box-shadow: inset 0 0 0 .5px var(--line);
-  }
-  .feedback-image img { display: block; width: 100%; height: 92px; object-fit: cover; }
-  .feedback-image button {
-    position: absolute; top: 5px; right: 5px; width: 22px; height: 22px;
-    border: 0; border-radius: 999px; color: #fff; background: rgba(12,15,20,.72);
-    font-size: var(--fs-lg); line-height: 1;
-  }
-  .feedback-logs-toggle {
-    display: flex; align-items: flex-start; gap: 9px; padding: 9px 10px;
-    border-radius: 9px; background: var(--card-2); box-shadow: inset 0 0 0 .5px var(--line);
-  }
-  .feedback-logs-toggle input { margin: 2px 0 0; accent-color: var(--accent); }
-  .feedback-logs-toggle span { min-width: 0; }
-  .feedback-logs-toggle b { display: block; font-size: var(--fs-sm); font-weight: 600; }
-  .feedback-logs-toggle small { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-xs); }
-  .feedback-log-preview {
-    max-height: 118px; margin: 0; padding: 9px 10px; overflow: auto;
-    border-radius: 8px; color: var(--fg-2); background: var(--code-bg, var(--card-2));
-    font: 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-    white-space: pre-wrap; overflow-wrap: anywhere;
-  }
-  .feedback-notice { margin: 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
-  .feedback-status { min-height: 17px; margin: 0; color: var(--fg-2); font-size: var(--fs-sm); }
-  .feedback-status.error { color: var(--red); }
-  .feedback-status.success { color: var(--green); }
-  .feedback-foot {
-    display: flex; justify-content: flex-end; gap: 7px;
-    padding: 12px 17px; border-top: .5px solid var(--line-2);
-  }
   @media (max-width: 620px) {
     .app-row { grid-template-columns: minmax(0,1fr) auto; }
     .app-state { display: none; }
@@ -2343,8 +2292,7 @@
     }
     .speed-rank-icon .title-rank-mark { --title-rank-size: 34px; }
     .speed-rank-caption { grid-column: 1; text-align: left; }
-    .metric-grid { grid-template-columns: 1fr; }
-    .metric-card + .metric-card { border-left: 0; border-top: .5px solid var(--line-2); }
+    /* 单列规则由上面的 max-width:1080px 统一处理，这里不再重复。 */
     dialog.title-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
     .title-dialog-head, .title-dialog-body, .title-dialog-foot { padding-left: 12px; padding-right: 12px; }
     .title-dialog-body { grid-template-columns: 1fr; gap: 10px; }
@@ -2352,9 +2300,6 @@
     .title-ladder-grid { grid-template-columns: 1fr; }
     .title-level-row:nth-child(2n) { border-left: 0; }
     .title-level-row:nth-child(2) { border-top: .5px solid var(--line-2); }
-    dialog.feedback-dialog { width: calc(100vw - 20px); max-height: calc(100vh - 20px); }
-    .feedback-head, .feedback-body, .feedback-foot { padding-left: 12px; padding-right: 12px; }
-    .feedback-images { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 </style>
 <link rel="stylesheet" href="assets/liquid-ui.css">
@@ -2416,13 +2361,6 @@
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M13.2 6.4A5.5 5.5 0 1 0 13 9.5M13.2 6.4V2.8m0 3.6h-3.6"
                   stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-          </svg>
-        </button>
-        <button class="icon" id="feedback-shortcut" title="反馈问题" aria-label="反馈问题" hidden>
-          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M3 3.2h10a1.3 1.3 0 0 1 1.3 1.3v5.1a1.3 1.3 0 0 1-1.3 1.3H7.5L4.2 13v-2.1H3A1.3 1.3 0 0 1 1.7 9.6V4.5A1.3 1.3 0 0 1 3 3.2Z"
-                  stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
-            <path d="M5 6h6M5 8.3h4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
           </svg>
         </button>
         <button class="icon" id="settings-shortcut" title="设置" aria-label="设置">
@@ -2490,7 +2428,6 @@
             <p>保存可核查的执行证据；默认滚动保留 48 小时。</p>
           </div>
           <div class="end">
-            <button class="secondary" id="logs-feedback" type="button" hidden>反馈异常日志</button>
             <span class="pill" id="logs-count">最近 50 条</span>
           </div>
         </div>
@@ -2826,6 +2763,34 @@
             </span>
           </div>
         </section>
+        <section class="card settings-schedule" aria-labelledby="settings-diagnostics-title">
+          <div class="settings-schedule-head">
+            <div class="settings-copy">
+              <b id="settings-diagnostics-title">诊断</b>
+              <small>反馈「卡」时自助取证：版本、渲染器、慢轮询与日志位置，一键复制后贴进 issue。不含任何凭据或会话内容。</small>
+            </div>
+            <span class="pill" id="diagnostics-state">读取中</span>
+          </div>
+          <dl class="settings-status" id="diagnostics-status">
+            <dt>版本</dt><dd id="diagnostics-version">—</dd>
+            <dt>运行时目录</dt><dd id="diagnostics-runtime">—</dd>
+            <dt>渲染器</dt><dd id="diagnostics-renderer">—</dd>
+            <dt>性能模式</dt><dd id="diagnostics-perf-mode">—</dd>
+            <dt>3D 宠物帧率</dt><dd id="diagnostics-pet-fps">—</dd>
+            <dt>慢轮询</dt><dd id="diagnostics-slow-polls">—</dd>
+            <dt>日志目录</dt><dd id="diagnostics-logdir">—</dd>
+          </dl>
+          <div class="settings-row">
+            <span class="settings-copy">
+              <b>自助取证</b>
+              <small>复制完整诊断信息（纯文本），或直接打开日志目录。</small>
+            </span>
+            <span class="settings-choice">
+              <button type="button" id="diagnostics-copy">复制诊断信息</button>
+              <button type="button" id="diagnostics-open-logdir">打开日志目录</button>
+            </span>
+          </div>
+        </section>
         </div>
         <p class="settings-hint">设置切换后立即保存；保存或系统任务操作失败时会恢复为当前生效值。</p>
       </section>
@@ -2939,51 +2904,6 @@
   </div>
 </dialog>
 
-<dialog class="feedback-dialog" id="feedback-dialog" aria-labelledby="feedback-title">
-  <form class="feedback-shell" id="feedback-form">
-    <header class="feedback-head">
-      <span class="feedback-mark" aria-hidden="true">
-        <svg viewBox="0 0 16 16" fill="none">
-          <path d="M3 3.2h10a1.3 1.3 0 0 1 1.3 1.3v5.1a1.3 1.3 0 0 1-1.3 1.3H7.5L4.2 13v-2.1H3A1.3 1.3 0 0 1 1.7 9.6V4.5A1.3 1.3 0 0 1 3 3.2Z"
-                stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
-        </svg>
-      </span>
-      <div>
-        <h2 id="feedback-title">反馈问题</h2>
-        <p>无需 GitHub 账号。文本和异常日志会在上传前自动脱敏。</p>
-      </div>
-      <button class="feedback-close" id="feedback-close" type="button" aria-label="关闭">×</button>
-    </header>
-    <div class="feedback-body">
-      <label class="feedback-field">
-        <span>问题描述</span>
-        <textarea id="feedback-description" maxlength="12000" required
-                  placeholder="请描述复现步骤、期望结果和实际现象。"></textarea>
-      </label>
-      <div class="feedback-upload" id="feedback-drop">
-        <input id="feedback-files" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
-        <b>拖入截图，或点击选择</b>
-        <small>支持 Command/Ctrl + V 粘贴图片；最多 6 张，发送前自动压缩并去除 EXIF。</small>
-        <button class="secondary" id="feedback-pick" type="button">选择图片</button>
-      </div>
-      <div class="feedback-images" id="feedback-images" aria-live="polite"></div>
-      <label class="feedback-logs-toggle">
-        <input type="checkbox" id="feedback-include-logs">
-        <span>
-          <b>附带最近 48 小时异常日志</b>
-          <small id="feedback-log-count">正在读取可反馈日志…</small>
-        </span>
-      </label>
-      <pre class="feedback-log-preview" id="feedback-log-preview" hidden></pre>
-      <p class="feedback-notice">图片中的可见敏感信息无法可靠自动识别，请先遮盖账号、密钥和二维码。</p>
-      <p class="feedback-status" id="feedback-status" role="status"></p>
-    </div>
-    <footer class="feedback-foot">
-      <button class="secondary" id="feedback-cancel" type="button">取消</button>
-      <button class="primary" id="feedback-submit" type="submit">提交反馈</button>
-    </footer>
-  </form>
-</dialog>
 
 <script type="module" src="assets/liquid-ui.js"></script>
 <script type="module">
@@ -3001,6 +2921,12 @@
     initPerformanceMode,
     PERFORMANCE_MODE_KEY,
   } from "./assets/perf-mode.js";
+  import { initDiagnostics } from "./assets/diagnostics.js";
+  import {
+    initUiScale,
+    UI_SCALE_SETTING,
+    UI_SCALE_STORAGE_KEY,
+  } from "./assets/ui-scale.js";
   import {
   accountStateKey,
   nextAccountExpansion,
@@ -3873,6 +3799,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           current = option.value;
           if (field.key === "theme") applyTheme(option.value);
           if (field.key === PERFORMANCE_MODE_KEY) applyPerformanceSetting(option.value);
+          if (field.key === UI_SCALE_SETTING && uiScale) uiScale.setSetting(option.value);
           group.querySelectorAll("button").forEach(function (item) {
             const active = item === button;
             item.classList.toggle("active", active);
@@ -4016,6 +3943,33 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   document.getElementById("settings-update-check").onclick = checkUpdate;
   document.getElementById("settings-update-install").onclick = installUpdate;
+
+  // 诊断区块：静态 HTML 已在设置页签里，这里只负责填数据与按钮；失败时
+  // 区块自身显示「读取失败」，不影响其它设置项。
+  initDiagnostics().catch(function (_) {});
+
+  // 界面缩放：设置里「界面缩放=自动」时按窗口可用高度收缩整个界面（150%
+  // 缩放的笔记本内容区只有 600 像素高，字会显得大、长页面要滚动）。
+  const uiScale = initUiScale({
+    readSetting: async function () {
+      const values = asJSON(await Bound.SettingsGet());
+      return values[UI_SCALE_SETTING] || "auto";
+    },
+  });
+
+  // 上报真实渲染参数（CSS 视口 + 设备像素比 + 界面缩放）：Windows 上「界面被
+  // 裁掉/字特别大」时，后端仅凭窗口尺寸无法判断是窗口过大、WebView2 缩放没跟
+  // 上系统 DPI，还是界面缩放策略生效了。失败不影响界面。
+  // 必须等一拍再报：缩放已由 initUiScale 同步套用，视口随之稳定。
+  window.setTimeout(function () {
+    if (!Bound.ReportViewport) return;
+    Bound.ReportViewport(
+      window.innerWidth,
+      window.innerHeight,
+      window.devicePixelRatio || 1,
+      uiScale.current(),
+    ).catch(function (_) {});
+  }, 600);
 
   function compactTokenRate(value) {
     const number = Number(value);
@@ -4697,8 +4651,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     speedNumber.textContent = compactTokenRate(output);
     if (output !== lastSpeedReadout && lastSpeedReadout > 0) {
       speedNumber.classList.remove("is-ticking");
-      void speedNumber.offsetWidth;
-      speedNumber.classList.add("is-ticking");
+      // 双 rAF 重启动画，避免 void offsetWidth 的强制同步 reflow。
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          speedNumber.classList.add("is-ticking");
+        });
+      });
     }
     lastSpeedReadout = output;
     document.getElementById("speed-input").textContent =
@@ -4896,6 +4854,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     let view;
     try {
       view = asJSON(await Bound.ProvidersList());
+      // 成功后必须清空占位框：它是上面刚写进去的「正在加载供应商…」，只
+      // appendChild 的话会永久留在列表上方（首次打开页面必然出现，看起来像
+      // 一直在加载）。清空与后续 append 之间没有 await，不会被并发渲染穿插。
+      body.innerHTML = "";
       body.dataset.loaded = "1";
     } catch (_) {
       body.innerHTML = '<div class="empty"><b>无法读取供应商</b>供应商运行时尚未就绪，正在自动重试；也可点右上角刷新。</div>';
@@ -6530,220 +6492,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   document.getElementById("log-query").onclick = function () { appendLogs(true); };
   document.getElementById("logs-more").onclick = function () { appendLogs(false); };
 
-  const feedbackDialog = document.getElementById("feedback-dialog");
-  const feedbackDescription = document.getElementById("feedback-description");
-  const feedbackImagesNode = document.getElementById("feedback-images");
-  const feedbackIncludeLogs = document.getElementById("feedback-include-logs");
-  const feedbackLogPreview = document.getElementById("feedback-log-preview");
-  const feedbackStatus = document.getElementById("feedback-status");
-  const feedbackSubmit = document.getElementById("feedback-submit");
-  let feedbackImages = [];
-  let feedbackBusy = false;
-
-  function setFeedbackStatus(message, kind) {
-    feedbackStatus.textContent = message || "";
-    feedbackStatus.className = "feedback-status" + (kind ? " " + kind : "");
-  }
-
-  function renderFeedbackImages() {
-    feedbackImagesNode.innerHTML = "";
-    feedbackImages.forEach(function (image, index) {
-      const item = document.createElement("div");
-      item.className = "feedback-image";
-      const preview = document.createElement("img");
-      preview.src = image.data_url;
-      preview.alt = "反馈截图 " + (index + 1);
-      item.appendChild(preview);
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.setAttribute("aria-label", "移除这张图片");
-      remove.textContent = "×";
-      remove.onclick = function () {
-        feedbackImages.splice(index, 1);
-        renderFeedbackImages();
-      };
-      item.appendChild(remove);
-      feedbackImagesNode.appendChild(item);
-    });
-  }
-
-  function compressFeedbackImage(file) {
-    return new Promise(function (resolve, reject) {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type || "")) {
-        reject(new Error("只支持 PNG、JPEG 或 WebP 图片"));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onerror = function () { reject(new Error("图片读取失败")); };
-      reader.onload = function () {
-        const image = new Image();
-        image.onerror = function () { reject(new Error("图片无法解码")); };
-        image.onload = function () {
-          const maxSide = 1600;
-          const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
-          const width = Math.max(1, Math.round(image.naturalWidth * scale));
-          const height = Math.max(1, Math.round(image.naturalHeight * scale));
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const context = canvas.getContext("2d", { alpha: false });
-          if (!context) {
-            reject(new Error("当前环境无法压缩图片"));
-            return;
-          }
-          context.fillStyle = "#ffffff";
-          context.fillRect(0, 0, width, height);
-          context.drawImage(image, 0, 0, width, height);
-          const dataURL = canvas.toDataURL("image/jpeg", 0.82);
-          const estimated = Math.ceil((dataURL.length - dataURL.indexOf(",") - 1) * 0.75);
-          if (estimated > 1400 * 1024) {
-            reject(new Error("单张压缩后仍超过 1.4 MB，请裁剪后重试"));
-            return;
-          }
-          resolve({ name: "screenshot", data_url: dataURL });
-        };
-        image.src = String(reader.result || "");
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function addFeedbackFiles(files) {
-    const list = Array.from(files || []).filter(function (file) {
-      return file && /^image\//.test(file.type || "");
-    });
-    if (!list.length) return;
-    if (feedbackImages.length + list.length > 6) {
-      setFeedbackStatus("最多上传 6 张图片。", "error");
-      return;
-    }
-    setFeedbackStatus("正在压缩图片…");
-    for (const file of list) {
-      try {
-        feedbackImages.push(await compressFeedbackImage(file));
-      } catch (err) {
-        setFeedbackStatus(err.message || "图片处理失败", "error");
-        return;
-      }
-    }
-    renderFeedbackImages();
-    setFeedbackStatus("");
-  }
-
-  function renderFeedbackContext(view) {
-    const context = view || {};
-    feedbackIncludeLogs.disabled = !context.available;
-    document.getElementById("feedback-log-count").textContent = context.log_count
-      ? "已发现 " + context.log_count + " 条异常记录；日志会自动脱敏。"
-      : "最近 48 小时没有可附加的异常日志。";
-    feedbackLogPreview.textContent = context.excerpt || "";
-    feedbackLogPreview.hidden = !context.excerpt;
-    document.querySelector(".feedback-notice").textContent =
-      context.notice || "请先遮盖图片中的敏感信息。";
-  }
-
-  // 反馈通道暂不可用（线上 Worker 尚未部署，提交必然失败），先隐藏入口。
-  // 修好服务端后把这里改成 true、并去掉两个按钮上的 hidden 属性即可恢复。
-  const FEEDBACK_AVAILABLE = false;
-
-  async function openFeedback(includeLogs) {
-    if (!FEEDBACK_AVAILABLE) return;
-    if (!feedbackDialog.open) {
-      feedbackImages = [];
-      renderFeedbackImages();
-      feedbackDescription.value = "";
-      feedbackIncludeLogs.checked = false;
-      setFeedbackStatus("正在读取可反馈日志…");
-      feedbackDialog.showModal();
-    }
-    try {
-      const context = asJSON(await Bound.FeedbackContext());
-      renderFeedbackContext(context);
-      feedbackIncludeLogs.checked = !!includeLogs && context.log_count > 0;
-      setFeedbackStatus("");
-      feedbackDescription.focus();
-    } catch (err) {
-      setFeedbackStatus("反馈服务暂时不可用：" + (err && err.message ? err.message : "请稍后重试"), "error");
-    }
-  }
-
-  function closeFeedback() {
-    if (feedbackBusy) return;
-    feedbackDialog.close();
-  }
-
-  // 入口可见性由 FEEDBACK_AVAILABLE 统一决定，防止只改一处造成半开状态。
-  ["feedback-shortcut", "logs-feedback"].forEach(function (id) {
-    const node = document.getElementById(id);
-    if (node) node.hidden = !FEEDBACK_AVAILABLE;
-  });
-  document.getElementById("feedback-shortcut").onclick = function () { openFeedback(false); };
-  document.getElementById("logs-feedback").onclick = function () { openFeedback(true); };
-  document.getElementById("feedback-close").onclick = closeFeedback;
-  document.getElementById("feedback-cancel").onclick = closeFeedback;
-  document.getElementById("feedback-pick").onclick = function () {
-    document.getElementById("feedback-files").click();
-  };
-  document.getElementById("feedback-files").onchange = function () {
-    addFeedbackFiles(this.files);
-    this.value = "";
-  };
-  const feedbackDrop = document.getElementById("feedback-drop");
-  feedbackDrop.ondragover = function (event) {
-    event.preventDefault();
-    feedbackDrop.classList.add("dragging");
-  };
-  feedbackDrop.ondragleave = function () { feedbackDrop.classList.remove("dragging"); };
-  feedbackDrop.ondrop = function (event) {
-    event.preventDefault();
-    feedbackDrop.classList.remove("dragging");
-    addFeedbackFiles(event.dataTransfer && event.dataTransfer.files);
-  };
-  feedbackDialog.addEventListener("paste", function (event) {
-    const items = Array.from((event.clipboardData && event.clipboardData.items) || []);
-    const images = items.filter(function (item) { return item.type.indexOf("image/") === 0; })
-      .map(function (item) { return item.getAsFile(); })
-      .filter(Boolean);
-    if (!images.length) return;
-    event.preventDefault();
-    addFeedbackFiles(images);
-  });
-  feedbackIncludeLogs.onchange = function () {
-    feedbackLogPreview.hidden = !this.checked || !feedbackLogPreview.textContent;
-  };
-  document.getElementById("feedback-form").onsubmit = async function (event) {
-    event.preventDefault();
-    if (feedbackBusy) return;
-    const description = feedbackDescription.value.trim();
-    if (description.length < 6) {
-      setFeedbackStatus("请至少填写 6 个字符，说明复现步骤和问题现象。", "error");
-      feedbackDescription.focus();
-      return;
-    }
-    feedbackBusy = true;
-    feedbackSubmit.disabled = true;
-    feedbackSubmit.textContent = "正在提交…";
-    setFeedbackStatus("正在脱敏并上传到项目 Issue…");
-    let copied = false;
-    try {
-      const result = asJSON(await Bound.FeedbackSubmit(
-        description, feedbackImages, feedbackIncludeLogs.checked));
-      try {
-        await navigator.clipboard.writeText(result.url || "");
-        copied = true;
-      } catch (_) {}
-      setFeedbackStatus(
-        "已创建 Issue #" + result.number + (copied ? "，链接已复制。" : "：" + result.url),
-        "success"
-      );
-    } catch (err) {
-      setFeedbackStatus("提交失败：" + (err && err.message ? err.message : "请稍后重试"), "error");
-    } finally {
-      feedbackBusy = false;
-      feedbackSubmit.disabled = false;
-      feedbackSubmit.textContent = "提交反馈";
-    }
-  };
 
   function maskLogAccount(value) {
     const text = String(value || "");
