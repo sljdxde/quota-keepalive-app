@@ -11,6 +11,8 @@ import {
   performanceLow,
   resetPerformanceModeCache,
   resolvePerformanceMode,
+  softwareRendering,
+  SOFTWARE_RENDER_FPS,
   PERFORMANCE_LOW_FPS,
   PERFORMANCE_LOW_CLASS,
   PERFORMANCE_MODE_KEY,
@@ -264,5 +266,30 @@ test("applyPerformanceMode tolerates a missing document", function () {
   resetPerformanceModeCache();
   assert.equal(applyPerformanceMode(null, true), true);
   assert.equal(performanceLow(), true);
+  resetPerformanceModeCache();
+});
+
+test("softwareRendering reflects cached detection and drives the 3D frame cap", function () {
+  resetPerformanceModeCache();
+  // 未初始化检测时不能声称是软件渲染。
+  assert.equal(softwareRendering(), false);
+
+  const hardware = initPerformanceMode({
+    setting: "off",
+    document: fakeDocument(),
+    createCanvas: fakeCanvas({ renderer: "ANGLE (NVIDIA GeForce RTX 3060)" }).factory,
+  });
+  assert.equal(softwareRendering(), false);
+  assert.equal(hardware.low, false);
+
+  resetPerformanceModeCache();
+  initPerformanceMode({
+    setting: "off",
+    document: fakeDocument(),
+    createCanvas: fakeCanvas({ renderer: "Google SwiftShader" }).factory,
+  });
+  // 即使关闭性能模式（保留全部特效），软件渲染也要被识别出来用于给 3D 限帧。
+  assert.equal(softwareRendering(), true);
+  assert.equal(SOFTWARE_RENDER_FPS, 30);
   resetPerformanceModeCache();
 });

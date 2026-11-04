@@ -53,6 +53,14 @@ type Root struct {
 type Config struct {
 	Roots        []Root
 	PollInterval time.Duration
+	// IdlePollInterval 是「没有会话在生成」时的轮询间隔。空闲时无需 750ms 那么
+	// 频繁：整棵目录树扫描在 Windows（NTFS / 虚拟机）上比 APFS 贵得多，放宽
+	// 到 2s 能显著降低空闲 CPU，又不会让新会话出现得太迟。为 0 时沿用它
+	// PollInterval（测试默认）。
+	IdlePollInterval time.Duration
+	// WalkInterval 是完整重启目录扫描的最小间隔；两次扫描之间只对已知文件做
+	// 增量 stat/读取。为 0 时每轮都重扫（测试默认，保证新建文件立刻可见）。
+	WalkInterval time.Duration
 	Now          func() time.Time
 }
 
@@ -243,9 +251,11 @@ func DefaultConfig() Config {
 		add("opencode", filepath.Join(dataHome, "opencode", "opencode.db"))
 	}
 	return Config{
-		Roots:        roots,
-		PollInterval: 750 * time.Millisecond,
-		Now:          time.Now,
+		Roots:            roots,
+		PollInterval:     750 * time.Millisecond,
+		IdlePollInterval: 2 * time.Second,
+		WalkInterval:     3 * time.Second,
+		Now:              time.Now,
 	}
 }
 

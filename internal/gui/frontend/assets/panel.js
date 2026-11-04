@@ -1735,16 +1735,33 @@ Events.On("accounts-changed", function () {
   if (activeTab === "checkin") refresh();
 });
 
+// 面板窗口是隐藏创建的，收起时仍然常驻内存。速度页每 750ms 会收到一次
+// tokenspeed-changed，如果照着渲染就会在用户看不见的时候不停重建 DOM
+// （Windows 虚拟机里能明显感到卡）。因此只在窗口可见时渲染，隐藏期间
+// 只记住最新快照，下次显示时补一次。
+let panelVisible = false;
+
 Events.On("common:WindowShow", function (event) {
+  panelVisible = true;
   if (event.sender !== "panel") return;
   if (activeTab === "checkin") refresh();
   if (activeTab === "speed") refreshSpeed();
   if (activeTab === "pet") renderPet();
+  if (pendingSpeedSnapshot) {
+    renderSpeed(pendingSpeedSnapshot);
+    pendingSpeedSnapshot = null;
+  }
+});
+Events.On("common:WindowHide", function (event) {
+  if (event && event.sender && event.sender !== "panel") return;
+  panelVisible = false;
 });
 Events.On("tokenspeed-changed", function (event) {
   if (!event || !event.data) return;
-  // 只在速度页可见时渲染；否则只存最新快照。
-  if (activeTab === "speed" && document.visibilityState !== "hidden") {
+  // 面板窗口隐藏常驻时 document.visibilityState 不可靠（隐藏窗口可能仍报
+  // visible），用 WindowShow/WindowHide 维护的 panelVisible 判断更准；非速度页
+  // 收到快照也只暂存，切回速度页时由 activateTab 补渲染。
+  if (panelVisible && activeTab === "speed") {
     pendingSpeedSnapshot = null;
     renderSpeed(event.data);
     return;

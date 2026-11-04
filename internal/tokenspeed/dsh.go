@@ -206,6 +206,9 @@ func (u dshUsage) normalized() usage {
 func (s *Service) readDSHSources(ctx context.Context, now time.Time) {
 	dayStart := beijingDayStart(now)
 	seen := make(map[string]struct{})
+	// DSH 根目录下有大量 session-* 子目录，重扫在 Windows 上很贵，按
+	// WalkInterval 节流；节流期间只对已知会话文件做增量解压。
+	walk := s.dshWalkDue(now)
 	for _, root := range s.cfg.Roots {
 		if root.Source != "dsh" {
 			continue
@@ -218,6 +221,16 @@ func (s *Service) readDSHSources(ctx context.Context, now time.Time) {
 			continue
 		}
 		s.availableSources["dsh"] = true
+		if !walk {
+			for path := range s.dsh {
+				if ctx.Err() != nil {
+					return
+				}
+				seen[path] = struct{}{}
+				s.readDSHFile(path, now)
+			}
+			continue
+		}
 		count := 0
 		_ = walkDir(root.Path, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {

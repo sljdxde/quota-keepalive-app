@@ -156,6 +156,10 @@ type Service struct {
 	dsh           map[string]*dshFileState
 	dshDec        *dshDecoder
 	snapshot      Snapshot
+	// lastWalk / lastDSHWalk 记录上一次完整目录扫描的时间，用于按
+	// WalkInterval 节流（普通日志源与 DSH 源各自计时）。由 Poll 在 s.mu 内读写。
+	lastWalk    time.Time
+	lastDSHWalk time.Time
 
 	// slowMu 保护慢轮询环形记录；独立于 mu，避免诊断查询被扫描整段挡住。
 	slowMu   sync.Mutex
@@ -220,17 +224,34 @@ func (s *Service) Start(ctx context.Context) {
 		// 首轮扫描放到后台：会话目录文件很多时，同步首跑会把首窗创建
 		// 拖后数秒（用户感知为「双击后卡半天」）。
 		s.poll(ctx)
-		ticker := time.NewTicker(s.cfg.PollInterval)
-		defer ticker.Stop()
 		for {
+			// 间隔按上一轮结果自适应：有会话在生成才用 750ms，空闲时放宽，
+			// 避免在 Windows 上持续全盘扫描抢占 CPU（虚拟机里尤其明显）。
+			timer := time.NewTimer(s.nextPollInterval())
 			select {
 			case <-ctx.Done():
+				timer.Stop()
 				return
-			case <-ticker.C:
+			case <-timer.C:
 				s.poll(ctx)
 			}
 		}
 	}()
+}
+
+// nextPollInterval 返回下一轮轮询的间隔：上一轮有生成中的会话就保持快速
+// 刷新，否则用空闲间隔（未配置时沿用 PollInterval）。
+func (s *Service) nextPollInterval() time.Duration {
+	s.snapshotMu.RLock()
+	active := s.snapshot.Active || s.snapshot.GeneratingAgents > 0
+	s.snapshotMu.RUnlock()
+	if active {
+		return s.cfg.PollInterval
+	}
+	if s.cfg.IdlePollInterval > 0 {
+		return s.cfg.IdlePollInterval
+	}
+	return s.cfg.PollInterval
 }
 
 // Wait blocks until the polling goroutine exits. It is safe to call after Start.
@@ -368,6 +389,31 @@ func (s *Service) poll(ctx context.Context) {
 	}
 }
 
+// walkDue 判断本轮是否需要重扫目录树；需要时顺带记下这次扫描时间。
+// WalkInterval 为 0 时每轮都扫（测试默认行为，新建文件立刻可见）。
+func (s *Service) walkDue(now time.Time) bool {
+	if s.cfg.WalkInterval <= 0 {
+		return true
+	}
+	if s.lastWalk.IsZero() || now.Sub(s.lastWalk) >= s.cfg.WalkInterval {
+		s.lastWalk = now
+		return true
+	}
+	return false
+}
+
+// dshWalkDue 与 walkDue 同理，但单独计时：普通日志源和 DSH 源的扫描互不影响。
+func (s *Service) dshWalkDue(now time.Time) bool {
+	if s.cfg.WalkInterval <= 0 {
+		return true
+	}
+	if s.lastDSHWalk.IsZero() || now.Sub(s.lastDSHWalk) >= s.cfg.WalkInterval {
+		s.lastDSHWalk = now
+		return true
+	}
+	return false
+}
+
 // pollLocked 是 Poll 的加锁主体：耗时的统计放在锁外记录，避免日志写盘时
 // 继续持有服务锁。
 func (s *Service) pollLocked(ctx context.Context) {
@@ -392,6 +438,10 @@ func (s *Service) discoverAndRead(ctx context.Context, now time.Time) {
 	seen := make(map[string]struct{})
 	s.availableSources = make(map[string]bool)
 	dayStart := beijingDayStart(now)
+	// 目录树重扫是轮询里最贵的一步（Windows 上尤其明显），按 WalkInterval
+	// 节流；两次重扫之间只对已发现的文件做增量读取，新文件最多延迟一个
+	// WalkInterval 出现。
+	walk := s.walkDue(now)
 	for _, root := range s.cfg.Roots {
 		if root.Source == "opencode" || root.Source == "dsh" {
 			continue
@@ -401,6 +451,20 @@ func (s *Service) discoverAndRead(ctx context.Context, now time.Time) {
 			continue
 		}
 		s.availableSources[root.Source] = true
+		if !walk {
+			// 不重扫：已知文件照常增量读，seen 不参与裁剪判断（见下方 prune）。
+			for path, state := range s.files {
+				if ctx.Err() != nil {
+					return
+				}
+				if state == nil || state.source != root.Source {
+					continue
+				}
+				seen[path] = struct{}{}
+				s.readFile(path, root.Source, now)
+			}
+			continue
+		}
 		count := 0
 		_ = walkDir(root.Path, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {

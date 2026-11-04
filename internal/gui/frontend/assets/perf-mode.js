@@ -178,6 +178,16 @@ export function performanceLow() {
   return currentLow;
 }
 
+// SOFTWARE_RENDER_FPS 是检测到软件渲染（虚拟机 / 无 GPU 加速）时 3D 装饰
+// 动画的帧率上限。装饰性的宠物在 30fps 与 60fps 之间几乎看不出区别，但软件
+// 渲染下逐帧光栅化的成本会实实在在占满 CPU；保留特效的同时把帧率砍半。
+export const SOFTWARE_RENDER_FPS = 30;
+
+// softwareRendering 返回本页是否跑在软件渲染器上（未初始化检测时返回 false）。
+export function softwareRendering() {
+  return !!(cachedDetection && cachedDetection.software);
+}
+
 // applyPerformanceMode 把降级状态写到 body.perf-low 与 html[data-perf]，
 // 并广播 qka-perf-changed 让已创建的 3D 视图重设分辨率/帧率。
 // 对传入的 document 与自定义事件都做了防御，便于 node 单测注入假 document。

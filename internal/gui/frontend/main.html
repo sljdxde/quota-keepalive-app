@@ -84,7 +84,9 @@
     --glass-alpha-card: 80%;
     --glass-border-rgb: 255,255,255;
     --glass-border-alpha: .58;
-    --glass-blur: 32px;
+    /* 背景是平滑的多层径向渐变，模糊半径超过 20px 观感已无差别，而合成成本
+       随半径近似平方增长；Windows 虚拟机（软件渲染）下 50px 会明显卡顿。 */
+    --glass-blur: 14px;
     --glass-sat: 1.3;
     --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
     /* 主窗口统一字号阶梯（与菜单栏面板同源）。禁止再用 10.8/11.2/11.8 这类
@@ -225,14 +227,14 @@
     --glass-alpha-window: .50;
     --glass-alpha-titlebar: 38%;
     --glass-alpha-card: 62%;
-    --glass-blur: 44px;
+    --glass-blur: 18px;
     --glass-sat: 1.4;
   }
   html[data-glass="strong"] {
     --glass-alpha-window: .84;
     --glass-alpha-titlebar: 72%;
     --glass-alpha-card: 90%;
-    --glass-blur: 50px;
+    --glass-blur: 20px;
     --glass-sat: 1.18;
   }
   * { box-sizing: border-box; }

@@ -1,7 +1,12 @@
 import * as THREE from "./vendor/three.module.min.js";
 import { GLTFLoader } from "./vendor/GLTFLoader.js";
 import { DRACOLoader } from "./vendor/DRACOLoader.js";
-import { performanceLow, PERFORMANCE_LOW_FPS } from "./perf-mode.js";
+import {
+  performanceLow,
+  PERFORMANCE_LOW_FPS,
+  softwareRendering,
+  SOFTWARE_RENDER_FPS,
+} from "./perf-mode.js";
 
 const TARGET_HEIGHT = 2.35;
 const TARGET_WIDTH = 2.9;
@@ -550,14 +555,16 @@ function createStageViewer(canvas, options) {
     }
   }
 
-  // 低配模式把渲染限到 PERFORMANCE_LOW_FPS（20fps）：软件渲染下逐帧全画
-  // 会占满 CPU，降帧后宠物跟随仍连贯，界面点击/切页不再被抢时间片。
+  // 低配模式把渲染限到 PERFORMANCE_LOW_FPS（20fps）；软件渲染（虚拟机 / 无
+  // GPU 加速）即使开着全部特效也限到 SOFTWARE_RENDER_FPS（30fps）——逐帧
+  // 光栅化会占满 CPU，降帧后宠物跟随仍连贯，界面点击/切页不再被抢时间片。
   function frame(time) {
     if (!enabled || closed) {
       animationFrame = 0;
       return;
     }
-    if (performanceLow() && time - lastDrawTime < 1000 / PERFORMANCE_LOW_FPS) {
+    const minInterval = 1000 / (performanceLow() ? PERFORMANCE_LOW_FPS : SOFTWARE_RENDER_FPS);
+    if ((performanceLow() || softwareRendering()) && time - lastDrawTime < minInterval) {
       animationFrame = requestAnimationFrame(frame);
       return;
     }
