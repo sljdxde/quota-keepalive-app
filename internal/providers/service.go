@@ -208,6 +208,12 @@ type Service struct {
 	// overlap doubles the runtime round-trip and races their SQLite writes,
 	// which made the first paint come and go.
 	listMu sync.Mutex
+	// viewMu guards the cached page projection served by CachedListView.
+	viewMu    sync.Mutex
+	viewCache *View
+	viewAt    time.Time
+	// viewRefreshing 表示已有一次后台刷新在跑，避免过期时重复发起。
+	viewRefreshing bool
 
 	creditMu     sync.Mutex
 	creditSynced map[string]bool
@@ -514,7 +520,81 @@ func (s *Service) List(ctx context.Context) (View, error) {
 			}
 		}
 	}
+	s.storeView(view)
 	return view, nil
+}
+
+// providerViewTTL 是页面投影缓存的有效期。窗口打开时先拿缓存，过期就在后台
+// 刷新；这样「打开页面」永远不会等一次运行时往返。
+var providerViewTTL = 20 * time.Second
+
+// CachedListView serves the last provider projection immediately and refreshes it
+// in the background when stale. Opening the panel or the main window must not
+// block on a runtime round trip (measured at ~0.8s even when warm).
+func (s *Service) CachedListView(ctx context.Context) (View, error) {
+	s.viewMu.Lock()
+	cached := s.viewCache
+	stale := s.viewAt.IsZero() || s.now().Sub(s.viewAt) > providerViewTTL
+	if cached != nil {
+		shouldRefresh := stale && !s.viewRefreshing
+		if shouldRefresh {
+			s.viewRefreshing = true
+		}
+		view := cloneView(*cached)
+		s.viewMu.Unlock()
+		if shouldRefresh {
+			go func() {
+				defer func() {
+					s.viewMu.Lock()
+					s.viewRefreshing = false
+					s.viewMu.Unlock()
+				}()
+				_, _ = s.List(context.Background())
+			}()
+		}
+		return view, nil
+	}
+	s.viewMu.Unlock()
+	return s.List(ctx)
+}
+
+func (s *Service) storeView(view View) {
+	s.viewMu.Lock()
+	s.viewCache = &view
+	s.viewAt = s.now()
+	s.viewMu.Unlock()
+}
+
+// invalidateView drops the cached projection so the next page load reflects a
+// write the user just made (login, toggle, delete, manual run).
+func (s *Service) invalidateView() {
+	s.viewMu.Lock()
+	s.viewCache = nil
+	s.viewAt = time.Time{}
+	s.viewMu.Unlock()
+}
+
+func cloneView(view View) View {
+	out := view
+	out.Providers = append([]ProviderView(nil), view.Providers...)
+	for i := range out.Providers {
+		provider := &out.Providers[i]
+		provider.Methods = append([]MethodView(nil), provider.Methods...)
+		provider.Models = append([]ModelView(nil), provider.Models...)
+		provider.Accounts = append([]AccountView(nil), provider.Accounts...)
+		for j := range provider.Accounts {
+			account := &provider.Accounts[j]
+			account.Models = append([]string(nil), account.Models...)
+			account.Operations = append([]OperationView(nil), account.Operations...)
+			prefs := make(map[string]bool, len(account.TaskPreferences))
+			for k, v := range account.TaskPreferences {
+				prefs[k] = v
+			}
+			account.TaskPreferences = prefs
+		}
+	}
+	out.PluginErrors = append([]providerruntime.LoadedPlugin(nil), view.PluginErrors...)
+	return out
 }
 
 // runtimeOmitsStoredAccounts reports whether the runtime's provider list
@@ -971,6 +1051,7 @@ func (s *Service) SetEnabled(ctx context.Context, provider string, enabled bool)
 		s.writeAuditFailure(ctx, provider, "", "provider", sql.ErrNoRows)
 		return sql.ErrNoRows
 	}
+	s.invalidateView()
 	s.writeAuditLog(ctx, provider, "", "provider", "completed", "info",
 		"供应商已"+enabledLabel(enabled))
 	return nil
@@ -982,6 +1063,7 @@ func (s *Service) SetAccountEnabled(ctx context.Context, provider, account strin
 		s.writeAuditFailure(ctx, provider, account, "account", err)
 		return err
 	}
+	s.invalidateView()
 	s.writeAuditLog(ctx, provider, account, "account", "completed", "info",
 		"账号已"+enabledLabel(enabled))
 	return nil
@@ -993,6 +1075,7 @@ func (s *Service) SetTaskEnabled(ctx context.Context, provider, account, operati
 		s.writeAuditFailure(ctx, provider, account, "automation", err)
 		return err
 	}
+	s.invalidateView()
 	s.writeAuditLog(ctx, provider, account, "automation", "completed", "info",
 		auditOperationLabel(operation)+"自动执行已"+enabledLabel(enabled))
 	return nil
@@ -1068,6 +1151,7 @@ func (s *Service) FinishLogin(ctx context.Context, session, code string) (LoginV
 		return LoginView{}, err
 	}
 	_ = s.clearStaleFailure(ctx, saved.Provider, saved.Account)
+	s.invalidateView()
 	s.writeAuditLog(ctx, saved.Provider, saved.Account, "login", "completed", "info", "登录完成")
 	return LoginView{Provider: saved.Provider, Status: "verified", Saved: &saved, Message: "登录完成"}, nil
 }
@@ -1095,6 +1179,7 @@ func (s *Service) LoginAPIKey(
 		return LoginView{}, err
 	}
 	_ = s.clearStaleFailure(ctx, saved.Provider, saved.Account)
+	s.invalidateView()
 	s.writeAuditLog(ctx, saved.Provider, saved.Account, "login", "completed", "info", "登录完成")
 	return LoginView{Provider: saved.Provider, Status: "verified", Saved: &saved, Message: "登录完成"}, nil
 }
@@ -1159,6 +1244,7 @@ func (s *Service) DeleteAccount(ctx context.Context, provider, account string) e
 		s.writeAuditFailure(ctx, provider, account, "account", err)
 		return err
 	}
+	s.invalidateView()
 	s.writeAuditLog(ctx, provider, account, "account", "completed", "info", "账号已删除")
 	return nil
 }
@@ -1450,6 +1536,7 @@ func (s *Service) HasProvider(ctx context.Context, target string) (bool, error) 
 func (s *Service) Run(
 	ctx context.Context, provider, account, operation string,
 ) (runErr error) {
+	defer s.invalidateView()
 	recorded := false
 	defer func() {
 		if runErr != nil && !recorded {

@@ -133,9 +133,10 @@ func (a *App) guiDeps() gui.Deps {
 		TokenSpeedGet: func(context.Context) (tokenspeed.Snapshot, error) {
 			return tokenSpeed.Snapshot(), nil
 		},
-		TokenSpeed:    tokenSpeed,
-		Accounts:      bridge,
-		ProvidersList: a.providers.List,
+		TokenSpeed: tokenSpeed,
+		Accounts:   bridge,
+		// 页面打开走缓存投影（秒开），过期后在后台刷新；写操作会立即失效缓存。
+		ProvidersList: a.providers.CachedListView,
 		ProvidersWarm: func(ctx context.Context) error {
 			_, err := a.providers.List(ctx)
 			return err

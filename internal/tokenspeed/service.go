@@ -128,7 +128,10 @@ var (
 type Service struct {
 	cfg Config
 
-	mu                 sync.RWMutex
+	mu sync.RWMutex
+	// snapshotMu 只保护已算好的快照。Poll 扫描会话文件要持 mu 写锁上百毫秒，
+	// 若 Snapshot 也读 mu，窗口初始化/刷新的绑定调用会被扫描整段挡住。
+	snapshotMu         sync.RWMutex
 	files              map[string]*fileState
 	records            map[string]responseRecord
 	deduper            map[string]string
@@ -231,12 +234,20 @@ func (s *Service) Wait() {
 
 // Snapshot returns a copy of the latest credential-free view.
 func (s *Service) Snapshot() Snapshot {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := s.snapshot
-	out.Sources = append([]SourceSnapshot(nil), s.snapshot.Sources...)
-	out.Sessions = append([]SessionSnapshot(nil), s.snapshot.Sessions...)
+	s.snapshotMu.RLock()
+	snap := s.snapshot
+	s.snapshotMu.RUnlock()
+	out := snap
+	out.Sources = append([]SourceSnapshot(nil), snap.Sources...)
+	out.Sessions = append([]SessionSnapshot(nil), snap.Sessions...)
 	return out
+}
+
+// storeSnapshot publishes a computed snapshot without holding the scan lock.
+func (s *Service) storeSnapshot(snap Snapshot) {
+	s.snapshotMu.Lock()
+	s.snapshot = snap
+	s.snapshotMu.Unlock()
 }
 
 // SetTitleTheme switches the built-in title theme and refreshes the derived snapshot.
@@ -244,7 +255,7 @@ func (s *Service) SetTitleTheme(theme string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.titleTheme = NormalizeTitleTheme(theme)
-	s.snapshot = s.computeSnapshot(s.cfg.Now())
+	s.storeSnapshot(s.computeSnapshot(s.cfg.Now()))
 }
 
 // slowPollThreshold 是单次轮询的告警阈值：超过它说明扫描本机日志偏慢，
@@ -282,7 +293,7 @@ func (s *Service) pollLocked() {
 	s.readOpenCodeSources(now)
 	s.readDSHSources(now)
 	s.prune(now)
-	s.snapshot = s.computeSnapshot(now)
+	s.storeSnapshot(s.computeSnapshot(now))
 }
 
 func (s *Service) discoverAndRead(now time.Time) {
