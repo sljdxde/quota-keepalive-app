@@ -100,9 +100,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
-    name: Publish GitHub Release
-    needs: [windows, macos]
+  # Windows 发布不依赖 macOS：mac 构建失败时 Windows 包照常发版，
+  # DMG 等 mac 修好后由 publish-macos 补传并更新 feed。
+  publish-windows:
+    name: Publish Windows artifacts
+    needs: [windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -118,31 +120,75 @@ jobs:
           name: windows-dist
           path: dist
 
-      - name: Download macOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-dist
-          path: dist/dmg
-
       # feed.json 的 BASE_URL 默认指向 releases/latest/download，与 GitHub
       # Release 资产的固定链接一致；自更新客户端按 feed.json 拿下载地址。
-      - name: Build release feed
+      # 此时只有 Windows 产物，放宽平台要求；macOS 补传时再生成全平台 feed。
+      - name: Build release feed (windows only)
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}" DIST="$PWD/dist" scripts/build-release-feed.sh
+          VERSION="${GITHUB_REF_NAME#v}" DIST="$PWD/dist"             QKA_REQUIRE_PLATFORMS=windows/amd64,windows/arm64             scripts/build-release-feed.sh
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (windows)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           files=()
-          for f in dist/QKA-*.exe dist/dmg/QKA-*.dmg dist/SHA256SUMS dist/SHA256SUMS-windows-*.txt dist/feed.json; do
+          for f in dist/QKA-*-windows-*.exe dist/SHA256SUMS-windows-*.txt dist/feed.json dist/SHA256SUMS; do
             [[ -f "$f" ]] && files+=("$f")
           done
-          (( ${#files[@]} >= 6 )) || { echo "产物数量不足：${#files[@]}"; exit 1; }
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Quota Keepalive ${GITHUB_REF_NAME#v}" \
-            --generate-notes \
-            "${files[@]}"
+          (( ${#files[@]} >= 4 )) || { echo "产物数量不足：${#files[@]}"; exit 1; }
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber "${files[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME"               --title "Quota Keepalive ${GITHUB_REF_NAME#v}"               --generate-notes               "${files[@]}"
+          fi
+
+  # macOS 修好构建后重跑本 workflow：这个 job 补传 DMG 并把 feed.json 升级为
+  # 全平台（darwin/arm64 + darwin/amd64 + windows/amd64 + windows/arm64）。
+  publish-macos:
+    name: Publish macOS artifacts
+    needs: [macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download Windows artifacts (for full-platform feed)
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-dist
+          path: dist
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dist
+          path: dist/dmg
+
+      - name: Build full release feed
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}" DIST="$PWD/dist" scripts/build-release-feed.sh
+
+      - name: Upload DMGs and refresh feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=()
+          for f in dist/dmg/QKA-*.dmg; do
+            [[ -f "$f" ]] && dmgs+=("$f")
+          done
+          (( ${#dmgs[@]} >= 2 )) || { echo "DMG 数量不足：${#dmgs[@]}"; exit 1; }
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" --clobber               "${dmgs[@]}" dist/feed.json dist/SHA256SUMS
+          else
+            gh release create "$GITHUB_REF_NAME"               --title "Quota Keepalive ${GITHUB_REF_NAME#v}"               --generate-notes               "${dmgs[@]}" dist/feed.json dist/SHA256SUMS
+          fi
