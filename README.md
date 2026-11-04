@@ -62,16 +62,19 @@ Windows 需要 WebView2 运行时：Win11 自带，Win10 可能没有；缺失�
 ```sh
 make build-darwin-arm64     # macOS GUI
 make release-macos          # macOS DMG
-make release-windows        # Windows 单文件 exe（amd64 + arm64，内嵌运行时）
+make build-windows          # Windows 单文件 exe（内嵌运行时，可直接安装/运行）
+make release-windows        # Windows 发行物 + SHA256SUMS（amd64 + arm64）
 ```
 
-`make release-windows` 会先用 `go run ./build/embedassets` 把 Bun、`adapters/` 与
-`provider-plugins/` 压成 `internal/runtimebundle/assets/` 下的 zstd 资源，再用
-`-tags embeddedruntime` 交叉编译出 `dist/QKA-<version>-windows-<arch>.exe`；资源目录
-是构建产物，不进版本库。
+Windows 的 GUI 产物必须是自包含的：构建时先用 `go run ./build/embedassets` 把 Bun、
+`adapters/` 与 `provider-plugins/` 压成 `internal/runtimebundle/assets/` 下的 zstd 资源，
+再用 `-tags embeddedruntime` 交叉编译。漏掉任何一步都会得到「能弹安装向导、却在
+解压运行时一步必然失败」的 exe，所以 `make build-windows` 与 `make release-windows`
+统一走 `scripts/build-windows-exe.sh`（Bun 缓存 + 构建锁 + 内嵌 + `build/verifype`）。
+资源目录是构建产物，不进版本库；首次构建会下载一次 Bun（约 53MB/架构），之后复用缓存。
 
-版本号来自 `git describe --tags`，发布时也可显式指定，例如
-`VERSION=0.1.23 make release-windows`。
+版本号来自仓库根 `VERSION` 文件（单一来源，`Makefile` 与两个发行脚本共用）；
+发布时也可显式指定，例如 `VERSION=0.1.24 make release-windows`。
 
 ## 开发
 
@@ -101,12 +104,12 @@ go vet ./... && gofmt -l .
 
 ## 发布
 
-打 tag 后由 `.github/workflows/windows.yml` 与 `feedback-endpoint.yml` 自动校验（Windows 全量编译 + CLI 冒烟、反馈端点连通性）；DMG 与 Windows 包由 `scripts/` 下脚本在本机产出，再手工上传到 Release。
+打 `v*` tag 后由 CI 自动发布：`.github/workflows/windows.yml` 做 Windows 全量编译 + CLI 冒烟，`.github/workflows/release.yml` 打包 Windows 单文件 exe（amd64/arm64）与 macOS DMG（arm64/amd64），生成 feed.json 与 SHA256SUMS，并自动创建 GitHub Release。
 
 ## 已知限制
 
 - **Windows GUI 未经真机验收**：CI 覆盖「全部包与测试在 Windows 编译通过」与「CLI 真实可执行」；WebView2 渲染、托盘、常驻刘海、安装向导与自更新仍需实机确认
-- **反馈入口默认隐藏**：内置反馈服务端尚未部署，提交会失败；功能代码保留，服务可用后由 `FEEDBACK_AVAILABLE` 开关恢复
+- **反馈功能已移除**：内置反馈服务端（Cloudflare Worker）不可达，且 `*.workers.dev` 在部分地区被网络阻断；相关代码与 CI 探活已整体摘除，需要时从历史提交恢复
 - **macOS 包未公证**：DMG 使用 ad-hoc 签名，换机或从网上下载后首次打开可能被 Gatekeeper 拦截，需右键「打开」或在「隐私与安全性」放行
 - Qoder 上游 token 字段恒为 0；OpenCode 无首 token 时间戳，不出实测速率
 - 保活（真实对话续期）功能全局停用
