@@ -1,0 +1,148 @@
+name: release
+
+# 发布流水线：打 v* tag 触发，CI 打包 Windows 与 macOS 双架构发行物并创建 Release。
+#
+# 产物（全部以 tag 推导版本号，如 v0.1.24 → 0.1.24）：
+#   - Windows：QKA-<v>-windows-{amd64,arm64}.exe（自包含单文件，内嵌运行时）
+#   - macOS：  dist/dmg/QKA-<v>-{arm64,amd64}.dmg（可安装 DMG）
+#   - 汇总：   feed.json（自更新 feed）+ SHA256SUMS
+#
+# 不覆盖：macOS 公证（ad-hoc 签名，见 README 已知限制）。
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows (amd64 + arm64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache Bun download
+        uses: actions/cache@v4
+        with:
+          # 与 scripts/build-windows-exe.sh 的缓存目录一致（Git Bash 的 ~/.cache）。
+          path: ~/.cache/qka
+          key: qka-bun-${{ runner.os }}-1.4.4-${{ hashFiles('scripts/build-windows-exe.sh') }}
+
+      - name: Build self-contained exes
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}" WIN_ARCH=all scripts/build-windows-exe.sh
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: |
+            dist/QKA-*-windows-*.exe
+            dist/SHA256SUMS-windows-*.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: Build macOS (arm64 + amd64)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # DMG 里的 .app 需要嵌入与目标架构匹配的 Bun。官方 release 按架构分发，
+      # 分别下载后经 BUN_ARM64 / BUN_AMD64 注入 build-dmg.sh（脚本用 lipo 校验）。
+      - name: Download Bun runtimes (both arches)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bun"
+          curl -fL --retry 3 --connect-timeout 20 \
+            -o "$RUNNER_TEMP/bun/aarch64.zip" \
+            https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-darwin-aarch64.zip
+          curl -fL --retry 3 --connect-timeout 20 \
+            -o "$RUNNER_TEMP/bun/x64.zip" \
+            https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-darwin-x64.zip
+          unzip -oq "$RUNNER_TEMP/bun/aarch64.zip" -d "$RUNNER_TEMP/bun/a"
+          unzip -oq "$RUNNER_TEMP/bun/x64.zip" -d "$RUNNER_TEMP/bun/x"
+          echo "BUN_ARM64=$(find "$RUNNER_TEMP/bun/a" -type f -name bun | head -n1)" >> "$GITHUB_ENV"
+          echo "BUN_AMD64=$(find "$RUNNER_TEMP/bun/x" -type f -name bun | head -n1)" >> "$GITHUB_ENV"
+
+      - name: Build DMGs
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="$VERSION" ARCH=arm64 scripts/build-dmg.sh
+          VERSION="$VERSION" ARCH=amd64 scripts/build-dmg.sh
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dist
+          path: dist/dmg/QKA-*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-dist
+          path: dist
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dist
+          path: dist/dmg
+
+      # feed.json 的 BASE_URL 默认指向 releases/latest/download，与 GitHub
+      # Release 资产的固定链接一致；自更新客户端按 feed.json 拿下载地址。
+      - name: Build release feed
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}" DIST="$PWD/dist" scripts/build-release-feed.sh
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=()
+          for f in dist/QKA-*.exe dist/dmg/QKA-*.dmg dist/SHA256SUMS dist/SHA256SUMS-windows-*.txt dist/feed.json; do
+            [[ -f "$f" ]] && files+=("$f")
+          done
+          (( ${#files[@]} >= 6 )) || { echo "产物数量不足：${#files[@]}"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Quota Keepalive ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            "${files[@]}"
