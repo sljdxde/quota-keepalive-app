@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"sync"
+	"time"
 
 	"qka/internal/procattr"
 )
@@ -29,6 +30,10 @@ var (
 	ErrMessageTooLarge = errors.New("适配器消息超过有界上限")
 	errHostClosed      = errors.New("适配器宿主已关闭")
 	newAdapterCommand  = exec.Command
+	// initializeTimeout 限制 initialize 握手时长：适配器卡死（杀软扫描、
+	// 插件死循环）时不能拖住启动链路，超时后放弃该适配器、继续启动其余。
+	// 变量形式便于测试注入短超时。
+	initializeTimeout = 15 * time.Second
 )
 
 type rpcRequest struct {
@@ -136,9 +141,15 @@ func LaunchWith(ctx context.Context, bunPath, adapterDir string, hooks HookHandl
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	go h.readLoop(stdout)
+	// stdout 读完（EOF）之后再 cmd.Wait()：Wait 会关闭剩余管道，
+	// 若此时 readLoop 还在读，子进程临退出前写的最后一条响应可能被丢弃。
+	stdoutDone := make(chan struct{})
+	go func() {
+		defer close(stdoutDone)
+		h.readLoop(stdout)
+	}()
 	go h.drainStderr(stderr)
-	go h.waitLoop()
+	go h.waitLoop(stdoutDone)
 
 	initParams := map[string]any{"protocol": "qka-adapter"}
 	if provider, ok := hooks.(initConfigProvider); ok {
@@ -146,7 +157,9 @@ func LaunchWith(ctx context.Context, bunPath, adapterDir string, hooks HookHandl
 			initParams[k] = v
 		}
 	}
-	if _, err := h.request(ctx, "initialize", initParams); err != nil {
+	initCtx, cancel := context.WithTimeout(ctx, initializeTimeout)
+	defer cancel()
+	if _, err := h.request(initCtx, "initialize", initParams); err != nil {
 		_ = h.Close()
 		return nil, fmt.Errorf("适配器 initialize 握手失败: %w", err)
 	}
@@ -158,7 +171,13 @@ type initConfigProvider interface {
 	InitParams() map[string]any
 }
 
-func (h *Host) waitLoop() {
+// waitLoop 等 stdout 读完后回收子进程。
+// os/exec 文档明确：Wait 会在子进程退出后关闭 StdoutPipe，因此不得在读取
+// 完成前调用；否则子进程最后一条响应可能丢失，调用方误判为「子进程已退出」。
+func (h *Host) waitLoop(stdoutDone <-chan struct{}) {
+	if stdoutDone != nil {
+		<-stdoutDone
+	}
 	err := h.cmd.Wait()
 	h.shutdown(err, false)
 }

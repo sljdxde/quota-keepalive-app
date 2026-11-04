@@ -505,7 +505,7 @@ func TestCloseWakesPendingAndWaitLoopSuccess(t *testing.T) {
 	if err := success.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	success.waitLoop()
+	success.waitLoop(nil)
 	if !errors.Is(success.exitErr, ErrNotRunning) {
 		t.Fatalf("successful exit should map to ErrNotRunning: %v", success.exitErr)
 	}

@@ -15,6 +15,11 @@
 // 发布是原子的：先解压到同级临时目录，写完标记后整体 rename 到目标路径，
 // 因此任何时刻目标目录要么不存在、要么完整可用。版本变化时目标路径不同，
 // 自然重新解压，不会复用上一版的文件。
+//
+// 每次解压完成（或启动命中缓存）后会清理 runtime/ 下的历史版本目录，最多
+// 保留「当前 + 上一个版本」两份（回滚需要）；清理是尽力而为的附属动作，
+// 删不掉（如 Windows 上旧 bun.exe 被残留子进程占用）就下次再试，绝不影响
+// 主流程（见 cleanup.go）。
 package runtimebundle
 
 import (
@@ -56,6 +61,10 @@ const (
 	runtimeDirName = "runtime"
 	markerName     = ".ready"
 	markerFormat   = "qka-runtime-bundle/1"
+
+	// stagingPrefix 是解压临时目录的前缀（见 publish）。清理历史版本时跳过
+	// 该前缀的目录：它可能正被并发进程写入，删了会破坏对方的原子发布。
+	stagingPrefix = ".staging-"
 )
 
 // ErrUnavailable 表示本次构建没有内嵌运行时：未加 embeddedruntime 标签，
@@ -130,12 +139,20 @@ func ensureWith(configDir, version string, assets fs.FS) (Paths, error) {
 	target := filepath.Join(configDir, runtimeDirName, version)
 	if isReady(target, version) {
 		applog.Debugf("runtimebundle", "命中已解压运行时 version=%s path=%s", version, target)
+		// 启动命中缓存时也顺带清理历史版本目录（升级后旧副本不再增长）；
+		// 清理自身绝不报错，失败只记日志、下次启动再试。
+		cleanupOldVersions(filepath.Dir(target), version)
 		return pathsFor(target), nil
 	}
 
 	ensureMu.Lock()
 	defer ensureMu.Unlock()
-	return ensureLocked(target, version, assets)
+	paths, err := ensureLocked(target, version, assets)
+	if err == nil {
+		// 解压完成后清理旧版本目录：保留当前 + 上一个版本，其余删除。
+		cleanupOldVersions(filepath.Dir(target), version)
+	}
+	return paths, err
 }
 
 // ensureLocked 在持有 ensureMu 时再检查一次目标，避免同一版本被重复解压。
@@ -182,7 +199,7 @@ func publish(target, version string, assets fs.FS) error {
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("runtimebundle: 创建 %s: %w", parent, err)
 	}
-	staging, err := mkdirTemp(parent, ".staging-"+version+"-*")
+	staging, err := mkdirTemp(parent, stagingPrefix+version+"-*")
 	if err != nil {
 		return fmt.Errorf("runtimebundle: 创建临时目录: %w", err)
 	}

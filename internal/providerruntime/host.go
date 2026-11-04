@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"qka/internal/atomicfile"
 	"qka/internal/procattr"
@@ -29,6 +30,9 @@ var hostJS []byte
 var (
 	newCommand     = exec.Command
 	removeAuthPath = os.Remove
+	// initTimeout 限制 host 的 init 握手时长，避免卡死的 Bun 进程拖住启动链路。
+	// 变量形式便于测试注入短超时。
+	initTimeout = 15 * time.Second
 )
 
 const maxLineBytes = 32 << 20
@@ -288,9 +292,15 @@ func Launch(ctx context.Context, cfg LaunchConfig) (*Host, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	go h.readLoop(stdout)
+	// stdout 读到 EOF 后再 cmd.Wait()：Wait 会关闭管道，提前回收可能丢掉
+	// 子进程退出前写的最后一条响应。
+	stdoutDone := make(chan struct{})
+	go func() {
+		defer close(stdoutDone)
+		h.readLoop(stdout)
+	}()
 	go func() { _, _ = io.Copy(&h.stderr, stderr) }()
-	go h.waitLoop()
+	go h.waitLoop(stdoutDone)
 
 	plugins := make([]map[string]any, 0, len(cfg.Plugins))
 	for _, plugin := range cfg.Plugins {
@@ -314,7 +324,9 @@ func Launch(ctx context.Context, cfg LaunchConfig) (*Host, error) {
 	var initialized struct {
 		Plugins []LoadedPlugin `json:"plugins"`
 	}
-	if err := h.call(ctx, "init", params, &initialized); err != nil {
+	initCtx, cancel := context.WithTimeout(ctx, initTimeout)
+	defer cancel()
+	if err := h.call(initCtx, "init", params, &initialized); err != nil {
 		_ = h.Close()
 		return nil, fmt.Errorf("providerruntime: init: %w", err)
 	}
@@ -350,7 +362,11 @@ func (h *Host) Close() error {
 	return nil
 }
 
-func (h *Host) waitLoop() {
+// waitLoop 等 stdout 读完后回收子进程，避免 Wait 提前关闭管道丢失最后响应。
+func (h *Host) waitLoop(stdoutDone <-chan struct{}) {
+	if stdoutDone != nil {
+		<-stdoutDone
+	}
 	err := h.cmd.Wait()
 	h.mu.Lock()
 	h.exited = true
