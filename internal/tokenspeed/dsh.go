@@ -3,6 +3,7 @@ package tokenspeed
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -202,12 +203,15 @@ func (u dshUsage) normalized() usage {
 }
 
 // readDSHSources 遍历所有 dsh 根目录，按 mtime 只处理今天修改过的会话文件。
-func (s *Service) readDSHSources(now time.Time) {
+func (s *Service) readDSHSources(ctx context.Context, now time.Time) {
 	dayStart := beijingDayStart(now)
 	seen := make(map[string]struct{})
 	for _, root := range s.cfg.Roots {
 		if root.Source != "dsh" {
 			continue
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		info, err := os.Stat(root.Path)
 		if err != nil || !info.IsDir() {
@@ -218,6 +222,9 @@ func (s *Service) readDSHSources(now time.Time) {
 		_ = walkDir(root.Path, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return nil
+			}
+			if ctx.Err() != nil {
+				return filepath.SkipAll
 			}
 			if count >= maxFilesPerRoot {
 				return filepath.SkipAll

@@ -1,6 +1,7 @@
 package tokenspeed
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -126,7 +127,7 @@ func TestReadBackfillsBudgetExhausted(t *testing.T) {
 	svc.files["a"] = &fileState{source: "codex", agentID: "a",
 		backfill: &backfillState{end: 10, state: &fileState{}}}
 	svc.files["b"] = &fileState{source: "codex", agentID: "b"}
-	svc.readBackfills() // 只应返回，不读取任何文件
+	svc.readBackfills(context.Background()) // 只应返回，不读取任何文件
 	if svc.files["a"].backfill == nil {
 		t.Fatal("预算为 0 时不应消费回填游标")
 	}

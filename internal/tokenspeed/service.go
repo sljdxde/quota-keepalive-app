@@ -47,9 +47,13 @@ type responseRecord struct {
 }
 
 type fileState struct {
-	source        string
-	agentID       string
-	offset        int64
+	source  string
+	agentID string
+	offset  int64
+	// size/modNS 记录上次读完时的文件大小与 mtime：下一轮发现文件没变化时
+	// 直接跳过 open/seek/read（Windows 上每次 open 都要付一次杀软扫描成本）。
+	size          int64
+	modNS         int64
 	createdMS     int64
 	subagentOrd   *int64
 	pendingMS     int64
@@ -153,6 +157,12 @@ type Service struct {
 	dshDec        *dshDecoder
 	snapshot      Snapshot
 
+	// slowMu 保护慢轮询环形记录；独立于 mu，避免诊断查询被扫描整段挡住。
+	slowMu   sync.Mutex
+	slowRing []SlowPollSample
+	// slowNext 是环形写指针：slowRing 写满后从这里开始覆盖最旧样本。
+	slowNext int
+
 	started bool
 	done    chan struct{}
 }
@@ -205,9 +215,11 @@ func (s *Service) Start(ctx context.Context) {
 	done := s.done
 	s.mu.Unlock()
 
-	s.Poll()
 	go func() {
 		defer close(done)
+		// 首轮扫描放到后台：会话目录文件很多时，同步首跑会把首窗创建
+		// 拖后数秒（用户感知为「双击后卡半天」）。
+		s.poll(ctx)
 		ticker := time.NewTicker(s.cfg.PollInterval)
 		defer ticker.Stop()
 		for {
@@ -215,7 +227,7 @@ func (s *Service) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				s.Poll()
+				s.poll(ctx)
 			}
 		}
 	}()
@@ -229,6 +241,24 @@ func (s *Service) Wait() {
 	s.mu.RUnlock()
 	if started && done != nil {
 		<-done
+	}
+}
+
+// WaitWithin 最多等 d：退出流程用它兜底，避免网络盘等异常文件系统上的
+// 单轮扫描把进程退出拖到用户以为「关不掉」。
+func (s *Service) WaitWithin(d time.Duration) {
+	s.mu.RLock()
+	done := s.done
+	started := s.started
+	s.mu.RUnlock()
+	if !started || done == nil {
+		return
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
 	}
 }
 
@@ -262,6 +292,24 @@ func (s *Service) SetTitleTheme(theme string) {
 // 每 750ms 一次的界面刷新可能被拖慢，写一条 perf 告警便于事后排查。
 const slowPollThreshold = 150 * time.Millisecond
 
+// slowPollCapacity 是慢轮询环形记录的容量：只保留最近少数几次，供设置页
+// 诊断区块展示；记录只有耗时毫秒数与时间戳，不含任何会话内容。
+const slowPollCapacity = 10
+
+// SlowPollSample 是一次慢轮询的耗时记录。红线：不落提示词、token 或账号，
+// 只有性能数字与时间。
+type SlowPollSample struct {
+	// ElapsedMS 是该次轮询的实测耗时（毫秒）。
+	ElapsedMS int64 `json:"elapsed_ms"`
+	// At 是该次轮询结束时刻（服务时钟，RFC3339）。
+	At string `json:"at"`
+}
+
+// SlowPollThresholdMS 返回慢轮询告警阈值（毫秒），诊断页展示「耗时+阈值」用。
+func SlowPollThresholdMS() int64 {
+	return slowPollThreshold.Milliseconds()
+}
+
 // slowPollWarning 返回需要记录的性能告警；未超过阈值时 ok 为 false。
 func slowPollWarning(elapsed time.Duration) (message string, ok bool) {
 	if elapsed <= slowPollThreshold {
@@ -271,32 +319,76 @@ func slowPollWarning(elapsed time.Duration) (message string, ok bool) {
 		elapsed.Round(time.Millisecond), slowPollThreshold), true
 }
 
+// recordSlowPoll 把一次慢轮询写入环形记录；容量小、加锁独立，不会拖慢轮询。
+func (s *Service) recordSlowPoll(elapsed time.Duration, at time.Time) {
+	sample := SlowPollSample{
+		ElapsedMS: elapsed.Milliseconds(),
+		At:        at.Format(time.RFC3339),
+	}
+	s.slowMu.Lock()
+	defer s.slowMu.Unlock()
+	if len(s.slowRing) < slowPollCapacity {
+		s.slowRing = append(s.slowRing, sample)
+		return
+	}
+	s.slowRing[s.slowNext] = sample
+	s.slowNext = (s.slowNext + 1) % slowPollCapacity
+}
+
+// RecentSlowPolls 返回最近记录的慢轮询（旧→新）拷贝；未记录过时为空切片。
+func (s *Service) RecentSlowPolls() []SlowPollSample {
+	s.slowMu.Lock()
+	defer s.slowMu.Unlock()
+	if len(s.slowRing) < slowPollCapacity || s.slowNext == 0 {
+		return append([]SlowPollSample(nil), s.slowRing...)
+	}
+	// 环形已绕回：写指针处是最旧样本，从它开始按时间顺序拼接。
+	out := make([]SlowPollSample, 0, len(s.slowRing))
+	out = append(out, s.slowRing[s.slowNext:]...)
+	out = append(out, s.slowRing[:s.slowNext]...)
+	return out
+}
+
 // Poll performs one discovery, incremental read, and recomputation pass.
 func (s *Service) Poll() {
+	s.poll(context.Background())
+}
+
+// poll 是 Poll 的可取消版本：退出时取消 ctx，扫描在下一个检查点放弃，
+// 不再白等一轮完整目录遍历。
+func (s *Service) poll(ctx context.Context) {
 	started := time.Now()
-	s.pollLocked()
-	if message, ok := slowPollWarning(time.Since(started)); ok {
+	s.pollLocked(ctx)
+	elapsed := time.Since(started)
+	if message, ok := slowPollWarning(elapsed); ok {
 		applog.Warnf("perf", "tokenspeed: %s", message)
+		// 日志之外再留一份进程内环形记录：设置页诊断区块可以直接展示
+		// 最近几次慢轮询，用户反馈「卡」时不用翻日志文件。
+		s.recordSlowPoll(elapsed, s.cfg.Now())
 	}
 }
 
 // pollLocked 是 Poll 的加锁主体：耗时的统计放在锁外记录，避免日志写盘时
 // 继续持有服务锁。
-func (s *Service) pollLocked() {
+func (s *Service) pollLocked(ctx context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := s.cfg.Now()
 	s.ensureToday(now)
-	s.discoverAndRead(now)
-	s.readBackfills()
-	s.readOpenCodeSources(now)
-	s.readDSHSources(now)
+	s.discoverAndRead(ctx, now)
+	s.readBackfills(ctx)
+	s.readOpenCodeSources(ctx, now)
+	s.readDSHSources(ctx, now)
+	if ctx.Err() != nil {
+		// 已取消：不发布半成品快照，进程正在退出。
+		return
+	}
 	s.prune(now)
 	s.storeSnapshot(s.computeSnapshot(now))
 }
 
-func (s *Service) discoverAndRead(now time.Time) {
+func (s *Service) discoverAndRead(ctx context.Context, now time.Time) {
 	seen := make(map[string]struct{})
 	s.availableSources = make(map[string]bool)
 	dayStart := beijingDayStart(now)
@@ -314,6 +406,9 @@ func (s *Service) discoverAndRead(now time.Time) {
 			if walkErr != nil {
 				return nil
 			}
+			if ctx.Err() != nil {
+				return filepath.SkipAll
+			}
 			if count >= maxFilesPerRoot {
 				return filepath.SkipAll
 			}
@@ -329,6 +424,12 @@ func (s *Service) discoverAndRead(now time.Time) {
 				return nil
 			}
 			seen[path] = struct{}{}
+			// 快路径：大小与 mtime 都没变说明没有新增内容，跳过 open——
+			// 每轮给每个会话文件付一次 Windows CreateFile + 杀软扫描不值得。
+			if state := s.files[path]; state != nil &&
+				state.size == stat.Size() && state.modNS == stat.ModTime().UnixNano() {
+				return nil
+			}
 			s.readFile(path, root.Source, now)
 			return nil
 		})
@@ -358,6 +459,12 @@ func (s *Service) readFile(path, source string, now time.Time) {
 		s.files[path] = state
 		fresh = true
 	}
+	// 无论下面是否真正读到数据，都记下这次看到的大小/mtime：下轮快路径
+	// 依据它们跳过没有变化的文件。
+	defer func() {
+		state.size = info.Size()
+		state.modNS = info.ModTime().UnixNano()
+	}()
 	if state.project != "" {
 		s.projectByAgent[state.agentID] = state.project
 	}
@@ -446,13 +553,13 @@ func processLines(data []byte, consume func([]byte)) (int, int) {
 // readBackfills advances bounded historical reads for files whose live offset
 // starts past the beginning of the file. Polling keeps the total work per pass
 // bounded so the UI snapshot never waits on a whole-file parse.
-func (s *Service) readBackfills() {
+func (s *Service) readBackfills(ctx context.Context) {
 	budget := backfillBudget
 	for path, state := range s.files {
 		if state.backfill == nil {
 			continue
 		}
-		if budget <= 0 {
+		if budget <= 0 || ctx.Err() != nil {
 			return
 		}
 		budget -= s.readBackfill(path, state, budget)

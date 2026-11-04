@@ -1,14 +1,19 @@
 package tokenspeed
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"qka/internal/applog"
 )
 
 const opencodeEventLimit = 20000
@@ -16,6 +21,11 @@ const opencodeEventLimit = 20000
 type opencodeSourceState struct {
 	lastRowID     int64
 	lastUpdatedMS int64
+	// sig/sigSet 记录上次成功读取时的库文件指纹，用于跳过没有变化的轮询。
+	sig    sourceSignature
+	sigSet bool
+	// lastErr 是上次读取失败的错误文本，用来「同一错误只记一次日志」。
+	lastErr string
 }
 
 type opencodeEvent struct {
@@ -54,10 +64,13 @@ type opencodeTokenCache struct {
 	Write json.Number `json:"write"`
 }
 
-func (s *Service) readOpenCodeSources(now time.Time) {
+func (s *Service) readOpenCodeSources(ctx context.Context, now time.Time) {
 	for _, root := range s.cfg.Roots {
 		if root.Source != "opencode" && root.Source != "zcode" {
 			continue
+		}
+		if ctx.Err() != nil {
+			return
 		}
 		info, err := os.Stat(root.Path)
 		if err != nil || !info.Mode().IsRegular() {
@@ -69,12 +82,55 @@ func (s *Service) readOpenCodeSources(now time.Time) {
 			state = &opencodeSourceState{}
 			s.opencode[root.Path] = state
 		}
+		// 快路径：主库与 -wal 都没变化说明没有新提交，跳过本轮 sql.Open +
+		// 查询。zcode 的 session 库常在 GB 级，750ms 一次打开代价不小。
+		sig := sqliteSignature(root.Path)
+		if state.sigSet && sig == state.sig {
+			continue
+		}
+		var readErr error
 		if root.Source == "zcode" {
-			s.readZCodeMessages(root.Path, state, now)
+			readErr = s.readZCodeMessages(root.Path, state, now)
 		} else {
-			s.readOpenCodeEvents(root.Path, state, now)
+			readErr = s.readOpenCodeEvents(root.Path, state, now)
+		}
+		// 只有读成功才记住签名：锁冲突等临时失败下轮仍会重试。
+		if readErr == nil {
+			state.sig = sig
+			state.sigSet = true
+			state.lastErr = ""
+			continue
+		}
+		// 读取失败必须留痕：这类数据源以前是静默失败的（DSN 拼错导致 Windows
+		// 上永远读不到记录、速度恒为 0，日志里一个字都没有）。同一条错误只记
+		// 一次（状态恢复后才重置），既能看到问题又不会每 750ms 刷屏。
+		if msg := readErr.Error(); msg != state.lastErr {
+			state.lastErr = msg
+			applog.Warnf("tokenspeed", "读取 %s 数据源失败 path=%s: %v", root.Source, root.Path, readErr)
 		}
 	}
+}
+
+// sourceSignature 是 sqlite 数据文件的「有无变化」指纹（含 WAL）。
+type sourceSignature struct {
+	size     int64
+	modNS    int64
+	walSize  int64
+	walModNS int64
+}
+
+// sqliteSignature 读取主库与 -wal 的大小/mtime；文件缺失按零值处理。
+func sqliteSignature(path string) sourceSignature {
+	var sig sourceSignature
+	if info, err := os.Stat(path); err == nil {
+		sig.size = info.Size()
+		sig.modNS = info.ModTime().UnixNano()
+	}
+	if info, err := os.Stat(path + "-wal"); err == nil {
+		sig.walSize = info.Size()
+		sig.walModNS = info.ModTime().UnixNano()
+	}
+	return sig
 }
 
 type zcodeMessage struct {
@@ -93,7 +149,9 @@ type zcodeTokens struct {
 	Cache     opencodeTokenCache `json:"cache"`
 }
 
-func (s *Service) readZCodeMessages(path string, state *opencodeSourceState, now time.Time) {
+// readZCodeMessages 读取 zcode 的 sqlite 会话库；返回值用于决定是否记住
+// 本轮文件指纹（失败时下轮必须重试，不能当作「无变化」跳过）。
+func (s *Service) readZCodeMessages(path string, state *opencodeSourceState, now time.Time) error {
 	// sqlite 驱动在包初始化时注册；sql.Open 只在驱动名未知时失败，这里的常量
 	// 驱动名不会失败，错误分支属于死代码，已删除。
 	db, _ := sql.Open("sqlite", openCodeReadOnlyDSN(path))
@@ -117,7 +175,7 @@ GROUP BY m.id
 ORDER BY m.time_updated, m.id
 LIMIT ?`, state.lastUpdatedMS, opencodeEventLimit)
 	if err != nil {
-		return
+		return err
 	}
 	defer rows.Close()
 
@@ -127,7 +185,7 @@ LIMIT ?`, state.lastUpdatedMS, opencodeEventLimit)
 		var createdMS, updatedMS int64
 		var data []byte
 		var firstText, firstReason sql.NullInt64
-		if rows.Scan(
+		if err := rows.Scan(
 			&id,
 			&sessionID,
 			&createdMS,
@@ -135,8 +193,8 @@ LIMIT ?`, state.lastUpdatedMS, opencodeEventLimit)
 			&data,
 			&firstText,
 			&firstReason,
-		) != nil {
-			return
+		); err != nil {
+			return err
 		}
 		if updatedMS > state.lastUpdatedMS {
 			state.lastUpdatedMS = updatedMS
@@ -144,6 +202,7 @@ LIMIT ?`, state.lastUpdatedMS, opencodeEventLimit)
 		s.ingestZCodeMessage(id, sessionID, createdMS, updatedMS, data,
 			firstText, firstReason, nowMS)
 	}
+	return rows.Err()
 }
 
 func (s *Service) ingestZCodeMessage(
@@ -210,7 +269,8 @@ func (u *zcodeTokens) normalized() usage {
 	}
 }
 
-func (s *Service) readOpenCodeEvents(path string, state *opencodeSourceState, now time.Time) {
+// readOpenCodeEvents 读取 opencode 的 event 表；返回值含义同 readZCodeMessages。
+func (s *Service) readOpenCodeEvents(path string, state *opencodeSourceState, now time.Time) error {
 	// 同上：驱动恒注册，sql.Open 不会失败。
 	db, _ := sql.Open("sqlite", openCodeReadOnlyDSN(path))
 	defer db.Close()
@@ -218,7 +278,7 @@ func (s *Service) readOpenCodeEvents(path string, state *opencodeSourceState, no
 
 	var maxRowID int64
 	if db.QueryRow(`SELECT COALESCE(MAX(rowid), 0) FROM event`).Scan(&maxRowID) != nil {
-		return
+		return errors.New("opencode: max rowid 查询失败")
 	}
 	if maxRowID < state.lastRowID {
 		state.lastRowID = 0
@@ -231,7 +291,7 @@ WHERE type = 'message.updated.1' AND rowid > ?
 ORDER BY rowid
 LIMIT ?`, state.lastRowID, opencodeEventLimit)
 	if err != nil {
-		return
+		return err
 	}
 	defer rows.Close()
 
@@ -245,6 +305,7 @@ LIMIT ?`, state.lastRowID, opencodeEventLimit)
 		state.lastRowID = rowID
 		s.ingestOpenCodeEvent(data, nowMS)
 	}
+	return rows.Err()
 }
 
 func (s *Service) ingestOpenCodeEvent(data []byte, nowMS int64) {
@@ -300,11 +361,47 @@ func (u *opencodeTokens) normalized() usage {
 	}
 }
 
+// openCodeReadOnlyDSN 构造 sqlite 只读 DSN。
+//
+// 必须用「file:///C:/...」这种带三斜杠的文件 URI：Windows 的绝对路径是
+// C:\Users\...（ToSlash 后 C:/Users/...），直接塞进 url.URL{Path:...} 会得到
+// file:C:/Users/...，sqlite 的 URI 解析器把 "C:" 当成 authority，报
+// 「invalid uri authority: C:」——整个 zcode/opencode 数据源在 Windows 上
+// 因此从未读到过任何记录（Token 速度恒为 0）。
+//
+// 相对路径不能走 url.URL.String()：Scheme 非空且 Path 不以 "/" 开头时，Go 会
+// 补出「//」，把第一段目录当成主机名（file://cache/db.sqlite），库就打不开了。
+// 所以这里手工拼接：绝对路径是 file:// + 前导斜杠路径（共三斜杠），相对路径是
+// file: + 路径（无斜杠）。
 func openCodeReadOnlyDSN(path string) string {
-	value := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	query := value.Query()
+	slashPath := filepath.ToSlash(path)
+	absolute := isAbsoluteSlashPath(slashPath)
+	if absolute && !strings.HasPrefix(slashPath, "/") {
+		// Windows 盘符：C:/x → /C:/x，才能得到 file:///C:/x。
+		slashPath = "/" + slashPath
+	}
+	escaped := (&url.URL{Path: slashPath}).EscapedPath()
+
+	query := url.Values{}
 	query.Set("mode", "ro")
 	query.Set("_pragma", "busy_timeout(2000)")
-	value.RawQuery = query.Encode()
-	return value.String()
+
+	var builder strings.Builder
+	builder.WriteString("file:")
+	if absolute {
+		builder.WriteString("//") // 与下面的前导 "/" 合成三斜杠
+	}
+	builder.WriteString(escaped)
+	builder.WriteByte('?')
+	builder.WriteString(query.Encode())
+	return builder.String()
+}
+
+// isAbsoluteSlashPath 报告 ToSlash 后的路径是否绝对：POSIX 的 "/x" 或 Windows
+// 的 "C:/x"。
+func isAbsoluteSlashPath(p string) bool {
+	if strings.HasPrefix(p, "/") {
+		return true
+	}
+	return len(p) >= 3 && p[1] == ':' && p[2] == '/'
 }
