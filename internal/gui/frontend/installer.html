@@ -4,86 +4,52 @@
 <meta charset="utf-8">
 <meta name="color-scheme" content="light dark">
 <title>Quota Keepalive 安装程序</title>
+<link rel="stylesheet" href="assets/qka-ui.css">
 <style>
-  *, *::before, *::after { box-sizing: border-box; }
+  /* 字号阶梯与主窗口一致；颜色 / 圆角 / 组件 token 全部来自 assets/qka-ui.css。 */
   :root {
-    color-scheme: light;
-    --bg: #f4f4f6;
-    --card: #ffffff;
-    --card-2: #f9f9fb;
-    --pill: #f1f1f4;
-    --pill-hover: #e9e9ee;
-    --line: #e3e3e8;
-    --line-2: #ececf0;
-    --fg: #1c1c21;
-    --fg-2: #4b4b53;
-    --muted: #707079;
-    --faint: #b9b9c2;
-    --accent: #4f46e5;
-    --accent-strong: #4338ca;
-    --accent-soft: #eeedfd;
-    --accent-fg: #fff;
-    --green: #137a48;
-    --green-soft: #e4f6ec;
-    --red: #c33b3b;
-    --red-soft: #fbe9e9;
-    --blue: #315fc4;
-    --wall-gradient:
-      radial-gradient(circle at 12% 8%, rgba(79,70,229,.18), transparent 32%),
-      radial-gradient(circle at 87% 16%, rgba(14,151,194,.18), transparent 30%),
-      linear-gradient(135deg, #d8e1ef, #e7e2ec 52%, #cbd7e9);
-    --shadow: 0 10px 28px rgba(20, 22, 30, .07), 0 1px 3px rgba(20, 22, 30, .04);
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
-    /* 字号阶梯与主窗口/菜单栏面板同源，禁止写死像素字号。 */
-    --fs-3xs: 8.5px;   /* 辅助小字 */
-    --fs-2xs: 9.5px;   /* 次级说明 */
-    --fs-xs: 10.5px;   /* 正文小字 */
-    --fs-sm: 11.5px;   /* 正文 */
-    --fs-md: 12.5px;   /* 强调正文、导航 */
-    --fs-lg: 14px;     /* 卡片/分组标题 */
-    --fs-xl: 16px;     /* 摘要数值、对话框标题 */
-    --fs-2xl: 18px;    /* 页面标题 */
-    --fs-3xl: 20px;    /* 徽标、图标字 */
+    --fs-3xs: 8.5px;
+    --fs-2xs: 9.5px;
+    --fs-xs: 10.5px;
+    --fs-sm: 11.5px;
+    --fs-md: 12.5px;
+    --fs-lg: 14px;
+    --fs-xl: 16px;
+    --fs-2xl: 18px;
+    --fs-3xl: 20px;
     --code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
+            system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+            "Noto Sans CJK SC", sans-serif;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px -12px rgba(0,0,0,.18);
+    --shadow-pop: 0 1px 2px rgba(0,0,0,.06), 0 16px 44px -14px rgba(0,0,0,.28);
+    color-scheme: light;
   }
+  /* qka-ui.css 只提供 :root[data-theme="dark"]；补上「跟随系统」的深色令牌，
+     颜色值与 qka-ui.css 的深色档保持一致。 */
+  :root[data-theme="dark"] { color-scheme: dark; }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --bg: #1a1a1e;
-      --card: #232327;
-      --card-2: #1f1f23;
-      --pill: #2d2d33;
-      --pill-hover: #36363d;
-      --line: #333339;
-      --line-2: #2c2c32;
-      --fg: #ededf1;
-      --fg-2: #b9b9c1;
-      --muted: #9a9aa3;
-      --faint: #56565f;
-      --accent: #a5b4fc;
-      --accent-strong: #818cf8;
-      --accent-soft: #2c2e4a;
-      --accent-fg: #15152b;
-      --green: #6fd99b;
-      --green-soft: #1e3a2b;
-      --red: #f28b82;
-      --red-soft: #45272a;
-      --blue: #93c5fd;
-      --wall-gradient:
-        radial-gradient(circle at 12% 8%, rgba(91,82,255,.30), transparent 32%),
-        radial-gradient(circle at 87% 16%, rgba(24,140,180,.25), transparent 30%),
-        linear-gradient(135deg, #0d111b, #191425 52%, #121d28);
-      --shadow: 0 12px 34px rgba(0, 0, 0, .32), 0 1px 4px rgba(0, 0, 0, .2);
+      --bg: #0b0b0c; --bg2: #121214; --card: #161618; --card2: #1b1b1e;
+      --code: #151517; --ink: #f2f2f3; --ink2: #b3b3ba; --ink3: #7a7a82;
+      --line: #26262a; --line2: #202024; --track: #2d2d33; --line-strong: #38383a;
+      --btn: #f2f2f3; --btn-ink: #0b0b0c; --accent: #4aa3b5; --accent-fg: #0b0b0c;
+      --gold: #e0b256; --ok: #58b985; --warn: #e0a24a; --bad: #e57370;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 20px 60px -20px rgba(0,0,0,.8);
+      --shadow-pop: 0 2px 4px rgba(0,0,0,.4), 0 24px 64px -18px rgba(0,0,0,.9);
     }
   }
+  *, *::before, *::after { box-sizing: border-box; scrollbar-width: none; -ms-overflow-style: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
   html, body { margin: 0; height: 100%; }
   body {
     display: flex;
     flex-direction: column;
     padding: 20px 24px 18px;
     overflow: hidden;
-    color: var(--fg);
-    background: var(--wall-gradient);
+    color: var(--ink);
+    background: var(--bg);
     font: 400 var(--fs-md)/1.5 var(--font);
     -webkit-font-smoothing: antialiased;
   }
@@ -103,82 +69,81 @@
     box-shadow: var(--shadow);
   }
   .logo svg { width: 22px; height: 22px; display: block; }
-  .head h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 720; letter-spacing: -.01em; }
-  .head p { margin: 1px 0 0; color: var(--muted); font-size: var(--fs-sm); }
+  .head h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 700; letter-spacing: -.01em; }
+  .head p { margin: 1px 0 0; color: var(--ink3); font-size: var(--fs-sm); }
 
   .body { flex: 1; min-height: 0; margin-top: 14px; display: flex; flex-direction: column; }
   .panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-  .lede { margin: 0 0 14px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.6; overflow-wrap: anywhere; }
-  #dir-field { display: flex; flex-direction: column; flex: none; }
-  .field-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: var(--fs-sm); font-weight: 600; }
+  .lede { margin: 0 0 14px; color: var(--ink2); font-size: var(--fs-sm); line-height: 1.6; overflow-wrap: anywhere; }
+
+  /* 字段：对齐原型 .field（grid + 6px） */
+  .field { display: grid; gap: 6px; }
+  #dir-field { flex: none; }
+  .field-label { display: block; color: var(--ink2); font-size: var(--fs-sm); font-weight: 560; }
   .dir-row { display: flex; gap: 8px; flex: none; }
-  .dir-row input {
-    flex: 1; min-width: 0; height: 34px; padding: 0 10px;
-    border: .5px solid var(--line); border-radius: 8px;
-    color: var(--fg); background: var(--card);
-    font-family: var(--code); font-size: var(--fs-sm);
+  .dir-row .input { flex: 1; min-width: 0; }
+  /* 输入框：对齐原型 .input（qka-ui.css 若已提供同名规则，本页后加载不冲突） */
+  .input {
+    height: 34px; padding: 0 11px;
+    background: var(--card); color: var(--ink);
+    border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+    font-size: var(--fs-md); width: 100%;
   }
-  .dir-row input::placeholder { color: var(--faint); }
+  .input::placeholder { color: var(--ink3); }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .hint {
-    min-height: 17px; max-height: 52px; margin: 6px 0 0;
-    color: var(--muted); font-size: var(--fs-2xs);
+    min-height: 17px; max-height: 52px; margin: 0;
+    color: var(--ink3); font-size: var(--fs-2xs);
     overflow-y: auto; overflow-wrap: anywhere;
   }
-  .hint.bad { color: var(--red); }
+  .hint.bad { color: var(--bad); }
   .checks { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
-  .checks li { position: relative; padding-left: 18px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
+  .checks li { position: relative; padding-left: 18px; color: var(--ink2); font-size: var(--fs-sm); line-height: 1.5; }
   .checks li::before {
     content: "✓"; position: absolute; left: 0; top: 0;
-    color: var(--green); font-size: var(--fs-xs); font-weight: 700;
+    color: var(--ok); font-size: var(--fs-xs); font-weight: 700;
   }
 
   .actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: auto; padding-top: 14px; flex: none; }
-  .spacer { flex: 1; }
+  /* 按钮（原型 .btn / .btn.ghost）兜底 */
   .btn {
-    min-height: 32px; padding: 0 15px; border: 0; border-radius: 8px;
-    font-size: var(--fs-md); font-weight: 640; white-space: nowrap;
-    transition: background .12s ease, transform .12s ease, opacity .12s ease;
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    height: 34px; padding: 0 14px;
+    border: 1px solid var(--btn); border-radius: var(--r-sm);
+    background: var(--btn); color: var(--btn-ink);
+    font-size: var(--fs-md); font-weight: 560; white-space: nowrap; cursor: pointer;
+    transition: opacity .12s ease, transform .12s ease;
   }
-  .btn:active { transform: scale(.98); }
-  .btn:disabled { opacity: .5; }
-  .btn.primary {
-    color: var(--accent-fg); background: var(--accent);
-    box-shadow: 0 1px 2px rgba(20, 22, 30, .18);
-  }
-  .btn.primary:not(:disabled):hover { background: var(--accent-strong); }
-  .btn.ghost {
-    color: var(--fg-2); background: var(--pill);
-    box-shadow: inset 0 0 0 .5px var(--line);
-  }
-  .btn.ghost:not(:disabled):hover { background: var(--pill-hover); }
+  .btn:hover { opacity: .88; }
+  .btn:active { transform: translateY(1px); }
+  .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+  .btn.ghost:hover { border-color: var(--ink3); opacity: 1; }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
 
-  .steps { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 7px; }
-  .steps li {
-    display: flex; align-items: center; gap: 9px;
-    color: var(--muted); font-size: var(--fs-md);
-    transition: color .15s ease;
+  /* 进度步骤：JS 用 .steps li[data-step][data-state]，映射到原型 .step 外观 */
+  .steps { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 10px; }
+  .step {
+    display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 10px; align-items: center;
+    color: var(--ink2); font-size: var(--fs-md);
   }
-  .steps .mark {
-    width: 19px; height: 19px; border-radius: 50%; flex: none;
-    display: grid; place-items: center;
-    color: var(--faint); background: var(--pill);
-    box-shadow: inset 0 0 0 .5px var(--line);
-    font-size: var(--fs-2xs); font-weight: 700;
-    transition: color .15s ease, background .15s ease;
+  .step .mark {
+    width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+    color: var(--ink3); box-shadow: inset 0 0 0 1px var(--line-strong);
+    font-size: var(--fs-xs); font-weight: 700;
   }
-  .steps li[data-state="active"] { color: var(--fg); }
-  .steps li[data-state="active"] .mark { color: var(--accent-fg); background: var(--accent); box-shadow: none; }
-  .steps li[data-state="done"] { color: var(--fg-2); }
-  .steps li[data-state="done"] .mark { color: var(--green); background: var(--green-soft); box-shadow: none; }
-  .steps li[data-state="done"] .mark::before { content: "✓"; }
-  .steps li[data-state="failed"] { color: var(--red); }
-  .steps li[data-state="failed"] .mark { color: var(--red); background: var(--red-soft); box-shadow: none; }
-  .steps li[data-state="failed"] .mark::before { content: "!"; }
+  .step[data-state="active"] { color: var(--ink); font-weight: 560; }
+  .step[data-state="active"] .mark { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); }
+  .step[data-state="done"] { color: var(--ink); }
+  .step[data-state="done"] .mark { background: var(--accent); color: var(--accent-fg); box-shadow: none; }
+  .step[data-state="done"] .mark::before { content: "✓"; }
+  .step[data-state="failed"] { color: var(--bad); }
+  .step[data-state="failed"] .mark { background: var(--bad-soft); color: var(--bad); box-shadow: none; }
+  .step[data-state="failed"] .mark::before { content: "!"; }
 
-  .bar { height: 5px; margin-top: 12px; border-radius: 999px; background: var(--pill); overflow: hidden; flex: none; }
+  .bar { height: 5px; margin-top: 12px; border-radius: 999px; background: var(--track); overflow: hidden; flex: none; }
   .bar-fill { height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
-  .status { margin: 8px 0 0; color: var(--muted); font-size: var(--fs-sm); min-height: 18px; }
+  .status { margin: 8px 0 0; color: var(--ink3); font-size: var(--fs-sm); min-height: 18px; }
 
   .result {
     flex: 1; min-height: 0; display: flex; flex-direction: column;
@@ -190,26 +155,26 @@
     display: grid; place-items: center; flex: none;
     font-size: var(--fs-2xl); font-weight: 700;
   }
-  .result-icon.ok { color: var(--green); background: var(--green-soft); }
-  .result-icon.bad { color: var(--red); background: var(--red-soft); }
+  .result-icon.ok { color: var(--ok); background: var(--ok-soft); }
+  .result-icon.bad { color: var(--bad); background: var(--bad-soft); }
   .result h2 { margin: 12px 0 0; font-size: var(--fs-xl); font-weight: 700; }
   .result p {
-    margin: 6px 0 0; max-width: 100%; color: var(--fg-2); font-size: var(--fs-sm);
+    margin: 6px 0 0; max-width: 100%; color: var(--ink2); font-size: var(--fs-sm);
     overflow-wrap: anywhere;
   }
   .result .path {
     margin-top: 8px; padding: 6px 10px; max-width: 100%;
-    border-radius: 7px; background: var(--card); box-shadow: inset 0 0 0 .5px var(--line);
-    color: var(--fg); font-family: var(--code); font-size: var(--fs-xs);
+    border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--line);
+    color: var(--ink); font-family: var(--code); font-size: var(--fs-xs);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .result .error-text {
     margin-top: 8px; padding: 8px 10px; max-width: 100%; max-height: 86px;
-    overflow: auto; border-radius: 7px;
-    color: var(--red); background: var(--red-soft); font-size: var(--fs-xs); line-height: 1.55;
+    overflow: auto; border-radius: var(--r-sm);
+    color: var(--bad); background: var(--bad-soft); font-size: var(--fs-xs); line-height: 1.55;
     text-align: left;
   }
-  .result .footnote { margin-top: 8px; min-height: 16px; color: var(--muted); font-size: var(--fs-2xs); }
+  .result .footnote { margin-top: 8px; min-height: 16px; color: var(--ink3); font-size: var(--fs-2xs); }
 </style>
 </head>
 <body>
@@ -235,10 +200,10 @@
         选择安装位置后点击「开始安装」。QKA 会复制程序、解压内置运行时，并创建开始菜单快捷方式；
         全部在当前用户下完成，不需要管理员权限。
       </p>
-      <div id="dir-field">
+      <div id="dir-field" class="field">
         <label class="field-label" for="install-dir">安装位置</label>
         <div class="dir-row">
-          <input id="install-dir" type="text" spellcheck="false" autocomplete="off"
+          <input id="install-dir" class="input" type="text" spellcheck="false" autocomplete="off"
                  placeholder="例如 C:\Users\你\AppData\Local\Programs\Quota Keepalive">
           <button id="browse" class="btn ghost" type="button">浏览…</button>
         </div>
@@ -250,18 +215,18 @@
         <li>创建开始菜单快捷方式并注册 App Paths</li>
       </ul>
       <div class="actions">
-        <button id="start" class="btn primary" type="button">开始安装</button>
+        <button id="start" class="btn" type="button">开始安装</button>
       </div>
     </section>
 
     <!-- 第二步：进度 -->
     <section id="progress" class="panel" hidden>
       <ol class="steps">
-        <li data-step="check" data-state="pending"><span class="mark"></span><span class="label">检查安装位置</span></li>
-        <li data-step="copy" data-state="pending"><span class="mark"></span><span class="label">复制程序</span></li>
-        <li data-step="runtime" data-state="pending"><span class="mark"></span><span class="label">解压运行时</span></li>
-        <li data-step="shortcut" data-state="pending"><span class="mark"></span><span class="label">创建开始菜单快捷方式</span></li>
-        <li data-step="finish" data-state="pending"><span class="mark"></span><span class="label">完成</span></li>
+        <li class="step" data-step="check" data-state="pending"><span class="mark"></span><span class="label">检查安装位置</span></li>
+        <li class="step" data-step="copy" data-state="pending"><span class="mark"></span><span class="label">复制程序</span></li>
+        <li class="step" data-step="runtime" data-state="pending"><span class="mark"></span><span class="label">解压运行时</span></li>
+        <li class="step" data-step="shortcut" data-state="pending"><span class="mark"></span><span class="label">创建开始菜单快捷方式</span></li>
+        <li class="step" data-step="finish" data-state="pending"><span class="mark"></span><span class="label">完成</span></li>
       </ol>
       <div class="bar"><div id="bar-fill" class="bar-fill"></div></div>
       <p id="status" class="status">准备安装</p>
@@ -278,7 +243,7 @@
       </div>
       <div class="actions">
         <button id="close" class="btn ghost" type="button">仅完成</button>
-        <button id="launch" class="btn primary" type="button">完成并启动 QKA</button>
+        <button id="launch" class="btn" type="button">完成并启动 QKA</button>
       </div>
     </section>
 
@@ -292,7 +257,7 @@
       </div>
       <div class="actions">
         <button id="quit" class="btn ghost" type="button">取消</button>
-        <button id="retry" class="btn primary" type="button">重试</button>
+        <button id="retry" class="btn" type="button">重试</button>
       </div>
     </section>
   </div>

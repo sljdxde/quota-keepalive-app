@@ -2429,6 +2429,7 @@
 <link rel="stylesheet" href="assets/liquid-ui.css">
 <link rel="stylesheet" href="assets/title-system.css">
 <link rel="stylesheet" href="assets/perf-mode.css">
+<link rel="stylesheet" href="assets/qka-ui.css">
 </head>
 <body>
   <div class="window">
@@ -2449,10 +2450,6 @@
         <button data-tab="apps" class="active">
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="4.2" height="4.2" rx="1" stroke="currentColor" stroke-width="1.25"/><rect x="9.3" y="2.5" width="4.2" height="4.2" rx="1" stroke="currentColor" stroke-width="1.25"/><rect x="2.5" y="9.3" width="4.2" height="4.2" rx="1" stroke="currentColor" stroke-width="1.25"/><rect x="9.3" y="9.3" width="4.2" height="4.2" rx="1" stroke="currentColor" stroke-width="1.25"/></svg>
           应用管理
-        </button>
-        <button data-tab="checkin">
-          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="3.2" width="11" height="10.3" rx="2" stroke="currentColor" stroke-width="1.25"/><path d="M5 2v2.4M11 2v2.4M5 9.2l2 2 4-4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          签到管理
         </button>
         <button data-tab="speed">
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.7 11.6a6 6 0 1 1 10.6 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="m8 8.4 3.2-3.2" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="8" cy="8.7" r="1.3" fill="currentColor"/></svg>
@@ -2502,47 +2499,26 @@
         <div class="page-head">
           <div class="copy">
             <h1>应用管理</h1>
-            <p>查看已接入的目标应用、账号健康状态与今日执行结果。</p>
+            <p>点一个 Agent 打开详情：账号、额度、签到与模型测试都在弹层里，逐项展开查看。</p>
           </div>
           <div class="end"><span class="pill" id="apps-badge">正在读取</span></div>
         </div>
-        <div class="summary">
-          <div class="seal">
-            <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-              <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="7.4"
-                      stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
-              <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none"
-                    stroke="currentColor" stroke-width="6.2" stroke-linecap="round"/>
-            </svg>
-          </div>
-          <div class="copy">
-            <div class="kicker">今日概览</div>
-            <b id="apps-summary">正在读取应用状态</b>
-          </div>
-          <div class="stats" id="apps-stats"></div>
-          <div class="meta">
-            <div><b>最近调用</b> <span id="apps-last">—</span></div>
-            <button class="primary" id="run-all" style="margin-top:4px;">立即巡检</button>
-          </div>
+        <div class="strip" aria-live="polite">
+          <span id="apps-summary">正在读取应用状态</span>
+          <span class="sep"></span>
+          <span id="apps-last">—</span>
+          <span class="sp"></span>
+          <button class="text action" id="schedule-settings" type="button">自动执行设置</button>
+          <button class="btn" id="run-all" type="button">立即巡检</button>
         </div>
-        <div class="schedule-strip" aria-live="polite">
-          <span class="icon" aria-hidden="true">
-            <svg viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="5.7" stroke="currentColor" stroke-width="1.3"/>
-              <path d="M8 4.7v3.5l2.2 1.4" stroke="currentColor" stroke-width="1.3"
-                    stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </span>
-          <span class="copy">
-            <b id="schedule-title">自动执行：读取中</b>
-            <small id="schedule-detail">正在读取 Quota Keepalive 内置周期计划</small>
-          </span>
-          <button class="app-action" id="schedule-settings">设置</button>
+        <p class="muted" style="margin:-6px 0 10px;font-size:var(--fs-xs);line-height:1.5;">
+          <b id="schedule-title">自动执行：读取中</b> · <span id="schedule-detail">正在读取 Quota Keepalive 内置周期计划</span>
+        </p>
+        <div class="list-head">
+          <input class="input" id="apps-search" type="search" placeholder="搜索应用" aria-label="搜索应用">
         </div>
-        <div class="stack">
-          <div class="card" id="apps-body"></div>
-          <p class="footnote">应用开关只控制该应用下的全部账号，不会删除账号。添加、登录和排查统一在<b>「签到管理」</b>。</p>
-        </div>
+        <div id="apps-body"></div>
+        <p class="footnote">应用开关只控制该应用下的全部账号，不会删除账号；账号登录、签到与模型测试都在点开 Agent 后的详情弹层里。</p>
       </section>
 
       <section id="logs" class="page">
@@ -2579,52 +2555,10 @@
           </span>
           <button class="primary" id="log-query">查询</button>
         </div>
-        <div class="card table-card">
-          <table>
-            <thead><tr><th>时间</th><th>目标</th><th>账号</th><th>操作</th><th>状态</th><th>消息</th></tr></thead>
-            <tbody id="logs-body"></tbody>
-          </table>
-        </div>
+        <div class="logs" id="logs-body"></div>
         <div style="margin:9px 0 0;text-align:right;">
           <button class="secondary" id="logs-more">加载更多</button>
         </div>
-      </section>
-
-      <section id="checkin" class="page">
-        <div class="page-head">
-          <div class="copy">
-            <h1>签到管理</h1>
-            <p>按账号控制签到、查看今日状态和额度；Quota Keepalive 不接收密码、验证码或扫码内容。</p>
-          </div>
-          <div class="end"><span class="pill" id="accounts-badge">WorkBuddy CN</span></div>
-        </div>
-        <div class="summary">
-          <div class="seal">
-            <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-              <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="7.4"
-                      stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
-              <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none"
-                    stroke="currentColor" stroke-width="6.2" stroke-linecap="round"/>
-            </svg>
-          </div>
-          <div class="copy">
-            <div class="kicker">账号状态</div>
-            <b id="accounts-summary-text">正在读取账号</b>
-          </div>
-          <div class="stats" id="accounts-summary-stats"></div>
-          <div class="meta"><div><b>官方登录</b> 只读验证</div></div>
-        </div>
-        <div class="accounts-toolbar">
-          <span class="select-shell provider-picker-shell">
-            <select id="accounts-provider" class="provider-picker" aria-label="选择供应商"></select>
-          </span>
-          <button class="primary" data-act="login-provider">登录 / 添加账号</button>
-          <button class="secondary" data-act="refresh-providers">刷新供应商</button>
-          <button class="secondary collapse-all" id="accounts-collapse-all" type="button"
-                  aria-pressed="false">全部收起</button>
-        </div>
-        <p id="accounts-message" class="message" role="alert" hidden></p>
-        <div id="accounts-body" class="stack"></div>
       </section>
 
       <section id="speed" class="page">
@@ -2700,19 +2634,8 @@
             <div class="hint">个本机 Agent 会话</div>
           </div>
         </div>
-        <div class="card table-card">
-          <table>
-            <thead><tr><th>Agent</th><th>输出</th><th>输入</th><th>总计</th><th>今日</th><th>状态</th></tr></thead>
-            <tbody id="speed-sources"></tbody>
-          </table>
-        </div>
-        <div class="section-title">会话明细</div>
-        <div class="card table-card">
-          <table>
-            <thead><tr><th>会话</th><th>Agent</th><th>模型</th><th>输出</th><th>输入</th><th>总计</th><th>状态</th></tr></thead>
-            <tbody id="speed-sessions"></tbody>
-          </table>
-        </div>
+        <div class="list" id="speed-sources" style="margin-top:12px"></div>
+        <p class="muted" id="speed-idle-hint" style="margin-top:10px;font-size:var(--fs-sm)"></p>
         <p class="footnote">
           输出速度按每个响应首个正文到完成的时间计算；输入速度按请求墙钟时间计算。首 token 等待和供应商攒包不冒充解码速度，流式阶段只借用最近一次可靠实测值。会话按顶层对话聚合，子代理会话并入所属会话；名称取自会话自身的标题事件（由首条消息生成），不读取提示词或响应正文。
         </p>
@@ -2929,6 +2852,26 @@
         <p class="settings-hint">设置切换后立即保存；保存或系统任务操作失败时会恢复为当前生效值。</p>
       </section>
     </main>
+
+    <div class="modal hidden" id="agent-modal" role="dialog" aria-modal="true" aria-labelledby="agent-modal-title">
+      <div class="dialog adialog">
+        <header>
+          <img class="am-ic" id="am-ic" alt="">
+          <div class="am-who">
+            <h2 id="agent-modal-title">Agent</h2>
+            <p id="agent-modal-sub"></p>
+          </div>
+          <button class="switch am-switch" id="agent-modal-switch" type="button" role="switch" aria-checked="true" aria-label="启用或停用该 Agent"></button>
+          <button class="text am-x" id="agent-modal-close" type="button" data-close aria-label="关闭">关闭</button>
+        </header>
+        <div class="abody" id="agent-modal-body"></div>
+        <footer>
+          <p id="accounts-message" class="message" role="status" hidden style="margin:0"></p>
+          <span class="sp"></span>
+          <button class="text action" id="agent-modal-add" type="button">＋ 添加账号</button>
+        </footer>
+      </div>
+    </div>
   </div>
 
 <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-title">
@@ -3293,10 +3236,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       run: function () { openTab("apps"); },
     },
     {
-      group: "页面", icon: "签", title: "签到管理",
-      subtitle: "登录账号、切换签到、查看额度和历史",
+      group: "页面", icon: "签", title: "账号与签到",
+      subtitle: "在应用管理里点开 Agent，查看账号、签到与额度",
       keywords: "checkin account login 签到 账号",
-      run: function () { openTab("checkin"); },
+      run: function () { openTab("apps"); },
     },
     {
       group: "页面", icon: "日", title: "日志",
@@ -3336,9 +3279,9 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       subtitle: "选择供应商并打开官方登录流程",
       keywords: "login add account 登录 添加 账号",
       run: function () {
-        openTab("checkin");
-        const button = document.querySelector('[data-act="login-provider"]');
-        if (button) button.click();
+        openTab("apps");
+        const row = document.querySelector('#apps-body .row[data-agent]');
+        if (row) { row.click(); const add = document.getElementById("agent-modal-add"); if (add) add.click(); }
       },
     },
     {
@@ -3569,75 +3512,34 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   });
 
   async function focusCheckinRequest(payload) {
-    const request = ++checkinFocusGeneration;
     const data = payload && typeof payload === "object" ? payload : {};
     const target = String(data.target || "");
-    const scope = String(data.scope || "");
     const accountKey = String(data.account_key || data.account || "");
-    const picker = document.getElementById("accounts-provider");
-    const hasTarget = target && Array.from(picker.options).some(function (option) {
-      return option.value === target;
-    });
-    picker.value = hasTarget ? target : "";
-    if (target && hasTarget) expandedProviderGroups.add(target);
-    else expandedProviderGroups.clear();
-    await renderAccounts();
-    if (request !== checkinFocusGeneration) return;
-
-    let card = null;
+    openTab("apps");
+    let view;
+    try { view = await loadProviders(); } catch (_) { return; }
+    const providers = view.providers || [];
+    let provider = null;
+    if (target) provider = providers.find(function (p) { return p.id === target; }) || null;
+    if (!provider && accountKey) {
+      provider = providers.find(function (p) {
+        return (p.accounts || []).some(function (a) { return String(a.key || a.id || "") === accountKey; });
+      }) || null;
+    }
+    if (!provider) provider = providers[0] || null;
+    if (!provider) { showAccountsMessage("还没有可展示的 Agent。"); return; }
+    if (accountKey) expandedAccounts.add(accountStateKey(provider.id, accountKey));
+    await openAgentModal(provider);
     if (accountKey) {
-      card = Array.from(document.querySelectorAll("#accounts-body .account-card"))
-        .find(function (node) { return node.dataset.accountKey === accountKey; }) || null;
-      // 深链跳到某个账号时，卡片必须展开，否则跳到的是收起来的一行标题。
-      if (card) {
-        expandedAccounts.add(accountStateKey(card.dataset.provider, card.dataset.accountKey));
-        card.classList.remove("collapsed");
-        const head = card.querySelector(".account-collapse-head");
-        if (head) head.setAttribute("aria-expanded", "true");
-      }
-    }
-    if (!card && scope === "attention") {
-      card = document.querySelector('#accounts-body .account-card[data-attention="true"]');
-    }
-    if (!card && scope === "done") {
-      card = document.querySelector('#accounts-body .account-card[data-done="true"]');
-    }
-    if (!card && target) {
-      const group = Array.from(document.querySelectorAll("#accounts-body .account-group"))
-        .find(function (node) { return node.dataset.provider === target; });
-      card = group ? group.querySelector(".account-card") : null;
-    }
-    if (!card) {
-      if (scope === "attention") showAccountsMessage("当前没有需要处理的账号。", "success");
-      else if (scope === "done") showAccountsMessage("当前没有今日已完成的账号。");
-      else showAccountsMessage("已打开签到管理。");
-      return;
-    }
-
-    const group = card.closest(".account-group");
-    if (group && group.dataset.provider) {
-      setAccountGroupCollapsed(group.dataset.provider, false);
-      syncAccountCollapseButton();
-    }
-    document.querySelectorAll("#accounts-body .account-card.is-target").forEach(function (node) {
-      node.classList.remove("is-target");
-    });
-    card.classList.add("is-target");
-    requestAnimationFrame(function () {
-      card.scrollIntoView({
-        block: "center",
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-          ? "auto"
-          : "smooth",
+      requestAnimationFrame(function () {
+        const card = document.querySelector('#agent-modal-body .account-card[data-account-key="' + accountKey + '"]');
+        if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });
       });
-    });
-    window.setTimeout(function () {
-      card.classList.remove("is-target");
-    }, 2200);
+    }
   }
 
   Events.On("open-checkin", function (event) {
-    openTab("checkin");
+    openTab("apps");
     void focusCheckinRequest(event && event.data);
   });
 
@@ -4971,87 +4873,130 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       ? "显示最近一次可靠响应速度；并行 Agent 的输出速度相加。" + updated
       : "当前没有可靠解码速度；完成下一次响应后会自动更新。" + updated;
 
-    const body = document.getElementById("speed-sources");
-    body.innerHTML = "";
+    const list = document.getElementById("speed-sources");
+    list.innerHTML = "";
+    const sessions = view.sessions || [];
     sources.forEach(function (source) {
-      const tr = document.createElement("tr");
-      const name = document.createElement("td");
-      const label = document.createElement("span");
-      label.className = "speed-source-name";
-      const dot = document.createElement("i");
-      dot.className = Number(source.generating_agents) > 0 ? "active" : "";
-      label.appendChild(sourceLogoNode(source.source || source.label));
-      label.appendChild(dot);
-      label.appendChild(document.createTextNode(source.label || source.source));
-      name.appendChild(label);
-      tr.appendChild(name);
-      [
-        compactTokenRate(source.output_tokens_per_second) + " tok/s",
-        compactTokenRate(source.input_tokens_per_second) + " tok/s",
-        compactTokenRate(source.total_tokens_per_second) + " tok/s",
-        compactTokenCount(Number(source.today_total_tokens) || 0),
-        Number(source.generating_agents) > 0 ? "正在生成" :
-          (Number(source.today_total_tokens) > 0 ? "今日已使用" : "待使用"),
-      ].forEach(function (value) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.appendChild(td);
+      const item = document.createElement("div");
+      item.className = "row-item sess-agent";
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const ic = sourceLogoNode(source.source || source.label);
+      ic.classList.add("ic");
+      row.appendChild(ic);
+
+      const who = document.createElement("div");
+      who.className = "who";
+      const name = document.createElement("div");
+      name.className = "name";
+      const nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = source.label || source.source;
+      name.appendChild(nm);
+      if (Number(source.generating_agents) > 0) {
+        const pl = document.createElement("span");
+        pl.className = "pill good";
+        pl.style.padding = "1px 7px";
+        const d = document.createElement("span");
+        d.className = "dot";
+        pl.appendChild(d);
+        pl.appendChild(document.createTextNode("正在生成"));
+        name.appendChild(pl);
+      }
+      who.appendChild(name);
+      const sSessions = sessions.filter(function (s) {
+        return String(s.source) === String(source.source);
       });
-      body.appendChild(tr);
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.textContent = sSessions.length + " 个会话 · 今日 " +
+        compactTokenCount(Number(source.today_total_tokens) || 0) + " tokens";
+      who.appendChild(sub);
+      row.appendChild(who);
+
+      const m1 = document.createElement("span");
+      m1.className = "meta";
+      m1.textContent = "输入 " + compactTokenRate(source.input_tokens_per_second);
+      row.appendChild(m1);
+      const m2 = document.createElement("span");
+      m2.className = "meta";
+      m2.textContent = "总计 " + compactTokenRate(source.total_tokens_per_second);
+      row.appendChild(m2);
+      const m3 = document.createElement("span");
+      m3.className = "meta";
+      m3.style.color = "var(--ink)";
+      m3.style.fontWeight = "560";
+      m3.textContent = compactTokenRate(source.output_tokens_per_second) + " tok/s";
+      row.appendChild(m3);
+      const chev = document.createElement("span");
+      chev.className = "chev";
+      chev.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      row.appendChild(chev);
+
+      row.onclick = function (event) {
+        if (event.target.closest("button")) return;
+        item.classList.toggle("open");
+      };
+      item.appendChild(row);
+
+      const sessList = document.createElement("div");
+      sessList.className = "sess-list";
+      if (sSessions.length) {
+        const cap = document.createElement("div");
+        cap.className = "sess-row sess-cap";
+        cap.innerHTML = '<span class="sn">会话</span><span class="v">输出</span><span class="v">输入</span><span class="v">今日</span><span class="v">状态</span>';
+        sessList.appendChild(cap);
+        sSessions.forEach(function (session) {
+          const sr = document.createElement("div");
+          sr.className = "sess-row";
+          const sn = document.createElement("span");
+          sn.className = "sn";
+          sn.appendChild(document.createTextNode(session.label || "会话"));
+          if (session.model) {
+            const sm = document.createElement("small");
+            sm.textContent = session.model;
+            sn.appendChild(sm);
+          }
+          sr.appendChild(sn);
+          const v1 = document.createElement("span");
+          v1.className = "v";
+          v1.innerHTML = "<b>" + compactTokenRate(session.output_tokens_per_second) + "</b> tok/s";
+          sr.appendChild(v1);
+          const v2 = document.createElement("span");
+          v2.className = "v";
+          v2.textContent = compactTokenRate(session.input_tokens_per_second);
+          sr.appendChild(v2);
+          const v3 = document.createElement("span");
+          v3.className = "v";
+          v3.textContent = compactTokenCount(Number(session.today_total_tokens) || 0);
+          sr.appendChild(v3);
+          const v4 = document.createElement("span");
+          v4.className = "v";
+          v4.textContent = session.generating ? "正在生成" : "最近活跃";
+          if (session.generating) v4.style.color = "var(--ok)";
+          sr.appendChild(v4);
+          sessList.appendChild(sr);
+        });
+      } else {
+        const none = document.createElement("div");
+        none.className = "sess-row";
+        none.style.color = "var(--ink3)";
+        none.textContent = "暂无可展示的近期会话";
+        sessList.appendChild(none);
+      }
+      item.appendChild(sessList);
+      list.appendChild(item);
     });
     if (!sources.length) {
-      body.innerHTML =
-        '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted)">' +
-        '今天还没有 Agent 使用记录，开始对话后这里会出现对应来源</td></tr>';
-    } else {
-      const idleCount = Number(view.idle_source_count) || 0;
-      if (idleCount > 0) {
-        const foot = document.createElement("tr");
-        foot.className = "speed-idle-hint";
-        const cell = document.createElement("td");
-        cell.colSpan = 6;
-        cell.textContent = "另有 " + idleCount + " 个已配置的 Agent 今天未使用，暂不显示";
-        foot.appendChild(cell);
-        body.appendChild(foot);
-      }
+      list.innerHTML = '<div class="empty" style="padding:24px;text-align:center">今天还没有 Agent 使用记录，开始对话后这里会出现对应来源</div>';
     }
-
-    const sessions = view.sessions || [];
-    const sessionBody = document.getElementById("speed-sessions");
-    sessionBody.innerHTML = "";
-    sessions.forEach(function (session) {
-      const tr = document.createElement("tr");
-      const name = document.createElement("td");
-      const label = document.createElement("span");
-      label.className = "speed-source-name";
-      const dot = document.createElement("i");
-      dot.className = session.generating ? "active" : "";
-      label.appendChild(dot);
-      const sessionName = document.createTextNode(session.label || "会话");
-      label.appendChild(sessionName);
-      label.title = [
-        session.label || "会话",
-        session.model || "",
-      ].filter(Boolean).join(" · ");
-      name.appendChild(label);
-      tr.appendChild(name);
-      [
-        session.source_label || session.source || "Agent",
-        session.model || "—",
-        compactTokenRate(session.output_tokens_per_second) + " tok/s",
-        compactTokenRate(session.input_tokens_per_second) + " tok/s",
-        compactTokenRate(session.total_tokens_per_second) + " tok/s",
-        session.generating ? "正在生成" : "最近活跃",
-      ].forEach(function (value) {
-        const td = document.createElement("td");
-        td.textContent = value;
-        tr.appendChild(td);
-      });
-      sessionBody.appendChild(tr);
-    });
-    if (!sessions.length) {
-      sessionBody.innerHTML =
-        '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">暂无可展示的近期会话</td></tr>';
+    const idleHint = document.getElementById("speed-idle-hint");
+    if (idleHint) {
+      const idleCount = Number(view.idle_source_count) || 0;
+      idleHint.textContent = idleCount > 0
+        ? "另有 " + idleCount + " 个已配置的 Agent 今天未使用，暂不显示"
+        : "";
     }
   }
 
@@ -5091,12 +5036,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   // 定时巡检在独立进程里完成时由后端推来「结果已变化」，这里只刷新当前可见的
   // 页面，避免隐藏页做无谓重绘（后端做传感器，前端不放轮询定时器）。
   Events.On("accounts-changed", function () {
-    if (document.getElementById("checkin").classList.contains("active")) {
-      renderAccounts();
-    }
     if (document.getElementById("apps").classList.contains("active")) {
       renderApps();
     }
+    renderAccounts();
   });
 
   Events.On("tokenspeed-changed", function (event) {
@@ -5132,19 +5075,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   async function renderApps() {
     const body = document.getElementById("apps-body");
-    // 供应商运行时是随包 Bun 进程，首次读取要冷启动；在没有数据之前先说明
-    // 正在加载，而不是让用户看到一片空白以为是坏了。
     if (!body.dataset.loaded) {
       body.innerHTML = '<div class="empty"><b>正在加载供应商…</b>首次打开需要启动随包供应商运行时，请稍候。</div>';
-    } else {
-      body.innerHTML = "";
     }
     let view;
     try {
       view = asJSON(await Bound.ProvidersList());
-      // 成功后必须清空占位框：它是上面刚写进去的「正在加载供应商…」，只
-      // appendChild 的话会永久留在列表上方（首次打开页面必然出现，看起来像
-      // 一直在加载）。清空与后续 append 之间没有 await，不会被并发渲染穿插。
       body.innerHTML = "";
       body.dataset.loaded = "1";
     } catch (_) {
@@ -5163,204 +5099,137 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       if (provider.enabled) enabled++;
     });
 
-    function providerRow(provider) {
-      const item = document.createElement("article");
-      item.className = "app-item" + (provider.enabled ? "" : " is-disabled");
+    const searchEl = document.getElementById("apps-search");
+    const filter = String((searchEl && searchEl.value) || "").trim().toLowerCase();
+    function match(provider) {
+      if (!filter) return true;
+      return String(provider.name || "").toLowerCase().indexOf(filter) !== -1 ||
+        String(provider.id || "").toLowerCase().indexOf(filter) !== -1;
+    }
+
+    function stateInfo(provider) {
+      if (!provider.enabled) return { text: "已停用", kind: "" };
+      if (!provider.checkin) return { text: "仅额度", kind: "" };
+      const accs = provider.accounts || [];
+      if (accs.some(function (a) { return accountHasCompleted(a); })) return { text: "今日完成", kind: "good" };
+      if (accs.some(function (a) { return accountHealth(a); })) return { text: "需关注", kind: "warn" };
+      return { text: "未签到", kind: "" };
+    }
+
+    function rowNode(provider) {
+      const item = document.createElement("div");
+      item.className = "row-item";
+      item.dataset.agent = provider.id;
       const row = document.createElement("div");
-      row.className = "app-row";
-      const main = document.createElement("div");
-      main.className = "app-main";
-      main.appendChild(providerIconNode(provider));
-      const copy = document.createElement("div");
-      copy.className = "app-copy";
-      const title = document.createElement("div");
-      title.className = "title";
-      title.appendChild(document.createTextNode(provider.name || provider.id));
+      row.className = "row";
+      row.dataset.agent = provider.id;
+
+      const ic = providerIconNode(provider);
+      ic.classList.add("ic");
+      row.appendChild(ic);
+
+      const who = document.createElement("div");
+      who.className = "who";
+      const name = document.createElement("div");
+      name.className = "name";
+      const nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = provider.name || provider.id;
+      name.appendChild(nm);
       const tag = document.createElement("span");
-      tag.className = "tag " + (provider.signed_in ? "good" : "off");
+      tag.className = "tag";
       tag.textContent = provider.signed_in ? "已登录" : "未登录";
-      title.appendChild(tag);
+      name.appendChild(tag);
+      who.appendChild(name);
       const sub = document.createElement("div");
       sub.className = "sub";
       const methods = (provider.methods || []).map(function (m) { return m.label; }).join(" / ");
-      sub.textContent = ((provider.accounts || []).length + " 个账号") +
-        (methods ? " · " + methods : " · 尚无可用登录方式");
-      copy.appendChild(title);
-      copy.appendChild(sub);
-      main.appendChild(copy);
-      row.appendChild(main);
+      sub.textContent = (provider.accounts || []).length + " 个账号 · " +
+        (provider.models || []).length + " 个模型" + (methods ? " · " + methods : "");
+      who.appendChild(sub);
+      row.appendChild(who);
 
-      const state = document.createElement("div");
-      state.className = "app-state " + (provider.enabled ? "good" : "");
-      const statusLine = document.createElement("div");
-      statusLine.className = "app-status-line";
-      const statusDot = document.createElement("i");
-      statusDot.className = provider.enabled ? "good" : "";
-      const stateTitle = document.createElement("b");
-      stateTitle.textContent = provider.enabled ? "已启用" : "已停用";
-      statusLine.appendChild(statusDot);
-      statusLine.appendChild(stateTitle);
-      const stateSub = document.createElement("small");
-      stateSub.textContent = provider.enabled
-        ? (provider.checkin ? "支持签到" : "仅额度查询")
-        : "不参与巡检";
-      state.appendChild(statusLine);
-      state.appendChild(stateSub);
-      row.appendChild(state);
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = (provider.accounts || []).length + " 个账号";
+      row.appendChild(meta);
 
-      const count = document.createElement("div");
-      count.className = "app-count";
-      count.innerHTML = "<b>" + (provider.accounts || []).length + "</b> 账号<small>" +
-        ((provider.models || []).length + " 个模型") + "</small>";
-      row.appendChild(count);
+      const info = stateInfo(provider);
+      const pill = document.createElement("span");
+      pill.className = "pill" + (info.kind ? " " + info.kind : "");
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      pill.appendChild(dot);
+      pill.appendChild(document.createTextNode(info.text));
+      row.appendChild(pill);
 
-      const actions = document.createElement("div");
-      actions.className = "app-row-actions";
-      const enable = document.createElement("button");
-      enable.className = "switch";
-      enable.type = "button";
-      enable.setAttribute("role", "switch");
-      enable.setAttribute("aria-checked", provider.enabled ? "true" : "false");
-      enable.setAttribute("aria-label", (provider.enabled ? "停用" : "启用") + provider.name);
-      enable.onclick = async function () {
-        enable.disabled = true;
+      const sw = document.createElement("button");
+      sw.type = "button";
+      sw.className = "switch";
+      sw.setAttribute("role", "switch");
+      sw.setAttribute("aria-checked", provider.enabled ? "true" : "false");
+      sw.setAttribute("aria-label", (provider.enabled ? "停用" : "启用") + (provider.name || provider.id));
+      sw.onclick = async function (event) {
+        event.stopPropagation();
+        sw.disabled = true;
         try {
           if (provider.enabled) appsDisabledOpen = true;
           await Bound.ProvidersSetEnabled(provider.id, !provider.enabled);
           await renderApps();
-          await renderAccounts();
         } catch (_) {
-          enable.setAttribute("aria-checked", provider.enabled ? "true" : "false");
-          enable.disabled = false;
+          sw.setAttribute("aria-checked", provider.enabled ? "true" : "false");
+          sw.disabled = false;
         }
       };
-      const detailID = "app-detail-" + String(provider.id || "provider");
-      const expand = document.createElement("button");
-      expand.className = "app-expand";
-      expand.type = "button";
-      expand.setAttribute("aria-label", "展开 " + (provider.name || provider.id) + " 操作");
-      expand.setAttribute("aria-controls", detailID);
-      expand.setAttribute("aria-expanded", "false");
-      expand.innerHTML =
-        '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
-        '<path d="m4.2 6.2 3.8 3.7 3.8-3.7" stroke="currentColor" ' +
-        'stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      actions.appendChild(enable);
-      actions.appendChild(expand);
-      row.appendChild(actions);
+      row.appendChild(sw);
 
-      const detail = document.createElement("div");
-      detail.className = "app-detail";
-      detail.id = detailID;
-      detail.hidden = true;
-      const detailCopy = document.createElement("span");
-      detailCopy.className = "copy";
-      detailCopy.textContent = methods
-        ? "登录方式 · " + methods
-        : "尚无可用登录方式";
-      const login = document.createElement("button");
-      login.className = "app-action";
-      login.textContent = provider.signed_in ? "添加账号" : "登录 / 添加";
-      login.onclick = function () { openProviderLogin(provider); };
-      const viewAccounts = document.createElement("button");
-      viewAccounts.className = "app-action";
-      viewAccounts.textContent = "查看账号";
-      viewAccounts.onclick = function () { openTab("checkin"); };
-      detail.appendChild(detailCopy);
-      detail.appendChild(login);
-      detail.appendChild(viewAccounts);
-      expand.onclick = function () {
-        const expanded = !item.classList.contains("expanded");
-        item.classList.toggle("expanded", expanded);
-        detail.hidden = !expanded;
-        expand.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const chev = document.createElement("span");
+      chev.className = "chev";
+      chev.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      row.appendChild(chev);
+
+      row.onclick = function (event) {
+        if (event.target.closest("button")) return;
+        openAgentModal(provider);
       };
       item.appendChild(row);
-      item.appendChild(detail);
       return item;
     }
 
-    function groupHead(title, count, note) {
-      const head = document.createElement("div");
-      head.className = "apps-group-head";
-      const label = document.createElement("b");
-      label.textContent = title;
-      const total = document.createElement("small");
-      total.textContent = String(count);
-      const spacer = document.createElement("span");
-      spacer.className = "apps-group-spacer";
-      const hint = document.createElement("span");
-      hint.className = "apps-group-note";
-      hint.textContent = note;
-      head.appendChild(label);
-      head.appendChild(total);
-      head.appendChild(spacer);
-      head.appendChild(hint);
-      return head;
-    }
+    const enabledProviders = providers.filter(function (p) { return p.enabled && match(p); });
+    const disabledProviders = providers.filter(function (p) { return !p.enabled && match(p); });
 
-    const enabledProviders = providers.filter(function (provider) { return provider.enabled; });
-    const disabledProviders = providers.filter(function (provider) { return !provider.enabled; });
-    const enabledGroup = document.createElement("section");
-    enabledGroup.className = "apps-provider-group apps-enabled";
-    enabledGroup.appendChild(groupHead("已启用", enabledProviders.length, "直接参与巡检与统计"));
     const enabledList = document.createElement("div");
-    enabledList.className = "apps-provider-list";
-    enabledProviders.forEach(function (provider) {
-      enabledList.appendChild(providerRow(provider));
-    });
+    enabledList.className = "list";
+    enabledProviders.forEach(function (provider) { enabledList.appendChild(rowNode(provider)); });
     if (!enabledProviders.length) {
       const empty = document.createElement("div");
-      empty.className = "apps-enabled-empty";
-      empty.textContent = "当前没有已启用供应商。可展开下方列表后启用需要的供应商。";
+      empty.className = "empty";
+      empty.innerHTML = filter
+        ? "<b>没有匹配的应用</b>换个关键词试试。"
+        : "<b>当前没有已启用供应商</b>展开下方「已停用」列表后启用需要的供应商。";
       enabledList.appendChild(empty);
     }
-    enabledGroup.appendChild(enabledList);
-    body.appendChild(enabledGroup);
+    body.appendChild(enabledList);
 
     if (disabledProviders.length) {
-      const disabledGroup = document.createElement("details");
-      disabledGroup.className = "apps-provider-group apps-disabled";
-      disabledGroup.open = appsDisabledOpen;
-      disabledGroup.addEventListener("toggle", function () {
-        appsDisabledOpen = disabledGroup.open;
-        hint.textContent = disabledGroup.open ? "收起管理" : "展开管理";
-      });
-      const summary = document.createElement("summary");
-      const label = document.createElement("b");
-      label.textContent = "已停用";
-      const total = document.createElement("small");
-      total.textContent = String(disabledProviders.length);
-      const spacer = document.createElement("span");
-      spacer.className = "apps-group-spacer";
-      const hint = document.createElement("span");
-      hint.className = "apps-group-note";
-      hint.textContent = disabledGroup.open ? "收起管理" : "展开管理";
-      const chevron = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      chevron.setAttribute("viewBox", "0 0 16 16");
-      chevron.setAttribute("fill", "none");
-      chevron.setAttribute("aria-hidden", "true");
-      chevron.classList.add("apps-disabled-chevron");
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("d", "m4.5 6.5 3.5 3.5 3.5-3.5");
-      path.setAttribute("stroke", "currentColor");
-      path.setAttribute("stroke-width", "1.35");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      chevron.appendChild(path);
-      summary.appendChild(label);
-      summary.appendChild(total);
-      summary.appendChild(spacer);
-      summary.appendChild(hint);
-      summary.appendChild(chevron);
-      disabledGroup.appendChild(summary);
-      const disabledList = document.createElement("div");
-      disabledList.className = "apps-provider-list";
-      disabledProviders.forEach(function (provider) {
-        disabledList.appendChild(providerRow(provider));
-      });
-      disabledGroup.appendChild(disabledList);
-      body.appendChild(disabledGroup);
+      const head = document.createElement("div");
+      head.className = "fold-head";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("aria-expanded", appsDisabledOpen ? "true" : "false");
+      btn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>已停用 <span class="note">' + disabledProviders.length + "</span>";
+      head.appendChild(btn);
+      body.appendChild(head);
+      const offList = document.createElement("div");
+      offList.className = "list" + (appsDisabledOpen ? "" : " hidden");
+      disabledProviders.forEach(function (provider) { offList.appendChild(rowNode(provider)); });
+      btn.onclick = function () {
+        appsDisabledOpen = !appsDisabledOpen;
+        btn.setAttribute("aria-expanded", appsDisabledOpen ? "true" : "false");
+        offList.classList.toggle("hidden", !appsDisabledOpen);
+      };
+      body.appendChild(offList);
     }
 
     if (errors.length) {
@@ -5375,16 +5244,115 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       body.innerHTML = '<div class="empty"><b>尚无供应商插件</b>随包插件未加载，请重新安装 Quota Keepalive。</div>';
     }
     document.getElementById("apps-summary").textContent =
-      providers.length + " 个供应商，" + accounts + " 个账号，已登录 " + signedIn + " 个";
+      providers.length + " 个供应商 · " + accounts + " 个账号 · 已登录 " + signedIn;
     document.getElementById("apps-badge").textContent =
       errors.length ? errors.length + " 个插件异常" : "供应商已就绪";
     document.getElementById("apps-last").textContent =
-      enabled + " / " + providers.length + " 个供应商已启用";
-    const stats = document.getElementById("apps-stats");
-    stats.innerHTML = "";
-    stats.appendChild(makePill("已启用 " + enabled, enabled ? "good" : ""));
-    stats.appendChild(makePill("账号 " + accounts));
+      "已启用 " + enabled + " / " + providers.length;
+    if (searchEl && !searchEl.dataset.wired) {
+      searchEl.dataset.wired = "1";
+      searchEl.addEventListener("input", function () { renderApps(); });
+    }
   }
+
+  // ---------------- Agent 详情弹层 ----------------
+  let agentModalProvider = null;
+
+  function agentModalSection(title, count, note, nodes, open) {
+    const sec = document.createElement("section");
+    sec.className = "sec" + (open ? " open" : "");
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "sec-head2";
+    head.innerHTML = '<span>' + escapeHTML(title) + "</span>" +
+      (count ? '<span class="cnt">' + escapeHTML(count) + "</span>" : "") +
+      (note ? '<span class="note">' + escapeHTML(note) + "</span>" : "") +
+      '<span class="cv"><svg viewBox="0 0 16 16" fill="none" width="12" height="12"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
+    const bodyEl = document.createElement("div");
+    bodyEl.className = "sec-body";
+    nodes.forEach(function (node) { bodyEl.appendChild(node); });
+    head.onclick = function () { sec.classList.toggle("open"); };
+    sec.appendChild(head);
+    sec.appendChild(bodyEl);
+    return sec;
+  }
+
+  function fillAgentModal(provider) {
+    agentModalProvider = provider;
+    const body = document.getElementById("agent-modal-body");
+    body.innerHTML = "";
+    const accounts = provider.accounts || [];
+    const accountNodes = [];
+    if (accounts.length) {
+      accounts.forEach(function (account) {
+        accountNodes.push(providerAccountCard(provider, account));
+      });
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "empty-acct";
+      empty.innerHTML = "<b>还没有账号</b>点下方「添加账号」，用浏览器登录、桌面端登录或 API key 接入。";
+      accountNodes.push(empty);
+    }
+    body.appendChild(agentModalSection("账号", accounts.length + " 个", "含签到开关与额度", accountNodes, true));
+
+    const info = document.createElement("div");
+    info.className = "info-row";
+    info.innerHTML = '<span class="ik">运行方式</span><span class="id">' +
+      escapeHTML(provider.name || provider.id) +
+      " 使用随包社区插件，沿用你在这里的账号；签到由 QKA 本地日志判定，不额外请求远端。</span>";
+    body.appendChild(info);
+
+    const models = provider.models || [];
+    const panel = providerModelPanel(provider);
+    body.appendChild(agentModalSection("模型", models.length + " 个", "先选后测", [panel], false));
+
+    document.getElementById("agent-modal-title").textContent = provider.name || provider.id;
+    document.getElementById("agent-modal-sub").textContent =
+      (provider.signed_in ? "已登录" : "未登录") + " · " +
+      accounts.length + " 个账号 · " + models.length + " 个模型";
+    const ic = document.getElementById("am-ic");
+    const src = document.querySelector('#apps-body .row[data-agent="' + provider.id + '"] .ic');
+    if (ic && src) {
+      const img = src.querySelector("img");
+      if (img && img.src) { ic.src = img.src; ic.style.display = ""; }
+      else { ic.removeAttribute("src"); ic.style.display = "none"; }
+    }
+    const sw = document.getElementById("agent-modal-switch");
+    if (sw) {
+      sw.setAttribute("aria-checked", provider.enabled ? "true" : "false");
+      sw.setAttribute("aria-label", (provider.enabled ? "停用" : "启用") + (provider.name || provider.id));
+      sw.disabled = false;
+      sw.onclick = async function () {
+        sw.disabled = true;
+        try {
+          await Bound.ProvidersSetEnabled(provider.id, !provider.enabled);
+          await renderApps();
+          await renderAccounts();
+        } catch (_) {
+          sw.disabled = false;
+        }
+      };
+    }
+    const add = document.getElementById("agent-modal-add");
+    if (add) add.onclick = function () { openProviderLogin(provider); };
+  }
+
+  async function openAgentModal(provider) {
+    fillAgentModal(provider);
+    document.getElementById("agent-modal").classList.remove("hidden");
+  }
+
+  function closeAgentModal() {
+    document.getElementById("agent-modal").classList.add("hidden");
+    agentModalProvider = null;
+    showAccountsMessage("");
+  }
+
+  document.getElementById("agent-modal-close").onclick = closeAgentModal;
+  document.getElementById("agent-modal").addEventListener("click", function (event) {
+    if (event.target.id === "agent-modal") closeAgentModal();
+  });
+
 
   // 签到管理页：供应商账号、双任务开关、手动执行与历史。
   const opStateLabel = {
@@ -5581,121 +5549,21 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   async function renderAccounts() {
-    const request = ++accountsRenderGeneration;
-    const preloadBody = document.getElementById("accounts-body");
-    if (!preloadBody.dataset.loaded) {
-      preloadBody.innerHTML = '<div class="empty"><b>正在加载供应商账号…</b>首次打开需要启动随包供应商运行时，请稍候。</div>';
-    }
+    // 账号现在都在 Agent 详情弹层里；只有弹层打开时才刷新它，避免无谓重绘。
+    if (!agentModalProvider) return;
+    if (document.getElementById("agent-modal").classList.contains("hidden")) return;
+    const id = agentModalProvider.id;
     let view;
     try {
       view = await loadProviders();
-      preloadBody.dataset.loaded = "1";
-      if (request !== accountsRenderGeneration) return;
-      const resolved = resolveAccountProviderView(
-        view.providers || [],
-        document.getElementById("accounts-provider").value
-      );
-      populateProviderPicker(view, resolved.selectedProvider);
       showAccountsMessage("");
     } catch (_) {
-      if (request !== accountsRenderGeneration) return;
       showAccountsMessage("供应商运行时尚未就绪，正在自动重试…");
       retryRenderOnce("accounts", renderAccounts);
       return;
     }
-    updateAccountsSummary(view);
-    const body = document.getElementById("accounts-body");
-    body.innerHTML = "";
-    const allProviders = view.providers || [];
-    const providers = resolveAccountProviderView(
-      allProviders,
-      document.getElementById("accounts-provider").value
-    ).providers;
-    visibleAccountGroupKeys = [];
-    if (!providers.length) {
-      body.innerHTML = '<div class="empty"><b>还没有供应商账号</b>点击「登录 / 添加账号」，按供应商官方流程完成登录。</div>';
-      syncAccountCollapseButton();
-      Events.Emit("accounts-updated");
-      return;
-    }
-
-    providers.forEach(function (provider) {
-      const accounts = provider.accounts || [];
-      const groupKey = provider.id;
-      const group = document.createElement("div");
-      const collapsed = !expandedProviderGroups.has(groupKey);
-      group.className = "card account-group" + (collapsed ? " collapsed" : "");
-      group.dataset.provider = groupKey;
-      const head = document.createElement("button");
-      head.type = "button";
-      head.className = "account-group-head";
-      head.setAttribute("aria-expanded", collapsed ? "false" : "true");
-      head.setAttribute("aria-label",
-        (collapsed ? "展开 " : "收起 ") +
-        (provider.name || provider.id) + " 账号");
-      head.appendChild(providerIconNode(provider));
-      const copy = document.createElement("div");
-      copy.className = "copy";
-      const title = document.createElement("b");
-      title.textContent = provider.name || provider.id;
-      const sub = document.createElement("small");
-      sub.textContent = (provider.signed_in ? "已登录" : "未登录") + " · " +
-        (provider.checkin ? "支持签到" : "仅额度");
-      copy.appendChild(title);
-      copy.appendChild(sub);
-      head.appendChild(copy);
-      head.appendChild(makePill((provider.models || []).length + " 个模型"));
-      head.appendChild(makePill(accounts.length + " 个账号"));
-      const collapse = document.createElement("span");
-      collapse.className = "group-collapse";
-      collapse.setAttribute("aria-hidden", "true");
-      collapse.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
-        '<path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" ' +
-        'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      const toggleGroup = function () {
-        // 展开集合里没有就是折叠；点击后状态取反。
-        if (expandedProviderGroups.has(groupKey)) expandedProviderGroups.delete(groupKey);
-        else expandedProviderGroups.add(groupKey);
-        setAccountGroupCollapsed(groupKey, !expandedProviderGroups.has(groupKey));
-        syncAccountCollapseButton();
-      };
-      head.onclick = toggleGroup;
-      head.appendChild(collapse);
-      group.appendChild(head);
-
-      const groupBody = document.createElement("div");
-      groupBody.className = "account-group-body";
-      if (!accounts.length) {
-        const empty = document.createElement("div");
-        empty.className = "provider-account-empty";
-        empty.innerHTML = "<b>该供应商还没有账号</b>添加账号后可查看签到状态、额度和模型测试结果。";
-        groupBody.appendChild(empty);
-      }
-      accounts.forEach(function (account) {
-        groupBody.appendChild(providerAccountCard(provider, account));
-      });
-      groupBody.appendChild(providerModelPanel(provider));
-      const footer = document.createElement("div");
-      footer.className = "provider-group-footer";
-      const note = document.createElement("span");
-      note.className = "note";
-      note.textContent = accounts.length
-        ? "支持继续添加同一供应商下的其他账号"
-        : "先添加账号，再使用模型测试";
-      const add = document.createElement("button");
-      add.type = "button";
-      add.className = "app-action primary-outline";
-      add.textContent = "添加账号";
-      add.onclick = function () { openProviderLogin(provider); };
-      footer.appendChild(note);
-      footer.appendChild(add);
-      groupBody.appendChild(footer);
-      group.appendChild(groupBody);
-      body.appendChild(group);
-      visibleAccountGroupKeys.push(groupKey);
-    });
-    syncAccountCollapseButton();
-    Events.Emit("accounts-updated");
+    const provider = (view.providers || []).find(function (p) { return p.id === id; });
+    if (provider) fillAgentModal(provider);
   }
 
   function providerModelPanel(provider) {
@@ -6460,13 +6328,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function openProviderLogin(provider) {
     if (!provider) {
-      const id = document.getElementById("accounts-provider").value;
-      provider = providersSnapshot && (providersSnapshot.providers || []).find(function (item) {
-        return item.id === id;
-      });
-    }
-    if (!provider) {
-      showAccountsMessage("请先在供应商列表中选择一个供应商。");
+      showAccountsMessage("请先选择一个 Agent，再添加账号。");
       return;
     }
     providerLoginState.provider = provider;
@@ -6674,43 +6536,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (event.target === providerLoginDialog) closeProviderLogin();
   });
 
-  document.querySelector('[data-act="login-provider"]').onclick = async function () {
-    try {
-      const selected = document.getElementById("accounts-provider").value;
-      const view = await loadProviders();
-      populateProviderPicker(view, selected);
-      const provider = (view.providers || []).find(function (item) { return item.id === selected; }) ||
-        (view.providers || [])[0];
-      openProviderLogin(provider);
-    } catch (err) {
-      showAccountsMessage(accountErrorMessage(err, "无法读取供应商列表，请重试。"));
-    }
-  };
-  document.querySelector('[data-act="refresh-providers"]').onclick = async function () {
-    const button = this;
-    button.disabled = true;
-    showAccountsMessage("正在刷新供应商与账号…", "pending");
-    try {
-      await renderApps();
-      await renderAccounts();
-      showAccountsMessage("供应商已刷新", "success");
-    } catch (err) {
-      showAccountsMessage(accountErrorMessage(err, "刷新失败，请重试。"));
-    } finally {
-      button.disabled = false;
-    }
-  };
-  document.getElementById("accounts-provider").onchange = renderAccounts;
-  document.getElementById("accounts-collapse-all").onclick = function () {
-    if (!visibleAccountGroupKeys.length) return;
-    const allCollapsed = visibleAccountGroupKeys.every(function (key) {
-      return !expandedProviderGroups.has(key);
-    });
-    visibleAccountGroupKeys.forEach(function (key) {
-      setAccountGroupCollapsed(key, !allCollapsed);
-    });
-    syncAccountCollapseButton();
-  };
 
   // 日志页：四类筛选 + 游标加载更多。
   let logCursor = 0;
@@ -6733,10 +6558,18 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       appendLogs(true);
     };
   });
+  function logLevelFor(state) {
+    if (state === "failed_final" || state === "failed_retryable" || state === "failed") {
+      return { cls: "error", label: "错误" };
+    }
+    if (state === "manual_required") return { cls: "warn", label: "警告" };
+    return { cls: "info", label: "信息" };
+  }
   function appendLogs(reset) {
+    const container = document.getElementById("logs-body");
     if (reset) {
       logCursor = 0;
-      document.getElementById("logs-body").innerHTML = "";
+      container.innerHTML = "";
     }
     Bound.LogsTail(
       document.getElementById("log-target").value,
@@ -6746,35 +6579,39 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       50, logCursor
     ).then(function (raw) {
       const page = asJSON(raw);
-      const body = document.getElementById("logs-body");
       (page.entries || []).forEach(function (e) {
-        const tr = document.createElement("tr");
-        [e.ts, targetLabel[e.target] || e.target, maskLogAccount(e.account_id),
-         opLabel[e.operation] || e.operation].forEach(function (v) {
-          const td = document.createElement("td");
-          td.textContent = v;
-          tr.appendChild(td);
-        });
-        const stateCell = document.createElement("td");
-        const state = document.createElement("span");
-        state.className = "state " + stateClass(e.state);
-        state.textContent = opStateLabel[e.state] || e.state;
-        stateCell.appendChild(state);
-        tr.appendChild(stateCell);
-        const messageCell = document.createElement("td");
-        messageCell.textContent = e.message || "—";
-        tr.appendChild(messageCell);
-        body.appendChild(tr);
+        const row = document.createElement("div");
+        row.className = "log-row";
+        const time = document.createElement("time");
+        time.textContent = String(e.ts || "");
+        row.appendChild(time);
+        const tgt = document.createElement("span");
+        tgt.className = "tgt";
+        tgt.textContent = targetLabel[e.target] || e.target || "—";
+        row.appendChild(tgt);
+        const msg = document.createElement("span");
+        msg.className = "msg";
+        const prefix = e.account_id ? maskLogAccount(e.account_id) + " · " : "";
+        const opTxt = opLabel[e.operation] ? opLabel[e.operation] + " · " : "";
+        msg.textContent = prefix + opTxt + (e.message || "—");
+        msg.title = msg.textContent;
+        row.appendChild(msg);
+        const lv = logLevelFor(e.state);
+        const lvEl = document.createElement("span");
+        lvEl.className = "lv " + lv.cls;
+        lvEl.textContent = lv.label;
+        row.appendChild(lvEl);
+        container.appendChild(row);
       });
       if (!(page.entries || []).length && reset) {
-        body.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--muted)">暂无符合条件的日志</td></tr>';
+        container.innerHTML = '<div class="empty" style="padding:24px;text-align:center">暂无符合条件的日志</div>';
       }
       logCursor = page.next_cursor || 0;
       document.getElementById("logs-more").style.display = logCursor ? "" : "none";
-      document.getElementById("logs-count").textContent = body.children.length + " 条记录";
+      document.getElementById("logs-count").textContent =
+        container.querySelectorAll(".log-row").length + " 条记录";
     }).catch(function () {
-      document.getElementById("logs-body").innerHTML =
-        '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--red)">日志读取失败，请重试。</td></tr>';
+      container.innerHTML = '<div class="empty" style="padding:24px;text-align:center;color:var(--bad)">日志读取失败，请重试。</div>';
     });
   }
   document.getElementById("log-query").onclick = function () { appendLogs(true); };

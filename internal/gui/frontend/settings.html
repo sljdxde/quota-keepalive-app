@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="color-scheme" content="light dark">
+<title>Quota Keepalive 设置</title>
 <script>
   (function () {
     var theme = new URLSearchParams(location.search).get("theme");
@@ -11,34 +12,12 @@
     }
   })();
 </script>
+<link rel="stylesheet" href="assets/qka-ui.css">
+<link rel="stylesheet" href="assets/perf-mode.css">
 <style>
-  *, *::before, *::after {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  *::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-    display: none;
-  }
+  /* 页面专属：字号阶梯（与主窗口一致）+ 旧类名到 qka-ui 设计语言的映射。
+     qka-ui.css 负责颜色 / 圆角 / 组件 token；这里只补设置窗口特有的排版。 */
   :root {
-    color-scheme: light;
-    --bg: #f4f4f6;
-    --card: #ffffff;
-    --card-2: #f9f9fb;
-    --line: #e3e3e8;
-    --line-2: #ececf0;
-    --fg: #1c1c21;
-    --fg-2: #4b4b53;
-    --muted: #707079;
-    --red: #c33b3b;
-    --accent: #4f46e5;
-    --accent-soft: #eeedfd;
-    --faint: #9a9aa3;
-    --seg-track: #ececf0;
-    --seg-thumb: #ffffff;
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
-    /* 与主窗口/菜单栏面板同一套字号阶梯，避免三个界面字号各不相同。 */
     --fs-3xs: 8.5px;
     --fs-2xs: 9.5px;
     --fs-xs: 10.5px;
@@ -47,44 +26,45 @@
     --fs-lg: 14px;
     --fs-xl: 16px;
     --fs-2xl: 18px;
+    --fs-3xl: 20px;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
+            system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+            "Noto Sans CJK SC", sans-serif;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px -12px rgba(0,0,0,.18);
+    --shadow-pop: 0 1px 2px rgba(0,0,0,.06), 0 16px 44px -14px rgba(0,0,0,.28);
+    color-scheme: light;
   }
+  /* qka-ui.css 只提供 :root[data-theme="dark"]；补上「跟随系统」的深色令牌，
+     颜色值与 qka-ui.css 的深色档保持完全一致。 */
+  :root[data-theme="dark"] { color-scheme: dark; }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --bg: #1a1a1e;
-      --card: #232327;
-      --card-2: #1f1f23;
-      --line: #333339;
-      --line-2: #2c2c32;
-      --fg: #ededf1;
-      --fg-2: #b9b9c1;
-      --muted: #9a9aa3;
-      --red: #f28b82;
-      --accent: #a5b4fc;
-      --accent-soft: #2c2e4a;
-      --faint: #56565f;
-      --seg-track: rgba(255, 255, 255, .055);
-      --seg-thumb: rgba(255, 255, 255, .15);
+      --bg: #0b0b0c; --bg2: #121214; --card: #161618; --card2: #1b1b1e;
+      --code: #151517; --ink: #f2f2f3; --ink2: #b3b3ba; --ink3: #7a7a82;
+      --line: #26262a; --line2: #202024; --track: #2d2d33; --line-strong: #38383a;
+      --btn: #f2f2f3; --btn-ink: #0b0b0c; --accent: #4aa3b5; --accent-fg: #0b0b0c;
+      --gold: #e0b256; --ok: #58b985; --warn: #e0a24a; --bad: #e57370;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 20px 60px -20px rgba(0,0,0,.8);
+      --shadow-pop: 0 2px 4px rgba(0,0,0,.4), 0 24px 64px -18px rgba(0,0,0,.9);
     }
   }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --bg: #1a1a1e; --card: #232327; --card-2: #1f1f23;
-    --line: #333339; --line-2: #2c2c32; --fg: #ededf1; --fg-2: #b9b9c1;
-    --muted: #9a9aa3; --red: #f28b82; --accent: #a5b4fc; --accent-soft: #2c2e4a;
-    --faint: #56565f; --seg-track: rgba(255,255,255,.055); --seg-thumb: rgba(255,255,255,.15);
-  }
+  /* 滚动条保持隐藏 */
+  *, *::before, *::after { scrollbar-width: none; -ms-overflow-style: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; display: none; }
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; }
   body {
-    color: var(--fg);
     background: var(--bg);
-    font: 400 13.5px/1.45 var(--font);
+    color: var(--ink);
+    font: 400 var(--fs-base)/1.45 var(--font);
     -webkit-font-smoothing: antialiased;
     padding: 20px;
   }
+  /* 顶部标题（保留 Wails 拖拽区域；左侧留白避开窗口按钮） */
   header {
-    display: flex; align-items: center; gap: 9px;
+    display: flex; align-items: center; gap: 10px;
     margin: 0 0 14px; padding-left: 76px; min-height: 28px;
     --wails-draggable: drag;
   }
@@ -101,114 +81,123 @@
   }
   .brand-tile svg { width: 19px; height: 19px; display: block; }
   h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 650; letter-spacing: -.02em; }
-  .subtitle { margin: 4px 0 0; color: var(--muted); font-size: var(--fs-sm); }
-  #form {
-    overflow: hidden; border-radius: 12px; background: var(--card);
-    box-shadow: 0 0 0 .5px var(--line), 0 8px 24px rgba(20,22,30,.06);
+  .subtitle { margin: 4px 0 0; color: var(--ink3); font-size: var(--fs-sm); }
+
+  .settings-page { display: grid; gap: 14px; }
+  /* 卡片：qka-ui 的 .settings-card 只声明 padding/overflow，这里补底与描边 */
+  .settings-card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-lg); padding: 0; overflow: hidden;
   }
+  /* 通用组件的最小落地样式（与 qka-ui.css 同名规则一致；本页后加载，作为
+     兜底，保证共享样式表拆分/演进期间外观不塌）。 */
+  .settings-head {
+    display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap;
+    padding: 13px 18px 11px; border-bottom: 1px solid var(--line2);
+  }
+  .settings-head > span:first-child { display: grid; gap: 2px; min-width: 0; flex: 1 1 0%; }
+  .settings-head b { font-size: var(--fs-base); font-weight: 600; }
+  .settings-head small { color: var(--ink2); font-size: var(--fs-xs); line-height: 1.55; }
+  .rows-list { display: grid; }
+  .settings-status {
+    display: grid; grid-template-columns: 96px minmax(0, 1fr);
+    gap: 4px 14px; margin: 0; padding: 12px 18px; font-size: var(--fs-sm);
+  }
+  .settings-status dt { color: var(--ink3); }
+  .settings-status dd { margin: 0; color: var(--ink2); overflow-wrap: anywhere; }
+  .settings-choice { display: inline-flex; gap: 6px; align-items: center; }
+  .settings-hint { margin: 0; color: var(--ink3); font-size: var(--fs-xs); line-height: 1.6; }
+  /* 文本按钮（原型 .text / .text.action）兜底 */
+  .text {
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    height: 24px; padding: 0 7px; border: 0; border-radius: 6px;
+    background: none; color: var(--ink2); font-size: var(--fs-xs); font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+  }
+  .text:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .text.action { height: 27px; padding: 0 10px; border: 1px solid var(--line); background: var(--card); color: var(--ink2); font-size: var(--fs-sm); }
+  .text.action:hover { border-color: var(--ink3); background: var(--card2); color: var(--ink); }
+  .text[disabled], .text:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* 行：JS 以 .row 生成，映射到原型 .r（1fr + auto、13px 标题、12px 描述） */
   .row {
-    display: flex; align-items: center; gap: 11px;
-    min-height: 62px; padding: 13px 14px;
-    border-bottom: .5px solid var(--line-2);
+    display: flex; align-items: center; gap: 16px;
+    padding: 13px 18px; border-top: 1px solid var(--line2);
   }
-  .row:last-child { border-bottom: 0; }
-  .row:hover { background: var(--card-2); }
-  .switch { position: relative; width: 34px; height: 20px; margin-left: auto; flex: none; }
+  .row:first-child { border-top: 0; }
+  .copy { min-width: 0; flex: 1; }
+  .copy b { display: block; font-size: var(--fs-base); font-weight: 560; }
+  .desc { display: block; margin-top: 2px; color: var(--ink2); font-size: var(--fs-sm); line-height: 1.55; }
+
+  /* 选择胶囊：JS 以 .choice 生成，对齐原型 .choices */
+  .choice {
+    display: inline-flex; flex: none; gap: 2px; padding: 3px;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md);
+  }
+  .choice button {
+    height: 26px; padding: 0 11px; border: 0; border-radius: 7px;
+    color: var(--ink2); background: transparent; font-size: var(--fs-sm);
+    cursor: pointer; white-space: nowrap;
+  }
+  .choice button:hover { color: var(--ink); }
+  .choice button.active {
+    color: var(--ink); background: var(--card); font-weight: 560;
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  .choice button:disabled { opacity: .55; }
+
+  /* 开关：JS 用 span.switch > input[type=checkbox]，套用原型开关外观 */
+  .switch { position: relative; display: inline-block; width: 40px; height: 23px; flex: none; }
   .switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
   .switch::before {
     content: ""; position: absolute; inset: 0; border-radius: 999px;
-    background: var(--faint); transition: background .15s ease;
+    background: var(--line-strong); transition: background .16s ease;
   }
   .switch::after {
-    content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px;
-    border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2);
-    transition: transform .18s cubic-bezier(.23,1,.32,1);
+    content: ""; position: absolute; left: 2.5px; top: 2.5px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25);
+    transition: transform .16s ease;
   }
   .switch:has(input:checked)::before { background: var(--accent); }
-  .switch:has(input:checked)::after { transform: translateX(14px); }
+  .switch:has(input:checked)::after { transform: translateX(17px); }
   .switch:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
-  .copy { min-width: 0; flex: 1; }
-  .copy b { display: block; font-size: var(--fs-md); font-weight: 600; }
-  .desc { display: block; margin-top: 3px; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
-  .select-row { align-items: center; }
-  .choice {
-    display: flex; flex: none; gap: 2px; padding: 3px;
-    border-radius: 8px; background: var(--seg-track);
-  }
-  .choice button {
-    height: 26px; padding: 0 9px; border: 0; border-radius: 6px;
-    color: var(--muted); background: transparent; font-size: var(--fs-sm);
-  }
-  .choice button:hover { color: var(--fg); }
-  .choice button.active {
-    color: var(--fg); background: var(--seg-thumb);
-    box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06);
-  }
-  .choice button:disabled { opacity: .55; }
-  .select-control-shell {
-    position: relative; display: inline-flex; flex: none;
-    width: 170px; max-width: 170px;
-  }
+  :root[data-theme="dark"] .switch::after { background: #d9d9de; }
+
+  /* 下拉：保留 JS / 测试使用的 .select-control(-shell) 类名，套用原型 .select 外观 */
+  .select-control-shell { position: relative; display: inline-flex; flex: none; width: 170px; max-width: 170px; }
   .select-control-shell::after {
-    content: ""; position: absolute; right: 11px; top: calc(50% - 3px);
-    width: 6px; height: 6px; pointer-events: none;
-    border-right: 1.25px solid var(--muted);
-    border-bottom: 1.25px solid var(--muted);
-    transform: rotate(45deg);
+    content: ""; position: absolute; right: 11px; top: 50%; width: 7px; height: 7px;
+    border-right: 1.5px solid var(--ink3); border-bottom: 1.5px solid var(--ink3);
+    transform: translateY(-70%) rotate(45deg); pointer-events: none;
   }
   .select-control {
-    width: 100%; height: 29px; padding: 0 29px 0 10px;
-    border: 0; border-radius: 7px; appearance: none; -webkit-appearance: none;
-    color: var(--fg); background: var(--card);
-    box-shadow: inset 0 0 0 .5px var(--line);
-    font-size: var(--fs-sm);
+    width: 100%; height: 28px; padding: 0 28px 0 9px;
+    border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+    appearance: none; -webkit-appearance: none;
+    background: var(--card); color: var(--ink); font-size: var(--fs-sm); cursor: pointer;
   }
-  .select-control:hover {
-    background: var(--card-2);
-    box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--line) 64%, var(--fg) 36%);
-  }
+  .select-control:hover { border-color: var(--ink3); }
+  .select-control:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   .select-control:disabled { opacity: .55; }
-  .hint {
-    margin: 12px 0 0; padding: 9px 11px; border-radius: 9px;
-    color: var(--fg-2); background: var(--accent-soft);
-    font-size: var(--fs-sm); line-height: 1.45;
-  }
-  .schedule-card {
-    margin-top: 14px; overflow: hidden; border-radius: 12px;
-    background: var(--card);
-    box-shadow: 0 0 0 .5px var(--line), 0 8px 24px rgba(20,22,30,.06);
-  }
-  .schedule-head {
-    display: flex; align-items: center; gap: 9px;
-    padding: 12px 14px 10px;
-  }
-  .schedule-head .copy { flex: 1; min-width: 0; }
-  .schedule-head b { display: block; font-size: var(--fs-md); font-weight: 620; }
-  .schedule-head small { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-sm); }
+
+  /* 状态药丸：JS 用 .sched-state(.on / .warn) */
   .sched-state {
-    display: inline-flex; align-items: center; gap: 5px;
-    min-height: 22px; padding: 1px 7px; border-radius: 6px;
-    color: var(--muted); background: var(--card-2);
-    box-shadow: inset 0 0 0 .5px var(--line);
-    font-size: var(--fs-sm); font-weight: 600; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
+    padding: 2px 8px; border-radius: 999px; background: var(--bg2); color: var(--ink2);
+    font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
   }
-  .sched-state.on { color: var(--accent); background: var(--accent-soft); box-shadow: none; }
-  .sched-state.warn { color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); box-shadow: none; }
-  .schedule-status {
-    display: grid; grid-template-columns: 92px minmax(0, 1fr);
-    gap: 6px 10px; padding: 10px 14px 13px;
-    border-top: .5px solid var(--line-2);
-    color: var(--fg-2); font-size: var(--fs-sm);
-  }
-  .schedule-status dt { color: var(--muted); }
-  .schedule-status dd { margin: 0; color: var(--fg); overflow-wrap: anywhere; }
-  .schedule-status .error { color: var(--red); }
-  .error { color: var(--red); }
+  .sched-state.on { color: var(--ok); background: var(--ok-soft); }
+  .sched-state.warn { color: var(--warn); background: var(--warn-soft); }
+
+  /* 状态表与上文行之间的细分隔线 */
+  .rows-list + .settings-status { border-top: 1px solid var(--line2); }
+  .settings-status .error { color: var(--bad); }
+  .error { color: var(--bad); }
+
   @media (prefers-reduced-motion: reduce) {
     .switch::before, .switch::after, .choice button { transition: none; }
   }
 </style>
-<link rel="stylesheet" href="assets/perf-mode.css">
 </head>
 <body>
   <header>
@@ -225,114 +214,118 @@
       <p class="subtitle">Quota Keepalive 使用同一份声明式配置管理外观、启动与自动执行。</p>
     </div>
   </header>
-  <div id="form"></div>
-  <section class="schedule-card" aria-labelledby="schedule-title">
-    <div class="schedule-head">
-      <div class="copy">
-        <b id="schedule-title">内置自动执行</b>
-        <small>由 Quota Keepalive 自己的系统任务调用 <code>task-run</code>，不依赖任何 Agent。</small>
+  <div class="settings-page">
+    <section class="card settings-card">
+      <div class="settings-head">
+        <span><b>外观与启动</b><small>跟随系统，或固定使用浅色、深色外观；启动与自动执行在同一处管理。</small></span>
       </div>
-      <span class="sched-state" id="schedule-state">读取中</span>
-    </div>
-    <label class="row">
-      <span class="copy">
-        <b>启用内置自动执行</b>
-        <span class="desc">按下方间隔执行；开关会同步安装或删除系统任务。</span>
-      </span>
-      <span class="switch">
-        <input type="checkbox" id="schedule-toggle" aria-label="内置自动执行">
-      </span>
-    </label>
-    <label class="row select-row">
-      <span class="copy">
-        <b>执行间隔</b>
-        <span class="desc">系统任务按本机时间重复运行。</span>
-      </span>
-      <span class="select-control-shell">
-      <select class="select-control" id="schedule-interval" aria-label="执行间隔">
-        <option value="5">每 5 分钟</option>
-        <option value="10">每 10 分钟</option>
-        <option value="15">每 15 分钟</option>
-        <option value="30">每 30 分钟</option>
-        <option value="60">每小时</option>
-        <option value="120">每 2 小时</option>
-        <option value="360">每 6 小时</option>
-        <option value="720">每 12 小时</option>
-        <option value="1440">每天</option>
-        <option value="10080">每 7 天</option>
-      </select>
-      </span>
-    </label>
-    <label class="row select-row">
-      <span class="copy">
-        <b>执行内容</b>
-        <span class="desc">只运行选中的任务类型。</span>
-      </span>
-      <span class="select-control-shell">
-      <select class="select-control" id="schedule-action" aria-label="执行内容">
-        <option value="checkin">签到</option>
-      </select>
-      </span>
-    </label>
-    <dl class="schedule-status" id="schedule-status">
-      <dt>计划</dt><dd id="schedule-time">每 30 分钟（本机时间）</dd>
-      <dt>执行内容</dt><dd id="schedule-action-label">签到</dd>
-      <dt>下次执行</dt><dd id="schedule-next">—</dd>
-      <dt>上次结果</dt><dd id="schedule-last">尚未执行</dd>
-    </dl>
-  </section>
-  <section class="schedule-card" aria-labelledby="update-title">
-    <div class="schedule-head">
-      <div class="copy">
-        <b id="update-title">软件更新</b>
-        <small>只从 Quota Keepalive 官方 feed 下载，校验 SHA-256 后在退出时替换并重启。</small>
+      <div id="form" class="rows-list"></div>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="schedule-title">
+      <div class="settings-head">
+        <span><b id="schedule-title">内置自动执行</b><small>由 Quota Keepalive 自己的系统任务调用 <code>task-run</code>，不依赖任何 Agent。</small></span>
+        <span class="sched-state" id="schedule-state">读取中</span>
       </div>
-      <span class="sched-state" id="update-state">读取中</span>
-    </div>
-    <dl class="schedule-status">
-      <dt>当前版本</dt><dd id="update-current">—</dd>
-      <dt>最新版本</dt><dd id="update-latest">尚未检查</dd>
-    </dl>
-    <div class="row select-row">
-      <span class="copy">
-        <b>安装更新</b>
-        <span class="desc" id="update-message">检查官方更新源后，可下载并自动安装。</span>
-      </span>
-      <span class="choice">
-        <button type="button" id="update-check">检查</button>
-        <button type="button" id="update-install" disabled>下载并安装</button>
-      </span>
-    </div>
-  </section>
-  <section class="schedule-card" aria-labelledby="settings-diagnostics-title">
-    <div class="schedule-head">
-      <div class="copy">
-        <b id="settings-diagnostics-title">诊断</b>
-        <small>反馈「卡」时自助取证：版本、渲染器、慢轮询与日志位置，一键复制后贴进 issue。不含任何凭据或会话内容。</small>
+      <div class="rows-list">
+        <label class="row">
+          <span class="copy">
+            <b>启用内置自动执行</b>
+            <span class="desc">按下方间隔执行；开关会同步安装或删除系统任务。</span>
+          </span>
+          <span class="switch">
+            <input type="checkbox" id="schedule-toggle" aria-label="内置自动执行">
+          </span>
+        </label>
+        <label class="row">
+          <span class="copy">
+            <b>执行间隔</b>
+            <span class="desc">系统任务按本机时间重复运行。</span>
+          </span>
+          <span class="select-control-shell">
+          <select class="select-control" id="schedule-interval" aria-label="执行间隔">
+            <option value="5">每 5 分钟</option>
+            <option value="10">每 10 分钟</option>
+            <option value="15">每 15 分钟</option>
+            <option value="30">每 30 分钟</option>
+            <option value="60">每小时</option>
+            <option value="120">每 2 小时</option>
+            <option value="360">每 6 小时</option>
+            <option value="720">每 12 小时</option>
+            <option value="1440">每天</option>
+            <option value="10080">每 7 天</option>
+          </select>
+          </span>
+        </label>
+        <label class="row">
+          <span class="copy">
+            <b>执行内容</b>
+            <span class="desc">只运行选中的任务类型。</span>
+          </span>
+          <span class="select-control-shell">
+          <select class="select-control" id="schedule-action" aria-label="执行内容">
+            <option value="checkin">签到</option>
+          </select>
+          </span>
+        </label>
       </div>
-      <span class="sched-state" id="diagnostics-state">读取中</span>
-    </div>
-    <dl class="schedule-status" id="diagnostics-status">
-      <dt>版本</dt><dd id="diagnostics-version">—</dd>
-      <dt>运行时目录</dt><dd id="diagnostics-runtime">—</dd>
-      <dt>渲染器</dt><dd id="diagnostics-renderer">—</dd>
-      <dt>性能模式</dt><dd id="diagnostics-perf-mode">—</dd>
-      <dt>3D 宠物帧率</dt><dd id="diagnostics-pet-fps">—</dd>
-      <dt>慢轮询</dt><dd id="diagnostics-slow-polls">—</dd>
-      <dt>日志目录</dt><dd id="diagnostics-logdir">—</dd>
-    </dl>
-    <div class="row select-row">
-      <span class="copy">
-        <b>自助取证</b>
-        <span class="desc">复制完整诊断信息（纯文本），或直接打开日志目录。</span>
-      </span>
-      <span class="choice">
-        <button type="button" id="diagnostics-copy">复制诊断信息</button>
-        <button type="button" id="diagnostics-open-logdir">打开日志目录</button>
-      </span>
-    </div>
-  </section>
-  <p class="hint">设置切换后立即保存；系统任务安装或删除失败时，会恢复为当前生效值。</p>
+      <dl class="settings-status" id="schedule-status">
+        <dt>计划</dt><dd id="schedule-time">每 30 分钟（本机时间）</dd>
+        <dt>执行内容</dt><dd id="schedule-action-label">签到</dd>
+        <dt>下次执行</dt><dd id="schedule-next">—</dd>
+        <dt>上次结果</dt><dd id="schedule-last">尚未执行</dd>
+      </dl>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="update-title">
+      <div class="settings-head">
+        <span><b id="update-title">软件更新</b><small>只从 Quota Keepalive 官方 feed 下载，校验 SHA-256 后在退出时替换并重启。</small></span>
+        <span class="sched-state" id="update-state">读取中</span>
+      </div>
+      <dl class="settings-status">
+        <dt>当前版本</dt><dd id="update-current">—</dd>
+        <dt>最新版本</dt><dd id="update-latest">尚未检查</dd>
+      </dl>
+      <div class="row">
+        <span class="copy">
+          <b>安装更新</b>
+          <span class="desc" id="update-message">检查官方更新源后，可下载并自动安装。</span>
+        </span>
+        <span class="settings-choice">
+          <button type="button" class="text action" id="update-check">检查</button>
+          <button type="button" class="text action" id="update-install" disabled>下载并安装</button>
+        </span>
+      </div>
+    </section>
+
+    <section class="card settings-card" aria-labelledby="settings-diagnostics-title">
+      <div class="settings-head">
+        <span><b id="settings-diagnostics-title">诊断</b><small>反馈「卡」时自助取证：版本、渲染器、慢轮询与日志位置，一键复制后贴进 issue。不含任何凭据或会话内容。</small></span>
+        <span class="sched-state" id="diagnostics-state">读取中</span>
+      </div>
+      <dl class="settings-status" id="diagnostics-status">
+        <dt>版本</dt><dd id="diagnostics-version">—</dd>
+        <dt>运行时目录</dt><dd id="diagnostics-runtime">—</dd>
+        <dt>渲染器</dt><dd id="diagnostics-renderer">—</dd>
+        <dt>性能模式</dt><dd id="diagnostics-perf-mode">—</dd>
+        <dt>3D 宠物帧率</dt><dd id="diagnostics-pet-fps">—</dd>
+        <dt>慢轮询</dt><dd id="diagnostics-slow-polls">—</dd>
+        <dt>日志目录</dt><dd id="diagnostics-logdir">—</dd>
+      </dl>
+      <div class="row">
+        <span class="copy">
+          <b>自助取证</b>
+          <span class="desc">复制完整诊断信息（纯文本），或直接打开日志目录。</span>
+        </span>
+        <span class="settings-choice">
+          <button type="button" class="text action" id="diagnostics-copy">复制诊断信息</button>
+          <button type="button" class="text action" id="diagnostics-open-logdir">打开日志目录</button>
+        </span>
+      </div>
+    </section>
+
+    <p class="settings-hint">设置切换后立即保存；系统任务安装或删除失败时，会恢复为当前生效值。</p>
+  </div>
 
 <script type="module">
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";

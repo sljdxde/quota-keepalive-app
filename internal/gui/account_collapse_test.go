@@ -25,7 +25,7 @@ func TestAccountCardsCollapseKeepsHeaderActions(t *testing.T) {
 		`chevron.className = "account-collapse"`,
 		`if (event.target.closest(".switch")) return`,
 		`top.onkeydown = function (event)`,
-		`accountStateKey(card.dataset.provider, card.dataset.accountKey)`,
+		`accountStateKey(provider.id, accountKey)`,
 		`.account-card.collapsed .account-body { display: none; }`,
 		`.account-card.collapsed .account-collapse { transform: rotate(-90deg); }`,
 		`@media (prefers-reduced-motion: reduce)`,

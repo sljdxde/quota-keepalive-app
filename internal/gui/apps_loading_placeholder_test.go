@@ -20,7 +20,7 @@ func TestAppsBodyClearsLoadingPlaceholder(t *testing.T) {
 		t.Fatal("找不到 renderApps")
 	}
 	rest := page[start:]
-	end := strings.Index(rest, "function providerRow(")
+	end := strings.Index(rest, "function rowNode(")
 	if end < 0 {
 		t.Fatal("renderApps 结构变化，无法定位函数体")
 	}

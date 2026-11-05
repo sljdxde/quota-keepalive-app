@@ -5,7 +5,10 @@ import (
 	"testing"
 )
 
-func TestMainUsesSixTabProductShell(t *testing.T) {
+// TestMainUsesFiveTabProductShell 断言主窗口是「应用管理 / Token 速度 /
+// 宠物设置 / 日志 / 设置」五页签产品外壳；签到管理已并入应用管理的 Agent
+// 详情弹层，不再有独立入口。
+func TestMainUsesFiveTabProductShell(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/main.html")
 	if err != nil {
 		t.Fatal(err)
@@ -13,7 +16,6 @@ func TestMainUsesSixTabProductShell(t *testing.T) {
 	page := string(data)
 	orderedTabs := []string{
 		`data-tab="apps"`,
-		`data-tab="checkin"`,
 		`data-tab="speed"`,
 		`data-tab="pet"`,
 		`data-tab="logs"`,
@@ -32,32 +34,35 @@ func TestMainUsesSixTabProductShell(t *testing.T) {
 	}
 	for _, want := range []string{
 		`data-tab="apps"`,
-		`data-tab="checkin"`,
-		`data-tab="logs"`,
 		`data-tab="speed"`,
+		`data-tab="logs"`,
 		`data-tab="pet"`,
 		`data-tab="settings"`,
-		`id="checkin"`,
 		`id="pet"`,
 		`id="settings"`,
 		`id="settings-body"`,
+		`id="agent-modal"`,
+		`id="agent-modal-body"`,
 		"Bound.SettingsSchema()",
 		`id="settings-schedule-toggle"`,
 		"Bound.ScheduleSetEnabled",
 		`Events.On("open-settings"`,
 		`Events.On("open-checkin"`,
-		`openTab("checkin")`,
-		`id="accounts-collapse-all"`,
+		`function focusCheckinRequest(`,
+		`function openAgentModal(`,
+		`function fillAgentModal(`,
 		`function finishAuthorizedProviderLogin(`,
 		"scrollbar-width: none",
 		`values.__qka_version`,
 		`"约" + scheduleIntervalText`,
 	} {
 		if !strings.Contains(page, want) {
-			t.Errorf("六页签主窗口缺少 %q", want)
+			t.Errorf("五页签主窗口缺少 %q", want)
 		}
 	}
 	for _, forbidden := range []string{
+		`data-tab="checkin"`,
+		`id="checkin"`,
 		`data-tab="accounts"`,
 		`data-tab="agent"`,
 		`data-tab="plugins"`,

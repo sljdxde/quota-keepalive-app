@@ -520,17 +520,11 @@ func TestCheckinPanelNavigationCollapseAndHiddenScrollbars(t *testing.T) {
 	requireStrings(t, string(main), "主窗口签到深链",
 		`Events.On("open-checkin"`,
 		`function focusCheckinRequest(payload)`,
-		`dataset.accountKey === accountKey`,
-		`data-attention="true"`,
-		`data-done="true"`,
+		// 深链现在打开该 Agent 的详情弹层，并滚动到目标账号。
+		`openAgentModal(`,
+		`agentModalProvider`,
 		`card.scrollIntoView(`,
-		// 供应商组默认折叠（先看供应商列表，点开谁再看谁的账号）。
-		`expandedProviderGroups.add(target)`,
-		`expandedProviderGroups.clear()`,
-		`const expandedProviderGroups = new Set()`,
-		`const collapsed = !expandedProviderGroups.has(groupKey)`,
-		`"card account-group" + (collapsed ? " collapsed" : "")`,
-		// 账号层默认折叠，二者状态互不干扰。
+		// 账号层默认折叠，状态由纯函数模块判定。
 		`const expandedAccounts = new Set()`,
 		`shouldCollapseAccount(expandedAccounts, accountState)`,
 		`function displayAccountIdentity(`,
