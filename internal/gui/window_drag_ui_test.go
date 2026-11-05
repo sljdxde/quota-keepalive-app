@@ -6,7 +6,7 @@ import (
 )
 
 func TestWindowsUseWailsDragRegions(t *testing.T) {
-	for _, name := range []string{"frontend/main.html", "frontend/settings.html"} {
+	for _, name := range []string{"frontend/main.html", "frontend/settings.html", "frontend/bar.html"} {
 		data, err := frontendFS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)

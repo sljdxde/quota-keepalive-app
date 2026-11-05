@@ -15,61 +15,55 @@ var (
 	user32DLL              = windows.NewLazySystemDLL("user32.dll")
 	gdi32DLL               = windows.NewLazySystemDLL("gdi32.dll")
 	procCreateRoundRectRgn = gdi32DLL.NewProc("CreateRoundRectRgn")
+	procCreateRectRgn      = gdi32DLL.NewProc("CreateRectRgn")
+	procCombineRgn         = gdi32DLL.NewProc("CombineRgn")
 	procSetWindowRgn       = user32DLL.NewProc("SetWindowRgn")
 	procDeleteObject       = gdi32DLL.NewProc("DeleteObject")
 	procGetDpiForWindow    = user32DLL.NewProc("GetDpiForWindow")
 )
 
-// barWindowOptions 是 Windows 常驻刘海窗口的选项：无边框、置顶、不进任务栏，
-// 放在主屏顶部居中，等价于 macOS 菜单栏上的 QKA 状态项：一直存在、点击弹面板、
-// 右键出菜单、按住可拖动。圆角由 shapeBarWindow 的窗口区域裁出来（Windows 10
-// 没有 Win11 的 DWM 圆角）。
-func barWindowOptions() application.WebviewWindowOptions {
+// RGN_AND 是 CombineRgn 的求交模式。
+const rgnAnd = 1
+
+// barWindowOptions 是 Windows 悬浮球窗口的选项：无边框、置顶、不进任务栏，
+// 等价于 macOS 菜单栏上的 QKA 状态项——一直存在、左键弹状态面板、右键出菜单、
+// 按住可拖动。圆形由 shapeBarWindow 的窗口区域裁出来（Windows 10 没有 Win11
+// 的 DWM 圆角，透明窗口在 Wails 下不可靠）。
+//
+// Min==Max 让用户拖边也改不了大小；DisableResize 必须为 false，否则
+// --wails-draggable 依赖的 WS_THICKFRAME 会消失、窗口拖不动。贴边收起时
+// 用 SetSize(44,44) 临时放宽这一约束（Wails 会同步调小 Min/Max）。
+func barWindowOptions(theme string) application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
-		Name:        "bar",
-		Title:       "Quota Keepalive",
-		Width:       barWidth,
-		Height:      barHeight,
-		MinWidth:    barWidth,
-		MinHeight:   barHeight,
-		MaxWidth:    barWidth,
-		MaxHeight:   barHeight,
-		Frameless:   true,
-		AlwaysOnTop: true,
-		// 必须允许 resize 才能让 Wails 的 --wails-draggable 拖动生效：它的实现是
-		// 发 WM_NCLBUTTONDOWN(HTCAPTION)，没有 WS_THICKFRAME 的窗口不会进入移动
-		// 循环。这里用 Min==Max 的硬约束把尺寸锁死，用户拖边也改不了大小。
+		Name:           "bar",
+		Title:          "Quota Keepalive",
+		Width:          ballSize,
+		Height:         ballSize,
+		MinWidth:       ballSize,
+		MinHeight:      ballSize,
+		MaxWidth:       ballSize,
+		MaxHeight:      ballSize,
+		Frameless:      true,
+		AlwaysOnTop:    true,
 		DisableResize:  false,
 		Hidden:         true,
 		BackgroundType: application.BackgroundTypeSolid,
-		URL:            "/bar.html",
+		URL:            themedURL("/bar.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,
 		},
 	}
 }
 
-// barOrigin 返回常驻刘海应放的屏幕坐标：主屏顶部居中（吸附在顶部中间）。
-func barOrigin(screen *application.Screen) (int, int) {
-	if screen == nil {
-		return 0, 0
-	}
-	area := screen.WorkArea
-	if area.Width <= 0 {
-		area = screen.Bounds
-	}
-	x := area.X + (area.Width-barWidth)/2
-	y := area.Y + barTopGap
-	if y < area.Y {
-		y = area.Y
-	}
-	return x, y
+// shapeBarWindow 把悬浮球窗口裁成正圆。
+func shapeBarWindow(window *application.WebviewWindow) {
+	shapeBarWindowSide(window, "")
 }
 
-// shapeBarWindow 把刘海窗口裁成圆角胶囊。CreateRoundRectRgn 的椭圆宽高是
-// 直径（radius*2），SetWindowRgn 之后窗口在该区域外不参与绘制与命中测试，
-// 因此四个角是真正的圆角，而不是画在矩形窗口里的假圆角。
-func shapeBarWindow(window *application.WebviewWindow) {
+// shapeBarWindowSide 把悬浮球窗口裁成圆；贴边态（left/right）再与半矩形求交，
+// 只保留朝向屏幕内的半圆。这样即使贴边的一侧还有另一台显示器，被藏起来的
+// 那一半也不会出现在隔壁屏上。
+func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) {
 	if window == nil {
 		return
 	}
@@ -77,28 +71,73 @@ func shapeBarWindow(window *application.WebviewWindow) {
 	if hwnd == nil {
 		return
 	}
+	width, height := window.Size()
+	if width <= 0 {
+		width = ballSize
+	}
+	if height <= 0 {
+		height = ballSize
+	}
 	// SetWindowRgn 用的是物理像素，而窗口尺寸是 DIP：按当前 DPI 缩放，否则
-	// 150%/200% 缩放下圆角区域会小于窗口，把右侧和底部裁掉。
+	// 150%/200% 缩放下圆会比窗口小一圈。
 	dpi, _, _ := procGetDpiForWindow.Call(uintptr(unsafe.Pointer(hwnd)))
 	if dpi == 0 {
 		dpi = 96
 	}
 	scale := float64(dpi) / 96.0
-	pxWidth := int(float64(barWidth)*scale + 0.5)
-	pxHeight := int(float64(barHeight)*scale + 0.5)
-	pxRadius := int(float64(barCornerRadius)*scale + 0.5)
+	pxWidth := int(float64(width)*scale + 0.5)
+	pxHeight := int(float64(height)*scale + 0.5)
+	radius := pxWidth
+	if pxHeight < radius {
+		radius = pxHeight
+	}
+	radius /= 2
 	rgn, _, err := procCreateRoundRectRgn.Call(
 		0, 0, uintptr(pxWidth+1), uintptr(pxHeight+1),
-		uintptr(pxRadius*2), uintptr(pxRadius*2),
+		uintptr(radius*2), uintptr(radius*2),
 	)
 	if rgn == 0 {
-		applog.Warnf("gui", "创建刘海窗口圆角区域失败：%v", err)
+		applog.Warnf("gui", "创建悬浮球窗口圆形区域失败：%v", err)
 		return
+	}
+	if dockedSide != "" {
+		// 左贴边露出窗口的右半，右贴边露出左半。先算出半矩形，再把圆形与它
+		// 求交到新的目标区域（不依赖 CombineRgn 的源/目标别名行为）。
+		half := pxWidth / 2
+		left, right := 0, half+1
+		if dockedSide == ballDockLeft {
+			left, right = half, pxWidth+1
+		}
+		halfRgn, _, _ := procCreateRectRgn.Call(
+			uintptr(left), 0, uintptr(right), uintptr(pxHeight+1),
+		)
+		if halfRgn == 0 {
+			applog.Warnf("gui", "创建悬浮球贴边区域失败")
+			_, _, _ = procDeleteObject.Call(rgn)
+			return
+		}
+		clipped, _, _ := procCreateRectRgn.Call(0, 0, 0, 0)
+		if clipped == 0 {
+			applog.Warnf("gui", "创建悬浮球裁剪区域失败")
+			_, _, _ = procDeleteObject.Call(halfRgn)
+			_, _, _ = procDeleteObject.Call(rgn)
+			return
+		}
+		if ret, _, callErr := procCombineRgn.Call(clipped, rgn, halfRgn, rgnAnd); ret == 0 {
+			applog.Warnf("gui", "裁剪悬浮球贴边区域失败：%v", callErr)
+			_, _, _ = procDeleteObject.Call(clipped)
+			_, _, _ = procDeleteObject.Call(halfRgn)
+			_, _, _ = procDeleteObject.Call(rgn)
+			return
+		}
+		_, _, _ = procDeleteObject.Call(halfRgn)
+		_, _, _ = procDeleteObject.Call(rgn)
+		rgn = clipped
 	}
 	// SetWindowRgn 成功时接管 rgn 的所有权，不需要（也不能）再 DeleteObject；
 	// 失败时所有权仍在调用方，必须补删，否则每次失败泄漏一个 HRGN。
 	if ret, _, callErr := procSetWindowRgn.Call(uintptr(unsafe.Pointer(hwnd)), rgn, 1); ret == 0 {
-		applog.Warnf("gui", "设置刘海窗口圆角失败：%v", callErr)
+		applog.Warnf("gui", "设置悬浮球窗口圆形区域失败：%v", callErr)
 		_, _, _ = procDeleteObject.Call(rgn)
 	}
 }

@@ -34,6 +34,25 @@
     height: 0;
     display: none;
   }
+  /* 新版内容区保留可见的细滚动条；其余滚动容器继续隐藏滚动条。 */
+  .content {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--fg) 22%, transparent) transparent;
+    scrollbar-gutter: stable;
+    -ms-overflow-style: auto;
+  }
+  .content::-webkit-scrollbar { width: 10px; height: 10px; display: block; }
+  .content::-webkit-scrollbar-track { background: transparent; }
+  .content::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fg) 20%, transparent);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  .content::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--fg) 34%, transparent);
+    background-clip: padding-box;
+  }
   :root {
     color-scheme: light;
     --bg: #f4f4f6;
@@ -175,53 +194,22 @@
     --glass-rgb: 24,24,29; --glass-card-rgb: 35,35,39;
     --glass-border-rgb: 255,255,255; --glass-border-alpha: .12;
   }
-  html[data-background="coast"] {
-    --wall-gradient:
-      radial-gradient(circle at 11% 12%, rgba(8,145,178,.22), transparent 34%),
-      radial-gradient(circle at 88% 17%, rgba(245,158,11,.18), transparent 31%),
-      linear-gradient(135deg, #c7e0e5, #efe3d5 52%, #a9ced5);
-  }
-  html[data-theme="dark"][data-background="coast"] {
-    --wall-gradient:
-      radial-gradient(circle at 11% 12%, rgba(6,182,212,.28), transparent 34%),
-      radial-gradient(circle at 88% 17%, rgba(245,158,11,.20), transparent 31%),
-      linear-gradient(135deg, #08181d, #142127 52%, #0b1d24);
-  }
-  html[data-background="ember"] {
-    --wall-gradient:
-      radial-gradient(circle at 14% 10%, rgba(234,88,12,.20), transparent 35%),
-      radial-gradient(circle at 86% 18%, rgba(190,24,93,.13), transparent 31%),
-      linear-gradient(135deg, #ead2bd, #f3eadc 54%, #d9b39e);
-  }
-  html[data-theme="dark"][data-background="ember"] {
-    --wall-gradient:
-      radial-gradient(circle at 14% 10%, rgba(249,115,22,.26), transparent 35%),
-      radial-gradient(circle at 86% 18%, rgba(190,24,93,.18), transparent 31%),
-      linear-gradient(135deg, #1e110e, #281710 54%, #181015);
-  }
-  html[data-background="glacier"] {
-    --wall-gradient:
-      radial-gradient(circle at 16% 9%, rgba(56,189,248,.20), transparent 34%),
-      radial-gradient(circle at 82% 14%, rgba(99,102,241,.14), transparent 30%),
-      linear-gradient(135deg, #dbe8f2, #eef2f5 52%, #c5d7e5);
-  }
-  html[data-theme="dark"][data-background="glacier"] {
-    --wall-gradient:
-      radial-gradient(circle at 16% 9%, rgba(56,189,248,.26), transparent 34%),
-      radial-gradient(circle at 82% 14%, rgba(99,102,241,.18), transparent 30%),
-      linear-gradient(135deg, #091521, #101c2a 52%, #0a151f);
-  }
-  html[data-background="night"] {
-    --wall-gradient:
-      radial-gradient(circle at 12% 14%, rgba(20,184,166,.19), transparent 34%),
-      radial-gradient(circle at 86% 12%, rgba(245,158,11,.16), transparent 30%),
-      linear-gradient(135deg, #172a3a, #283448 52%, #101b2b);
-  }
-  html[data-theme="dark"][data-background="night"] {
-    --wall-gradient:
-      radial-gradient(circle at 12% 14%, rgba(20,184,166,.22), transparent 34%),
-      radial-gradient(circle at 86% 12%, rgba(245,158,11,.20), transparent 30%),
-      linear-gradient(135deg, #07131e, #101a29 52%, #070f18);
+  /* 新版扁平设计：背景只做极轻的整体色调，不再铺渐变壁纸。
+     这些值直接改 --bg，由 body 铺满整个窗口（窗口本身透明），
+     因此不会再出现「上半截新底、下半截旧壁纸」的割裂。 */
+  html[data-background="coast"] { --bg: #f7fafb; }
+  html[data-theme="dark"][data-background="coast"] { --bg: #0b0d0f; }
+  html[data-background="ember"] { --bg: #fbf7f3; }
+  html[data-theme="dark"][data-background="ember"] { --bg: #0d0b0b; }
+  html[data-background="glacier"] { --bg: #f6f9fc; }
+  html[data-theme="dark"][data-background="glacier"] { --bg: #0a0d10; }
+  html[data-background="night"] { --bg: #f5f6f9; }
+  html[data-theme="dark"][data-background="night"] { --bg: #0a0b0e; }
+  @media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"])[data-background="coast"] { --bg: #0b0d0f; }
+    html:not([data-theme="light"])[data-background="ember"] { --bg: #0d0b0b; }
+    html:not([data-theme="light"])[data-background="glacier"] { --bg: #0a0d10; }
+    html:not([data-theme="light"])[data-background="night"] { --bg: #0a0b0e; }
   }
   html[data-glass="clear"] {
     --glass-alpha-window: .50;
@@ -238,16 +226,16 @@
     --glass-sat: 1.18;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; min-height: 100%; }
+  html, body { margin: 0; height: 100%; }
   body {
     color: var(--fg);
-    background: var(--wall-gradient);
+    background: var(--bg);
     font: 400 var(--fs-md)/1.45 var(--font);
     -webkit-font-smoothing: antialiased;
     overflow: hidden;
   }
   body.has-custom-bg {
-    background-color: rgba(var(--glass-rgb), var(--glass-alpha-window));
+    background-color: var(--bg);
     background-image: var(--custom-overlay), var(--custom-image);
     background-position: center;
     background-size: cover;
@@ -307,7 +295,7 @@
     -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   }
   .window {
-    position: relative; height: 100vh; display: flex; flex-direction: column;
+    position: relative; height: 100%; display: flex; flex-direction: column;
     background: transparent;
     isolation: isolate;
   }
@@ -2331,6 +2319,8 @@
   html[data-theme="dark"] .source-logo.codex { color: #d7e2ee; background: #28313d; }
   html[data-theme="dark"] .source-logo.claude { color: #f0af8c; background: #3d2a23; }
   html[data-theme="dark"] .source-logo.gemini { color: #aebcff; background: #252c4a; }
+  /* 新版扁平卡片：一律不透明，去掉旧的玻璃模糊；毛玻璃只保留在顶栏
+     （内容会从它下面滚过），其余表面不再混用两种材质。 */
   .window .summary,
   .window .card,
   .window .schedule-strip,
@@ -2339,13 +2329,9 @@
   .window .settings-schedule,
   .window .provider-login-dialog,
   .window .title-dialog {
-    background: color-mix(in srgb, var(--card) var(--glass-alpha-card), transparent);
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  }
-  .window .provider-login-dialog,
-  .window .title-dialog {
-    background: color-mix(in srgb, var(--card) 92%, transparent);
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   @media (max-width: 860px) {
     .page { padding: 16px 18px 24px; }

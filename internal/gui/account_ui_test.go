@@ -133,7 +133,7 @@ func TestCheckinManagementHasPerTaskActionsAndQuotaHistory(t *testing.T) {
 		"自动执行",
 		"仅手动",
 		"overflow-x: hidden",
-		"background: var(--wall-gradient)",
+		"background: var(--bg)",
 		`document.documentElement.dataset.theme = theme`,
 		`Events.On("theme-changed"`,
 		`Events.On("schedule-changed", renderSchedule)`,

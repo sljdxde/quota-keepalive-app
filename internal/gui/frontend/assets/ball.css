@@ -1,0 +1,217 @@
+/* ============================================================
+   Windows 悬浮球（菜单栏状态项的 Windows 形态）与精简状态面板。
+   令牌来自 assets/qka-ui.css（近白/近黑中性底、1px 细线、扁平卡片）；
+   这里只补阴影与球/面板的专属尺寸，与 design/win-ui/prototype.html 对齐。
+   ============================================================ */
+:root {
+  --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 12px 40px -12px rgba(0, 0, 0, .18);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, .06), 0 16px 44px -14px rgba(0, 0, 0, .28);
+}
+:root[data-theme="dark"] {
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 20px 60px -20px rgba(0, 0, 0, .8);
+  --shadow-pop: 0 2px 4px rgba(0, 0, 0, .4), 0 24px 64px -18px rgba(0, 0, 0, .9);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 20px 60px -20px rgba(0, 0, 0, .8);
+    --shadow-pop: 0 2px 4px rgba(0, 0, 0, .4), 0 24px 64px -18px rgba(0, 0, 0, .9);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%;
+  background: transparent; overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+  font: 400 var(--fs-base, 13px)/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    "Noto Sans CJK SC", sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================ 悬浮球
+   深色能量球：石墨底 + 称号色的双色渐变环 + 进度头部光点。
+   球在浅色/深色桌面都保持同一块深色，作为独立小部件存在；
+   光环只随数值改变长度，光点只随进度移动，不做连续旋转/扫描。 */
+.ball {
+  position: relative;
+  width: 100%; height: 100%;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, .18), transparent 44%),
+    radial-gradient(circle at 74% 86%,
+      color-mix(in srgb, hsl(var(--ball-hue, 193) 92% 60%) 26%, transparent), transparent 64%),
+    linear-gradient(158deg, #2c3038 0%, #17191e 52%, #090a0d 100%);
+  border: 1px solid rgba(255, 255, 255, .11);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .2),
+    inset 0 -9px 20px rgba(0, 0, 0, .55),
+    0 12px 26px -10px rgba(0, 0, 0, .62);
+  color: #f4f7fb;
+  cursor: default;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .3s ease;
+}
+.ball:hover {
+  transform: scale(1.03);
+  border-color: rgba(255, 255, 255, .24);
+}
+.ball .ring {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+  transition: opacity .2s ease;
+}
+.ball .ring circle { fill: none; stroke-linecap: round; }
+.ball .ring .track { stroke: rgba(255, 255, 255, .1); stroke-width: 1; }
+.ball .ring .bar {
+  stroke: url(#ring-gradient);
+  stroke-width: 2.4;
+  transition: stroke-dashoffset .42s cubic-bezier(.22, .9, .24, 1), opacity .3s ease;
+  filter: drop-shadow(0 0 2.5px hsl(var(--ball-hue, 193) 95% 65% / .7));
+}
+.ball .ring .spark {
+  fill: #fff;
+  transition: opacity .3s ease;
+  filter: drop-shadow(0 0 4px hsl(var(--ball-hue, 193) 95% 70%));
+}
+/* 生成中：光环柔和呼吸（只改发光强度，不旋转）。 */
+.ball.live .ring .bar { animation: ring-breathe 3.2s ease-in-out infinite; }
+@keyframes ring-breathe {
+  0%, 100% { filter: drop-shadow(0 0 2px hsl(var(--ball-hue, 193) 90% 65% / .55)); }
+  50% { filter: drop-shadow(0 0 5px hsl(var(--ball-hue, 193) 95% 68% / .95)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ball.live .ring .bar { animation: none; }
+}
+.ball .core {
+  position: relative;
+  display: grid; place-items: center; gap: 2px;
+  text-align: center; line-height: 1;
+  pointer-events: none;
+}
+/* Q 标记在浮动态是球心的一枚极淡水印（不抢数字），贴边态才作为主体显示。 */
+.ball .core .q {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 38px; height: 38px;
+  transform: translate(-50%, -50%);
+  display: block;
+  color: #fff;
+  opacity: .1;
+}
+.ball .core b {
+  display: inline-flex; align-items: flex-start;
+  font-size: 22px; font-weight: 700; line-height: 1;
+  letter-spacing: -.02em;
+  color: #fff;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .55);
+}
+.ball .core > small {
+  font-size: 8.5px; font-weight: 560; letter-spacing: .08em;
+  text-transform: uppercase; color: rgba(255, 255, 255, .5); line-height: 1;
+}
+.ball.idle .core b { color: rgba(255, 255, 255, .45); text-shadow: none; }
+.ball.idle .core > small { color: rgba(255, 255, 255, .3); }
+.ball.idle .ring .bar,
+.ball.idle .ring .spark { opacity: 0; }
+.ball.idle .ring .track { opacity: .45; }
+/* 4/5 位数值（如 1.2k、230M）收一档字号，避免顶到圆边。 */
+.ball.n4 .core b { font-size: 18px; }
+.ball.n5 .core b { font-size: 15px; }
+
+/* 贴边态：窗口 44px、一半在屏幕外，只留 Q 标记。 */
+.ball.docked .core b,
+.ball.docked .core > small { display: none; }
+.ball.docked .core .q {
+  position: static;
+  width: 18px; height: 18px;
+  transform: none;
+  color: #fff;
+  opacity: .9;
+}
+.ball.docked .ring { opacity: .8; }
+.ball.docked .ring .bar { opacity: .9; }
+
+/* ============================================================ 数字滚动 */
+.roll {
+  display: inline-flex; align-items: flex-start; overflow: hidden;
+  line-height: 1; letter-spacing: 0; /* 字距必须为 0，否则每列宽度和字形推进对不上，数字会串位 */
+}
+.roll .cell {
+  display: block; flex: none;
+  width: .62em; height: 1em; line-height: 1em;
+  overflow: hidden; text-align: center; position: relative;
+}
+.roll .reel {
+  display: block;
+  line-height: 1em;
+  transform: translateY(0);
+  transition: transform .42s cubic-bezier(.22, .9, .24, 1);
+  will-change: transform;
+}
+.roll .reel > span {
+  display: block; height: 1em; line-height: 1em;
+  font-variant-numeric: tabular-nums;
+}
+.roll .fix { display: inline-block; line-height: 1em; }
+@media (prefers-reduced-motion: reduce) {
+  .roll .reel { transition: none; }
+}
+
+/* ============================================================ 精简状态面板 */
+.ball-panel {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+.ball-panel .h { padding: 14px 16px 12px; }
+.ball-panel .h .live {
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 100%;
+  font-size: var(--fs-xs); color: var(--ink2); font-weight: 560;
+}
+.ball-panel .h .live .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink3); flex: none;
+}
+.ball-panel .h .live.active .dot { background: var(--ok); }
+.ball-panel .h .live span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ball-panel .h .read { display: flex; align-items: baseline; gap: 5px; margin-top: 6px; }
+.ball-panel .h .read b {
+  display: inline-flex; align-items: flex-start;
+  font-size: 32px; font-weight: 700; letter-spacing: -.03em;
+  line-height: 1.05;
+}
+.ball-panel .h .read > span { font-size: var(--fs-sm); color: var(--ink3); }
+.ball-panel .h .rank {
+  display: flex; align-items: center; gap: 7px;
+  margin-top: 8px; font-size: var(--fs-sm);
+}
+.ball-panel .h .rank .lvl {
+  font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 5px;
+  background: var(--gold-soft); color: var(--gold);
+  font-variant-numeric: tabular-nums; flex: none; white-space: nowrap;
+}
+.ball-panel.idle .h .rank .lvl { background: var(--bg2); color: var(--ink3); }
+.ball-panel .h .rank .nm {
+  font-weight: 560; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ball-panel .h .rank .nx {
+  margin-left: auto; color: var(--ink3); font-size: var(--fs-xs);
+  flex: none; white-space: nowrap;
+}
+.ball-panel .h .today {
+  margin-top: 6px; color: var(--ink2); font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.ball-panel .f { margin-top: auto; padding: 8px; border-top: 1px solid var(--line); }
+.ball-panel .f .btn { width: 100%; }

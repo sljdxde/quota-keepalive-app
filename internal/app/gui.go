@@ -99,7 +99,7 @@ func (a *App) guiDeps() gui.Deps {
 				app.Quit()
 			}
 		},
-		// Windows 顶栏刘海（菜单栏状态项）点击 → 切换吸附面板，面板贴在刘海下方。
+		// PanelToggle 是旧入口：macOS 菜单栏点击切换 392px 吸附面板。
 		// gui.App 在事件循环启动后才存在，这里用 application.Get() 现取。
 		PanelToggle: func() {
 			if app := guiCurrentApp(); app != nil {
@@ -111,7 +111,7 @@ func (a *App) guiDeps() gui.Deps {
 				app.PanelToggleAt(x, y)
 			}
 		},
-		// 常驻刘海（Windows 菜单栏状态项）：左键弹面板、右键出菜单（含退出）。
+		// Windows 悬浮球（菜单栏状态项）：左键弹精简面板、右键出菜单（含退出）。
 		BarToggle: func() {
 			if app := guiCurrentApp(); app != nil {
 				app.BarToggle()

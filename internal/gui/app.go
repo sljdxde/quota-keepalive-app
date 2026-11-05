@@ -28,47 +28,49 @@ var frontendFS embed.FS
 
 // App 持有 Wails 应用与运行期窗口。
 type App struct {
-	wails         *application.App
-	tray          *application.SystemTray
-	trayStateMu   sync.Mutex
-	trayPet       string
-	trayCaught    bool
-	panel         *application.WebviewWindow
-	bar           *application.WebviewWindow
-	main          *application.WebviewWindow
-	panelFocus    *panelFocusGuard
-	theme         string
-	tokenSpeed    *tokenspeed.Service
-	status        func(context.Context) (status.View, error)
-	providersWarm func(context.Context) error
-	windowMu      sync.Mutex
-	startedAt     atomic.Int64
-	dockShow      atomic.Bool
-	failureOn     atomic.Bool
-	dockApply     func(bool)
-	quitStop      func()
-	// barShow/barHide 控制常驻刘海的显隐。默认指向真实窗口操作；单测替换
-	// 这两个字段即可验证「主窗口可见时收起刘海、关闭主窗口后恢复」的策略，
-	// 不必创建真实 WebView2 窗口（同 dockApply 的接缝写法）。
+	wails       *application.App
+	tray        *application.SystemTray
+	trayStateMu sync.Mutex
+	trayPet     string
+	trayCaught  bool
+	panel       *application.WebviewWindow
+	ballPanel   *application.WebviewWindow
+	petMini     *application.WebviewWindow
+	ballMenu    *application.WebviewWindow
+	bar         *application.WebviewWindow
+	main        *application.WebviewWindow
+	panelFocus  *panelFocusGuard
+	// ballPanelFocus 管 Windows 精简面板的「点外面收起」，语义同 panelFocus。
+	ballPanelFocus *panelFocusGuard
+	petMiniFocus   *panelFocusGuard
+	ballMenuFocus  *panelFocusGuard
+	theme          string
+	tokenSpeed     *tokenspeed.Service
+	status         func(context.Context) (status.View, error)
+	providersWarm  func(context.Context) error
+	windowMu       sync.Mutex
+	// barStateMu 串行化悬浮球状态文件的读写与贴边状态字段。
+	barStateMu sync.Mutex
+	// barDocked 是当前贴边侧（"" / "left" / "right"）；barRestoreX/Y 是贴边前
+	// 的位置，点击弹回时用。
+	barDocked   string
+	barRestoreX int
+	barRestoreY int
+	startedAt   atomic.Int64
+	dockShow    atomic.Bool
+	failureOn   atomic.Bool
+	dockApply   func(bool)
+	quitStop    func()
+	// barShow/barHide 控制常驻状态项（Windows 悬浮球）的显隐。默认指向真实
+	// 窗口操作；单测替换这两个字段即可验证「主窗口可见时收起、关闭后恢复」
+	// 的策略，不必创建真实 WebView2 窗口（同 dockApply 的接缝写法）。
 	barShow func()
 	barHide func()
 }
 
 const panelGap = 8
 
-// 常驻刘海（Windows 菜单栏状态项）的尺寸：只放 Q 图标和 tok/s，按内容取固定
-// 宽高，避免窗口大小随速度数字变化而跳动。
-const (
-	barWidth        = 118
-	barHeight       = 34
-	barCornerRadius = 15
-	// barTopGap 是胶囊与屏幕工作区顶边的间距：留一点缝隙，观感上像「吸附在
-	// 顶部」而不是贴死在边缘。
-	barTopGap = 6
-)
-
-// notchPanelGap 是刘海下方面板与顶栏底边之间的间距（像素），与 panelGap 一致
-// 的视觉留白。
+// notchPanelGap 是旧吸附面板与顶栏之间的间距（像素）。
 const notchPanelGap = 6
 
 func assetHandler() http.Handler {
@@ -115,7 +117,7 @@ func New(deps Deps) *App {
 		status: deps.Status, providersWarm: deps.ProvidersWarm,
 		dockApply: dockApply,
 	}
-	// 刘海显隐的真实实现；测试可替换这两个字段验证策略。
+	// 悬浮球显隐的真实实现；测试可替换这两个字段验证策略。
 	result.barShow = result.showBar
 	result.barHide = result.hideBar
 	result.dockShow.Store(showDock)
@@ -171,6 +173,13 @@ func New(deps Deps) *App {
 	wails.Event.On("collapse-panel", func(*application.CustomEvent) {
 		go result.hidePanel()
 	})
+	// 迷你宠物与自绘右键菜单的 Esc 收起。
+	wails.Event.On("collapse-petmini", func(*application.CustomEvent) {
+		go result.hidePetMini()
+	})
+	wails.Event.On("collapse-ballmenu", func(*application.CustomEvent) {
+		go result.hideBallMenu()
+	})
 	// 前端切换伙伴时同步 macOS 菜单栏图标：主窗口与菜单栏面板都会发这条事件。
 	wails.Event.On("pet-selected", func(event *application.CustomEvent) {
 		if petID := trayPetFromEventData(event.Data); petID != "" {
@@ -225,25 +234,30 @@ func New(deps Deps) *App {
 	applyTrayIcon(tray, goos)
 	tray.SetTooltip("Quota Keepalive")
 	tray.SetLabel("0 tok/s")
-	// 单击托盘：异步切换面板（原因同上，不能在托盘消息处理器里同步操作窗口）。
-	tray.OnClick(func() { go result.togglePanel() })
+	// 单击托盘：异步切换状态面板（原因同上，不能在托盘消息处理器里同步操作窗口）。
+	// Windows 上托盘仍开 244px 状态面板；悬浮球左键开迷你宠物，两者分工不同。
+	tray.OnClick(func() {
+		if goos == "windows" {
+			go result.toggleBallPanel()
+			return
+		}
+		go result.togglePanel()
+	})
 	tray.SetMenu(menu)
 
 	result.tray = tray
-	// 常驻刘海（Windows 菜单栏状态项）在事件循环启动后由
+	// 常驻悬浮球（Windows 菜单栏状态项）在事件循环启动后由
 	// installPlatformWindowBehavior 创建：此时窗口系统才真正就绪，位置和
-	// 圆角区域才设得上。
+	// 圆形区域才设得上。
 	result.installPlatformWindowBehavior()
 	wails.Event.OnApplicationEvent(events.Common.ApplicationStarted, result.onApplicationStarted)
 	return result
 }
 
-// ensureBar 创建常驻刘海窗口并把它钉在主屏顶部居中。非 Windows 平台是 no-op：
-// macOS 的菜单栏状态项由系统承载。
+// ensureBar 创建 Windows 悬浮球窗口（菜单栏状态项的 Windows 形态）并恢复上次的
+// 位置/贴边状态。非 Windows 平台是 no-op：macOS 的菜单栏状态项由系统承载。
 //
-// 这里只创建、不显示：刘海何时可见由 showBar/hideBar 决定（主窗口可见时必须
-// 收起，否则会压住主窗口顶栏中间那组导航——刘海是独立置顶窗口，钉在屏幕顶部
-// 正中，正好和居中的导航重合）。
+// 这里只创建、不显示：何时可见由 showBar/hideBar 决定（主窗口可见时收起）。
 func (a *App) ensureBar() *application.WebviewWindow {
 	if goos != "windows" {
 		return nil
@@ -254,28 +268,103 @@ func (a *App) ensureBar() *application.WebviewWindow {
 		a.windowMu.Unlock()
 		return bar
 	}
-	bar := a.wails.Window.NewWithOptions(barWindowOptions())
+	bar := a.wails.Window.NewWithOptions(barWindowOptions(a.theme))
 	a.bar = bar
 	a.windowMu.Unlock()
 
 	// 以下都涉及主线程窗口操作（InvokeSync），必须在放锁之后执行：
-	// 持着 windowMu 等主线程，而主线程可能正在等 windowMu，会互等死锁。
-	screen := a.wails.Screen.GetPrimary()
-	x, y := barOrigin(screen)
-	bar.SetPosition(x, y)
-	// 刘海必须常驻：Alt+F4 之类触发关闭时取消掉，不让窗口被销毁。
+	// 持着 windowMu 等主线程，而主窗口可能正在等 windowMu，会互等死锁。
+	a.restoreBarPosition(bar)
+
+	// 悬浮球必须常驻：Alt+F4 之类触发关闭时取消掉，不让窗口被销毁。
 	bar.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		event.Cancel()
 	})
-	// DPI 变化（拖到不同缩放比例的显示器）后窗口物理尺寸会变，圆角区域是按
-	// 物理像素算的，必须重新裁一次，否则胶囊会被切掉一块。
+	// DPI 变化（拖到不同缩放比例的显示器）后窗口物理尺寸会变，圆形区域是按
+	// 物理像素算的，必须重新裁一次。
 	bar.OnWindowEvent(events.Common.WindowDPIChanged, func(*application.WindowEvent) {
-		shapeBarWindow(bar)
+		a.shapeBall(bar)
 	})
+	// SetSize（贴边 44 / 弹回 64）也会改窗口尺寸，尺寸落定后重裁。
+	bar.OnWindowEvent(events.Common.WindowDidResize, func(*application.WindowEvent) {
+		a.shapeBall(bar)
+	})
+	// 用户拖动结束后再判定贴边/钳制：拖动过程中实时吸附会让球粘在边缘、
+	// 无法拖过去。必须在原生移动循环结束时处理（SetPosition 不会触发）。
+	//
+	// Wails v3.0.0 在 WM_EXITSIZEMOVE 里按左键是否仍按下二选一发 EndMove /
+	// EndResize，实际松手时通常落到 EndResize；两个都监听，谁到算谁。
+	onBarDragEnd := func(*application.WindowEvent) { a.onBarMoveEnd(bar) }
+	bar.OnWindowEvent(events.Windows.WindowEndMove, onBarDragEnd)
+	bar.OnWindowEvent(events.Windows.WindowEndResize, onBarDragEnd)
 	return bar
 }
 
-// showBar 确保刘海可见（主窗口关闭、退出面板等场景后仍要常驻）。
+// restoreBarPosition 在创建窗口后恢复持久化的位置：普通态直接落位，贴边态
+// 恢复成 44px 半圆；没有状态文件（首启、配置目录未知）时落在主屏顶部居中。
+func (a *App) restoreBarPosition(bar *application.WebviewWindow) {
+	if bar == nil {
+		return
+	}
+	state, ok := loadBarState(barStatePath())
+	if !ok {
+		area := a.primaryWorkArea()
+		x, y := ballDefaultOrigin(area)
+		bar.SetPosition(x, y)
+		return
+	}
+	if state.Docked != "" {
+		area := a.workAreaForPoint(state.RestoreX, state.RestoreY)
+		x, y := ballDockedPosition(area, state.Docked, state.RestoreY)
+		bar.SetSize(ballDockSize, ballDockSize)
+		bar.SetPosition(x, y)
+		a.rememberBarState(barWindowState{
+			X: x, Y: y, Docked: state.Docked,
+			RestoreX: state.RestoreX, RestoreY: state.RestoreY,
+		})
+		return
+	}
+	area := a.workAreaForPoint(state.X, state.Y)
+	x, y := clampBallPosition(area, state.X, state.Y, ballSize)
+	bar.SetPosition(x, y)
+}
+
+// primaryWorkArea 返回主屏工作区（DIP）；窗口系统还没就绪时返回零矩形。
+func (a *App) primaryWorkArea() application.Rect {
+	if a.wails == nil {
+		return application.Rect{}
+	}
+	screen := a.wails.Screen.GetPrimary()
+	if screen == nil {
+		return application.Rect{}
+	}
+	return screenWorkArea(screen)
+}
+
+// workAreaForPoint 返回包含该点（DIP）的屏幕工作区；找不到时退回主屏。
+func (a *App) workAreaForPoint(x, y int) application.Rect {
+	if a.wails != nil {
+		if screen := a.wails.Screen.ScreenNearestDipPoint(application.Point{X: x, Y: y}); screen != nil {
+			if area := screenWorkArea(screen); area.Width > 0 && area.Height > 0 {
+				return area
+			}
+		}
+	}
+	return a.primaryWorkArea()
+}
+
+// screenWorkArea 取屏幕工作区，退化时用屏幕边界。
+func screenWorkArea(screen *application.Screen) application.Rect {
+	if screen == nil {
+		return application.Rect{}
+	}
+	if area := screen.WorkArea; area.Width > 0 && area.Height > 0 {
+		return area
+	}
+	return screen.Bounds
+}
+
+// showBar 确保悬浮球可见（主窗口关闭等场景后仍要常驻）。
 func (a *App) showBar() {
 	if goos != "windows" {
 		return
@@ -286,13 +375,13 @@ func (a *App) showBar() {
 	}
 	if !bar.IsVisible() {
 		bar.Show()
-		// 圆角必须在窗口真正创建（Show）之后设置：NativeWindow 之前是空的。
-		shapeBarWindow(bar)
+		// 圆形区域必须在窗口真正创建（Show）之后设置：NativeWindow 之前是空的。
+		a.shapeBall(bar)
 	}
 }
 
-// hideBar 收起刘海（不销毁，供主窗口可见时让出顶栏）。面板仍以它的位置为
-// 锚点，所以位置保持不动。
+// hideBar 收起悬浮球（不销毁，供主窗口可见时让出屏幕）。位置保持不动，
+// 状态面板仍以它为锚点。
 func (a *App) hideBar() {
 	if goos != "windows" {
 		return
@@ -305,54 +394,385 @@ func (a *App) hideBar() {
 	}
 }
 
-// barAnchor 返回刘海在屏幕上的位置与尺寸，用于把面板贴在刘海正下方。
-func (a *App) barAnchor() (x, y, height int) {
+// barAnchor 返回悬浮球在屏幕上的位置与尺寸，用于把状态面板摆在它旁边。
+func (a *App) barAnchor() (x, y, width, height int) {
 	a.windowMu.Lock()
 	bar := a.bar
 	a.windowMu.Unlock()
 	if bar == nil {
-		return 0, 0, barHeight
+		return 0, 0, ballSize, ballSize
 	}
 	px, py := bar.Position()
-	width, barHeightNow := bar.Size()
-	_ = width
-	return px, py, barHeightNow
+	width, height = bar.Size()
+	if width <= 0 || height <= 0 {
+		return px, py, ballSize, ballSize
+	}
+	return px, py, width, height
 }
 
-// BarToggle 实现刘海左键点击：在刘海正下方切换吸附面板（等价于 macOS 点
-// 菜单栏图标）。
-func (a *App) BarToggle() { a.togglePanelAtNotch(0, 0) }
+// barDockState 读取贴边状态与弹回坐标。
+func (a *App) barDockState() (string, int, int) {
+	a.barStateMu.Lock()
+	defer a.barStateMu.Unlock()
+	return a.barDocked, a.barRestoreX, a.barRestoreY
+}
 
-// BarMenu 实现刘海右键点击：在光标处弹出与托盘一致的菜单（打开主窗口 /
-// 设置 / 退出），这样用户不依赖托盘图标也能关掉 QKA。
-func (a *App) BarMenu() {
+// shapeBall 按当前贴边状态重裁悬浮球窗口：浮动态正圆，贴边态半圆。
+func (a *App) shapeBall(bar *application.WebviewWindow) {
+	if bar == nil {
+		return
+	}
+	side, _, _ := a.barDockState()
+	shapeBarWindowSide(bar, side)
+}
+
+// rememberBarState 更新内存中的贴边状态并写盘（原子写、失败只记日志）。
+func (a *App) rememberBarState(state barWindowState) {
+	a.barStateMu.Lock()
+	a.barDocked = state.Docked
+	a.barRestoreX = state.RestoreX
+	a.barRestoreY = state.RestoreY
+	path := barStatePath()
+	a.barStateMu.Unlock()
+	if err := saveBarState(path, state); err != nil {
+		applog.Warnf("gui", "保存悬浮球位置失败：%v", err)
+	}
+}
+
+// onBarMoveEnd 处理用户拖动结束：贴边吸附成 44px 半圆，否则钳进工作区并记忆位置。
+func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
+	if bar == nil {
+		return
+	}
+	x, y := bar.Position()
+	width, height := bar.Size()
+	if width <= 0 || height <= 0 {
+		return
+	}
+	area := a.workAreaForPoint(x+width/2, y+height/2)
+	if area.Width <= 0 || area.Height <= 0 {
+		return
+	}
+	docked, restoreX, restoreY := a.barDockState()
+
+	if docked != "" {
+		// 贴边态被拖走：要么换边继续贴，要么恢复浮动态大小落在新位置。
+		if side := ballDockSideFor(area, x, y, ballDockSize); side != "" {
+			nx, ny := ballDockedPosition(area, side, y)
+			bar.SetPosition(nx, ny)
+			a.rememberBarState(barWindowState{
+				X: nx, Y: ny, Docked: side,
+				RestoreX: restoreX, RestoreY: restoreY,
+			})
+			a.shapeBall(bar)
+			return
+		}
+		// 窗口是 44px，放大到 64px 时把多出来的一圈平均分到两侧，让球心保持
+		// 在用户松手的位置。
+		delta := (ballSize - ballDockSize) / 2
+		nx, ny := clampBallPosition(area, x-delta, y-delta, ballSize)
+		bar.SetSize(ballSize, ballSize)
+		bar.SetPosition(nx, ny)
+		a.rememberBarState(barWindowState{X: nx, Y: ny})
+		a.shapeBall(bar)
+		a.hideBallPanel()
+		return
+	}
+
+	if side := ballDockSideFor(area, x, y, width); side != "" {
+		a.hideBallPanel()
+		nx, ny := ballDockedPosition(area, side, y)
+		bar.SetSize(ballDockSize, ballDockSize)
+		bar.SetPosition(nx, ny)
+		a.rememberBarState(barWindowState{
+			X: nx, Y: ny, Docked: side,
+			RestoreX: x, RestoreY: y,
+		})
+		a.shapeBall(bar)
+		return
+	}
+
+	nx, ny := clampBallPosition(area, x, y, width)
+	if nx != x || ny != y {
+		bar.SetPosition(nx, ny)
+	}
+	a.rememberBarState(barWindowState{X: nx, Y: ny})
+	a.hideBallPanel()
+}
+
+// undockBar 把贴边态弹回浮动态：恢复 64px 与贴边前的位置（再钳进工作区）。
+func (a *App) undockBar(restoreX, restoreY int) {
 	a.windowMu.Lock()
 	bar := a.bar
 	a.windowMu.Unlock()
 	if bar == nil {
 		return
 	}
-	menu := application.NewContextMenu("qka-bar-menu")
-	menu.Add("打开主窗口").OnClick(func(*application.Context) {
-		go a.showMain()
-	})
-	menu.Add("设置").OnClick(func(*application.Context) {
-		go func() {
-			a.showMain()
-			a.wails.Event.Emit("open-settings")
-		}()
-	})
-	menu.AddSeparator()
-	menu.Add("退出 Quota Keepalive").OnClick(func(*application.Context) {
-		go a.wails.Quit()
-	})
-	bar.OpenContextMenu(&application.ContextMenuData{Id: "qka-bar-menu"})
+	area := a.workAreaForPoint(restoreX, restoreY)
+	if area.Width <= 0 || area.Height <= 0 {
+		return
+	}
+	bar.SetSize(ballSize, ballSize)
+	x, y := clampBallPosition(area, restoreX, restoreY, ballSize)
+	bar.SetPosition(x, y)
+	a.rememberBarState(barWindowState{X: x, Y: y})
+	a.shapeBall(bar)
 }
 
-// PanelToggle 实现 gui.Deps.PanelToggle：切换吸附面板（Windows 刘海点击）。
+// BarToggle 实现悬浮球左键点击：贴边时先弹回，否则切换迷你宠物。
+func (a *App) BarToggle() {
+	if goos != "windows" {
+		return
+	}
+	if side, rx, ry := a.barDockState(); side != "" {
+		a.undockBar(rx, ry)
+		a.showPetMini()
+		return
+	}
+	a.hideBallPanel()
+	a.hideBallMenu()
+	a.togglePetMini()
+}
+
+// BarMenu 实现悬浮球右键点击：收起其它浮层，切换自绘菜单（打开主界面 /
+// 设置 / 退出）。菜单是一个独立小窗，样式按 magpie 的 .row-menu 做。
+func (a *App) BarMenu() {
+	if goos != "windows" {
+		return
+	}
+	a.windowMu.Lock()
+	bar := a.bar
+	a.windowMu.Unlock()
+	if bar == nil {
+		return
+	}
+	a.hideBallPanel()
+	a.hidePetMini()
+	a.toggleBallMenu()
+}
+
+// installPopoverFocusClose 给球旁边的浮层挂「点击外部收起」，复用吸附面板的
+// panelFocusGuard：失焦只登记延迟收起，球点击进入 toggle 时先作废登记，
+// 避免「点球，浮层闪关又弹出」。
+func (a *App) installPopoverFocusClose(win *application.WebviewWindow, hide func()) *panelFocusGuard {
+	if goos != "windows" || win == nil {
+		return nil
+	}
+	guard := newPanelFocusGuard(panelFocusHideDelay, hide, win.IsFocused)
+	win.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) {
+		guard.focusLost()
+	})
+	win.OnWindowEvent(events.Common.WindowFocus, func(*application.WindowEvent) {
+		guard.noteFocusRegained()
+	})
+	return guard
+}
+
+// ensureBallPanel 创建 Windows 精简状态面板（首次使用时惰性创建）。
+func (a *App) ensureBallPanel() *application.WebviewWindow {
+	if goos != "windows" {
+		return nil
+	}
+	a.windowMu.Lock()
+	if a.ballPanel != nil {
+		panel := a.ballPanel
+		a.windowMu.Unlock()
+		return panel
+	}
+	panel := a.wails.Window.NewWithOptions(ballPanelOptions(a.theme))
+	a.ballPanel = panel
+	a.windowMu.Unlock()
+	a.ballPanelFocus = a.installPopoverFocusClose(panel, a.hideBallPanel)
+	return panel
+}
+
+// showBallPanel 在悬浮球旁边显示精简状态面板（Windows 托盘左键）。
+func (a *App) showBallPanel() {
+	a.ballPanelFocus.noteShowIntended()
+	a.hidePetMini()
+	a.hideBallMenu()
+	panel := a.ensureBallPanel()
+	if panel == nil {
+		return
+	}
+	x, y := a.ballPanelPosition()
+	panel.SetPosition(x, y)
+	panel.Show().Focus()
+}
+
+// toggleBallPanel 切换精简状态面板。
+func (a *App) toggleBallPanel() {
+	a.ballPanelFocus.noteShowIntended()
+	panel := a.ensureBallPanel()
+	if panel == nil {
+		return
+	}
+	if panel.IsVisible() {
+		panel.Hide()
+		return
+	}
+	a.showBallPanel()
+}
+
+// hideBallPanel 收起精简状态面板。
+func (a *App) hideBallPanel() {
+	a.ballPanelFocus.noteHidden()
+	a.windowMu.Lock()
+	panel := a.ballPanel
+	a.windowMu.Unlock()
+	if panel != nil && panel.IsVisible() {
+		panel.Hide()
+	}
+}
+
+// ballPanelPosition 计算精简面板位置：球右侧优先，右侧放不下放左侧。
+func (a *App) ballPanelPosition() (int, int) {
+	bx, by, width, height := a.barAnchor()
+	area := a.workAreaForPoint(bx+width/2, by+height/2)
+	if area.Width <= 0 || area.Height <= 0 {
+		return bx, by
+	}
+	return ballPanelOrigin(area, bx, by, width, ballPanelWidth, ballPanelHeight)
+}
+
+// ensurePetMini 创建迷你宠物窗口（首次使用时惰性创建）。
+func (a *App) ensurePetMini() *application.WebviewWindow {
+	if goos != "windows" {
+		return nil
+	}
+	a.windowMu.Lock()
+	if a.petMini != nil {
+		win := a.petMini
+		a.windowMu.Unlock()
+		return win
+	}
+	win := a.wails.Window.NewWithOptions(petMiniOptions(a.theme))
+	a.petMini = win
+	a.windowMu.Unlock()
+	a.petMiniFocus = a.installPopoverFocusClose(win, a.hidePetMini)
+	return win
+}
+
+// showPetMini 在悬浮球旁边显示迷你宠物。
+func (a *App) showPetMini() {
+	a.petMiniFocus.noteShowIntended()
+	a.hideBallPanel()
+	a.hideBallMenu()
+	win := a.ensurePetMini()
+	if win == nil {
+		return
+	}
+	x, y := a.petMiniPosition()
+	win.SetPosition(x, y)
+	win.Show().Focus()
+}
+
+// togglePetMini 切换迷你宠物（悬浮球左键点击）。
+func (a *App) togglePetMini() {
+	a.petMiniFocus.noteShowIntended()
+	win := a.ensurePetMini()
+	if win == nil {
+		return
+	}
+	if win.IsVisible() {
+		win.Hide()
+		return
+	}
+	a.showPetMini()
+}
+
+// hidePetMini 收起迷你宠物。
+func (a *App) hidePetMini() {
+	a.petMiniFocus.noteHidden()
+	a.windowMu.Lock()
+	win := a.petMini
+	a.windowMu.Unlock()
+	if win != nil && win.IsVisible() {
+		win.Hide()
+	}
+}
+
+// petMiniPosition 计算迷你宠物位置：球右侧优先，右侧放不下放左侧。
+func (a *App) petMiniPosition() (int, int) {
+	bx, by, width, height := a.barAnchor()
+	area := a.workAreaForPoint(bx+width/2, by+height/2)
+	if area.Width <= 0 || area.Height <= 0 {
+		return bx, by
+	}
+	return ballPanelOrigin(area, bx, by, width, petMiniWidth, petMiniHeight)
+}
+
+// ensureBallMenu 创建自绘右键菜单窗口（首次使用时惰性创建）。
+func (a *App) ensureBallMenu() *application.WebviewWindow {
+	if goos != "windows" {
+		return nil
+	}
+	a.windowMu.Lock()
+	if a.ballMenu != nil {
+		win := a.ballMenu
+		a.windowMu.Unlock()
+		return win
+	}
+	win := a.wails.Window.NewWithOptions(ballMenuOptions(a.theme))
+	a.ballMenu = win
+	a.windowMu.Unlock()
+	a.ballMenuFocus = a.installPopoverFocusClose(win, a.hideBallMenu)
+	return win
+}
+
+// showBallMenu 在悬浮球左侧显示右键菜单（左侧放不下时在右侧）。
+func (a *App) showBallMenu() {
+	a.ballMenuFocus.noteShowIntended()
+	a.hideBallPanel()
+	a.hidePetMini()
+	win := a.ensureBallMenu()
+	if win == nil {
+		return
+	}
+	x, y := a.ballMenuPosition()
+	win.SetPosition(x, y)
+	win.Show().Focus()
+}
+
+// toggleBallMenu 切换右键菜单。
+func (a *App) toggleBallMenu() {
+	a.ballMenuFocus.noteShowIntended()
+	win := a.ensureBallMenu()
+	if win == nil {
+		return
+	}
+	if win.IsVisible() {
+		win.Hide()
+		return
+	}
+	a.showBallMenu()
+}
+
+// hideBallMenu 收起右键菜单。
+func (a *App) hideBallMenu() {
+	a.ballMenuFocus.noteHidden()
+	a.windowMu.Lock()
+	win := a.ballMenu
+	a.windowMu.Unlock()
+	if win != nil && win.IsVisible() {
+		win.Hide()
+	}
+}
+
+// ballMenuPosition 计算右键菜单位置：球左侧优先，与状态面板左右分置。
+func (a *App) ballMenuPosition() (int, int) {
+	bx, by, width, height := a.barAnchor()
+	area := a.workAreaForPoint(bx+width/2, by+height/2)
+	if area.Width <= 0 || area.Height <= 0 {
+		return bx, by
+	}
+	return ballMenuOrigin(area, bx, by, width, height, ballMenuWidth, ballMenuHeight)
+}
+
+// PanelToggle 实现 gui.Deps.PanelToggle：切换 392px 吸附面板（旧入口）。
 func (a *App) PanelToggle() { a.togglePanel() }
 
-// PanelToggleAt 实现 gui.Deps.PanelToggleAt：把面板摆在刘海正下方。
+// PanelToggleAt 实现 gui.Deps.PanelToggleAt：把面板摆在悬浮球下方。
 func (a *App) PanelToggleAt(x, y int) { a.togglePanelAtNotch(x, y) }
 
 func (a *App) onApplicationStarted(*application.ApplicationEvent) {
@@ -432,13 +852,16 @@ func (a *App) hideDockForMenuBar() {
 
 func (a *App) hideRestoredWindows() {
 	a.hidePanel()
+	a.hideBallPanel()
+	a.hidePetMini()
+	a.hideBallMenu()
 	a.windowMu.Lock()
 	main := a.main
 	a.windowMu.Unlock()
 	if main != nil {
 		main.Hide()
 	}
-	// 与「关闭主窗口」保持一致：主窗口不可见时刘海应回来。
+	// 与「关闭主窗口」保持一致：主窗口不可见时悬浮球应回来。
 	if a.barShow != nil {
 		a.barShow()
 	}
@@ -514,7 +937,7 @@ func (a *App) ensureMainWindowLocked() *application.WebviewWindow {
 		// Closing the main window leaves QKA resident in the menu bar, so the
 		// Dock icon should disappear until the user opens the main window again.
 		a.hideDockForMenuBar()
-		// 主窗口收起后让常驻刘海回来：它才是窗口隐藏期间唯一的速度指示与
+		// 主窗口收起后让常驻悬浮球回来：它才是窗口隐藏期间唯一的速度指示与
 		// 点击入口。必须异步——这里跑在窗口消息处理器里，同步 Show 会对同一
 		// 线程发窗口消息，造成自锁（参见 installPlatformWindowBehavior）。
 		if a.barShow != nil {
@@ -748,24 +1171,24 @@ func panelTop(panel *application.WebviewWindow) int {
 	return y
 }
 
-// togglePanelAtNotch 在顶栏刘海（Windows 菜单栏状态项）下方切换吸附面板。
-// 坐标是刘海在窗口内的 DIP 位置，换算成屏幕坐标后把面板摆到刘海正下方，
-// 与 macOS 点菜单栏图标时面板贴着菜单栏展开的观感一致。
+// togglePanelAtNotch 在小屏/旧入口下把 392px 吸附面板摆在悬浮球下方。
+// 悬浮球左键已改走迷你宠物（togglePetMini）；这里保留给 PanelToggleAt
+// 与既有测试使用。
 func (a *App) togglePanelAtNotch(x, y int) {
-	// 关键竞态：点击刘海时面板先失焦（守卫已登记延迟收起）、刘海的点击后到。
+	// 关键竞态：点击状态项时面板先失焦（守卫已登记延迟收起）、点击后到。
 	// 这里先作废那份登记再切换，收起/展开都由本次点击一次完成，不会
-	// 「点了刘海，面板闪关又弹出」。
+	// 「点了状态项，面板闪关又弹出」。
 	a.panelFocus.noteShowIntended()
 	panel := a.ensurePanel()
 	if panel.IsVisible() {
 		panel.Hide()
 		return
 	}
-	// 优先用常驻刘海窗口的实际位置：面板贴在刘海正下方，和 macOS 点菜单栏
-	// 图标时面板贴着菜单栏展开一致。刘海窗口不可用时退回页面给的坐标。
-	bx, by, bh := a.barAnchor()
+	// 优先用悬浮球窗口的实际位置：面板贴在它下方。窗口不可用时退回页面
+	// 给的坐标。
+	bx, by, _, bh := a.barAnchor()
 	if bh <= 0 {
-		bx, by, bh = x, y, barHeight
+		bx, by, bh = x, y, ballSize
 	}
 	panel.SetPosition(bx, by+bh+notchPanelGap)
 	a.fitPanelHeightToWorkArea(panel, by+bh+notchPanelGap)
@@ -816,12 +1239,14 @@ func (a *App) showMain() {
 	// 先隐藏置顶面板，再激活主窗口；顺序反过来会让主窗口短暂位于
 	// 非激活 NSPanel 下方。
 	a.hidePanel()
+	a.hideBallPanel()
+	a.hidePetMini()
+	a.hideBallMenu()
 	a.dockApply(a.dockShow.Load())
 	main := a.ensureMainWindow()
 	main.Show()
 	main.Focus()
-	// 主窗口可见时必须收起常驻刘海：刘海是独立置顶窗口、钉在屏幕顶部正中，
-	// 而主窗口的导航条也居中——两者会精确重合，把「宠物设置」等页签压住。
+	// 主窗口可见时收起悬浮球：它是独立置顶窗口，挡住主窗口内容会很难受；
 	// 主窗口自己已经有完整的顶栏与速度页，收起后信息不丢；关闭主窗口时再恢复。
 	if a.barHide != nil {
 		a.barHide()
@@ -905,6 +1330,80 @@ func panelOptions(theme string) application.WebviewWindowOptions {
 	}
 	applyPanelChrome(&opts)
 	return opts
+}
+
+// ballPanelOptions 是 Windows 悬浮球的精简状态面板（244×180）：不透明卡片、
+// 固定尺寸、失焦由 ballPanelFocus 守卫收起、Esc 直接收起。macOS 不使用。
+func ballPanelOptions(theme string) application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Name:           "ballPanel",
+		Title:          "Quota Keepalive",
+		Width:          ballPanelWidth,
+		Height:         ballPanelHeight,
+		MinWidth:       ballPanelWidth,
+		MinHeight:      ballPanelHeight,
+		MaxWidth:       ballPanelWidth,
+		MaxHeight:      ballPanelHeight,
+		Frameless:      true,
+		AlwaysOnTop:    true,
+		Hidden:         true,
+		DisableResize:  true,
+		HideOnEscape:   true,
+		BackgroundType: application.BackgroundTypeSolid,
+		URL:            themedURL("/ballpanel.html", theme),
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: true,
+		},
+	}
+}
+
+// petMiniOptions 是悬浮球左键弹出的迷你宠物窗口：只放伙伴、等级和当日
+// Token；同样固定尺寸、不透明、失焦由 petMiniFocus 守卫收起。
+func petMiniOptions(theme string) application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Name:           "petMini",
+		Title:          "Quota Keepalive",
+		Width:          petMiniWidth,
+		Height:         petMiniHeight,
+		MinWidth:       petMiniWidth,
+		MinHeight:      petMiniHeight,
+		MaxWidth:       petMiniWidth,
+		MaxHeight:      petMiniHeight,
+		Frameless:      true,
+		AlwaysOnTop:    true,
+		Hidden:         true,
+		DisableResize:  true,
+		HideOnEscape:   true,
+		BackgroundType: application.BackgroundTypeSolid,
+		URL:            themedURL("/petmini.html", theme),
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: true,
+		},
+	}
+}
+
+// ballMenuOptions 是悬浮球右键的自绘菜单窗口（3 行，magpie .row-menu 风格）。
+func ballMenuOptions(theme string) application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Name:           "ballMenu",
+		Title:          "Quota Keepalive",
+		Width:          ballMenuWidth,
+		Height:         ballMenuHeight,
+		MinWidth:       ballMenuWidth,
+		MinHeight:      ballMenuHeight,
+		MaxWidth:       ballMenuWidth,
+		MaxHeight:      ballMenuHeight,
+		Frameless:      true,
+		AlwaysOnTop:    true,
+		Hidden:         true,
+		DisableResize:  true,
+		HideOnEscape:   true,
+		BackgroundType: application.BackgroundTypeSolid,
+		URL:            themedURL("/ballmenu.html", theme),
+		Windows: application.WindowsWindow{
+			HiddenOnTaskbar: true,
+		},
+	}
 }
 
 func themedURL(path, theme string) string {
@@ -1088,7 +1587,7 @@ func (a *App) monitorTokenSpeed(ctx context.Context) {
 				a.tray.SetLabel(label)
 				lastLabel = label
 			}
-			// 内容没变就不广播：此前每 750ms 无条件 Emit，常驻刘海与面板
+			// 内容没变就不广播：此前每 750ms 无条件 Emit，常驻悬浮球与面板
 			// 的 WebView2 渲染进程因此永远无法空闲（实测 CPU 空转主源）。
 			signature := tokenSpeedSignature(snapshot)
 			if signature == lastSignature {

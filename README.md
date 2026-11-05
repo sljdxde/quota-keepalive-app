@@ -1,6 +1,6 @@
 # Quota Keepalive（桌面应用）
 
-本地 Agent 的额度签到与 Token 速度仪表：一个 Go + Wails v3 的桌面应用，macOS 常驻菜单栏，Windows 常驻托盘并提供屏幕顶栏入口。
+本地 Agent 的额度签到与 Token 速度仪表：一个 Go + Wails v3 的桌面应用，macOS 常驻菜单栏，Windows 常驻悬浮球与托盘。
 
 > 供应商插件（Magpie 用的 npm 包 `quota-keepalive`）是另一个项目：
 > [sljdxde/quota-keepalive-magpie-plugin](https://github.com/sljdxde/quota-keepalive-magpie-plugin)。
@@ -29,9 +29,9 @@
 
 Windows 版是**单文件自包含安装程序**：下载到的就是一个 exe，双击进入安装向导——选择安装路径（默认 `%LOCALAPPDATA%\Programs\Quota Keepalive`，不需要管理员权限），之后自动完成复制程序、解压运行时（Bun / `adapters/` / `provider-plugins/` 都内嵌在 exe 里，解压到 `%LOCALAPPDATA%\QKA\runtime\<version>\`）、创建开始菜单快捷方式与 `HKCU\...\App Paths\QKA.exe`（Win+R 输 `QKA` 可直接启动）。安装完成后可以立即启动 QKA，下次双击安装目录里的 QKA.exe 直接进托盘，不再弹向导。
 
-Windows 上双击启动会直接打开主窗口（macOS 保持菜单栏形态、不弹窗）；关闭主窗口只是隐藏，之后左键点托盘出面板、右键菜单「打开主窗口」都能再打开。重复双击 exe 不会起第二个实例，只会把已有实例的主窗口唤到前台。
+Windows 上双击启动会直接打开主窗口（macOS 保持菜单栏形态、不弹窗）；关闭主窗口只是隐藏，之后左键点悬浮球出迷你伙伴、左键点托盘出状态面板、右键菜单「打开主界面」都能再打开。重复双击 exe 不会起第二个实例，只会把已有实例的主窗口唤到前台。
 
-Windows 上有一个**常驻刘海**：主屏左上角的独立置顶小条，等价于 macOS 菜单栏上的 QKA 图标，只显示 Q 图标和实时 tok/s。左键点它弹出和 mac 上同一个吸附面板（面板贴在刘海正下方），**右键出菜单**（打开主窗口 / 设置 / 退出）。刘海随应用常驻，关闭主窗口也不消失。
+Windows 上有一个**常驻悬浮球**：主屏上方的 64px 深色能量球（按住可拖到屏幕任意位置），等价于 macOS 菜单栏上的 QKA 图标，显示实时 tok/s，并用称号主题色的渐变环显示称号总进度（13 级等分圆周）。左键弹出 220×260 的**迷你伙伴**（当前宝可梦的 3D 缩小版，失败回退 2D，显示等级与今日 Token，点击放技能/放出精灵球）；**右键弹出 magpie 风格的三行菜单**（打开主界面 / 设置 / 退出），菜单在球左侧展开。拖到屏幕左右边缘会吸成 44px 半圆（只留 Q），点击弹回原位置；位置与贴边状态会记住。悬浮球随应用常驻，关闭主窗口后会重新出现。
 
 主窗口保留系统原生标题栏（关闭/最小化/最大化都交给 Windows）。
 
@@ -108,7 +108,7 @@ go vet ./... && gofmt -l .
 
 ## 已知限制
 
-- **Windows GUI 未经真机验收**：CI 覆盖「全部包与测试在 Windows 编译通过」与「CLI 真实可执行」；WebView2 渲染、托盘、常驻刘海、安装向导与自更新仍需实机确认
+- **Windows GUI 未经真机验收**：CI 覆盖「全部包与测试在 Windows 编译通过」与「CLI 真实可执行」；WebView2 渲染、托盘、悬浮球（拖动/贴边/位置记忆）、安装向导与自更新仍需实机确认
 - **反馈功能已移除**：内置反馈服务端（Cloudflare Worker）不可达，且 `*.workers.dev` 在部分地区被网络阻断；相关代码与 CI 探活已整体摘除，需要时从历史提交恢复
 - **macOS 包未公证**：DMG 使用 ad-hoc 签名，换机或从网上下载后首次打开可能被 Gatekeeper 拦截，需右键「打开」或在「隐私与安全性」放行
 - Qoder 上游 token 字段恒为 0；OpenCode 无首 token 时间戳，不出实测速率

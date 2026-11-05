@@ -100,8 +100,9 @@
   --topbar: var(--bg);
 }
 
-/* 主窗口外壳：压平玻璃高光与径向光斑，改为原型的中性底 */
-.window { background: var(--bg); }
+/* 主窗口外壳：压平玻璃高光与径向光斑。背景由 body 铺满整个视口
+   （这样 CSS zoom 收缩界面时，底部不会露出旧壁纸/透出桌面）。 */
+.window { background: transparent; }
 .window::before, .window::after { display: none !important; content: none; }
 
 .hidden { display: none !important; }

@@ -3,71 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="color-scheme" content="light dark">
-<style>
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0; height: 100%; width: 100%;
-    background: transparent; overflow: hidden;
-    -webkit-user-select: none; user-select: none;
-  }
-  :root {
-    --notch-bg: linear-gradient(150deg, #163a43 0%, #0c2a32 58%, #071a21 100%);
-    --notch-fg: #F8F1DE;
-    --notch-hover: 1.16;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --notch-bg: linear-gradient(150deg, #0f2f37 0%, #0a242c 58%, #06171d 100%);
+<script>
+  (function () {
+    var theme = new URLSearchParams(location.search).get("theme");
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
     }
-  }
-  /* 常驻刘海：Windows 上的「菜单栏状态项」，只有 Q 图标和实时速度。
-     窗口本身已被 WindowMask 裁成圆角胶囊，这里把内容铺满并画渐变底；
-     按住可拖动窗口，单击弹面板，右键出菜单。 */
-  #bar {
-    height: 100%; width: 100%;
-    display: flex; align-items: center; gap: 7px;
-    padding: 0 13px; border: 0; border-radius: 15px;
-    background: var(--notch-bg);
-    color: var(--notch-fg);
-    cursor: default;
-    /* 顶栏空白处可拖动窗口：Wails 只有真正发生拖动时才吞掉 click，
-       所以「单击弹面板 / 按住拖动」可以共存。 */
-    --wails-draggable: drag;
-    transition: filter .14s ease;
-    box-shadow: inset 0 .5px 0 rgba(255,255,255,.10), inset 0 -.5px 0 rgba(0,0,0,.25);
-  }
-  #bar:hover { filter: brightness(var(--notch-hover)); }
-  #bar:active { filter: brightness(.94); }
-  /* 内部元素不参与拖动，避免误拖；点它们仍冒泡到 #bar 的 click。 */
-  #bar .icon, #bar .speed { --wails-draggable: no-drag; pointer-events: none; }
-  .icon { width: 18px; height: 18px; flex: none; display: block; }
-  .speed {
-    font: 600 12px/1 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: .01em;
-  }
-  .speed small { font-size: 10px; font-weight: 500; opacity: .72; margin-left: 2px; }
+  })();
+</script>
+<link rel="stylesheet" href="assets/qka-ui.css">
+<link rel="stylesheet" href="assets/ball.css">
+<style>
+  /* 拖动区域必须写在页面里（Wails 读取计算样式）：球体可拖，内部图标/数字
+     不参与拖动，点击仍冒泡到 #ball。 */
+  #ball { --wails-draggable: drag; }
+  #ball .ring, #ball .core { --wails-draggable: no-drag; pointer-events: none; }
 </style>
 </head>
 <body>
-  <button type="button" id="bar" aria-haspopup="dialog" title="Quota Keepalive">
-    <svg class="icon" viewBox="0 0 64 64" aria-hidden="true">
-      <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="#F8F1DE" stroke-width="7.4"
-              stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
-      <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none"
-            stroke="#FFD06B" stroke-width="6.2" stroke-linecap="round"/>
+  <!-- 常驻悬浮球：Windows 上等价于 macOS 菜单栏上的 QKA 状态项。
+       窗口本身已被 shapeBarWindow 裁成正圆，这里铺满并画卡片底；
+       按住可拖动（--wails-draggable），单击弹精简面板，右键出菜单。
+       拖到屏幕左右边缘会收成 44px 半圆（Go 侧 SetSize），此时只显示 Q。 -->
+  <div id="ball" class="ball idle" role="button" aria-haspopup="dialog" title="Quota Keepalive">
+    <svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
+      <defs>
+        <linearGradient id="ring-gradient" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+          <stop offset="0" style="stop-color:hsl(var(--ball-hue, 193) 92% 66%)"></stop>
+          <stop offset="1" style="stop-color:hsl(calc(var(--ball-hue, 193) + 55) 92% 70%)"></stop>
+        </linearGradient>
+      </defs>
+      <circle class="track" cx="32" cy="32" r="30.5"></circle>
+      <circle class="bar" cx="32" cy="32" r="30.5" stroke-dasharray="191.6"
+              stroke-dashoffset="191.6"></circle>
+      <circle class="spark" id="ball-spark" cx="32" cy="3.4" r="2.2"></circle>
     </svg>
-    <span class="speed"><span id="speed-value">0</span><small>tok/s</small></span>
-  </button>
+    <div class="core">
+      <svg class="q" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="8"
+                stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
+        <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none" stroke="currentColor"
+              stroke-width="6.6" stroke-linecap="round"/>
+      </svg>
+      <b class="roll" id="speed-value">0</b>
+      <small>tok/s</small>
+    </div>
+  </div>
 
 <script type="module">
   import { Events } from "/wails/runtime.js";
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
+  import { setRoll } from "./assets/odometer.js";
+  import {
+    normalizeTitleTheme,
+    titleLevelForSpeed,
+    titleThresholds,
+    titleThemeHues,
+  } from "./assets/title-system.js";
 
-  function asJSON(v) {
-    return typeof v === "string" ? JSON.parse(v) : v;
+  function asJSON(value) {
+    return typeof value === "string" ? JSON.parse(value) : value;
   }
 
-  function compact(value) {
+  // 与主窗口/面板一致的紧凑速率：小于 10 保留一位小数，千以上用 k/M/B。
+  function compactTokenRate(value) {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) return "0";
     if (number < 10) {
@@ -90,37 +89,131 @@
     return String(Math.round(number));
   }
 
+  const ball = document.getElementById("ball");
   const valueNode = document.getElementById("speed-value");
+  const ringBar = ball.querySelector(".ring .bar");
+  const spark = document.getElementById("ball-spark");
+  const RING_LENGTH = 191.6;
+  const SPARK_RADIUS = 28.6;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  function renderSpeed(value) {
-    valueNode.textContent = compact(value);
+  let themeId = "vehicles";
+  let sparkProgress = 0;
+  let sparkFrame = 0;
+
+  // 光点按进度直接落位到圆环上（SVG 坐标从 3 点方向起算，.ring 自身再 -90°）。
+  function placeSpark(progress) {
+    if (!spark) return;
+    const angle = (progress / 100) * Math.PI * 2;
+    spark.setAttribute("cx", String(32 + SPARK_RADIUS * Math.cos(angle)));
+    spark.setAttribute("cy", String(32 + SPARK_RADIUS * Math.sin(angle)));
+    spark.style.opacity = progress > 0 ? "" : "0";
   }
+
+  // 与圆环的 .42s 过渡同步，避免数值变化时光点瞬移。
+  function animateSpark(progress) {
+    if (!spark) return;
+    if (sparkFrame) cancelAnimationFrame(sparkFrame);
+    if (reducedMotion) {
+      sparkProgress = progress;
+      placeSpark(progress);
+      return;
+    }
+    const from = sparkProgress;
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - start) / 420);
+      const eased = 1 - Math.pow(1 - t, 3);
+      sparkProgress = from + (progress - from) * eased;
+      placeSpark(sparkProgress);
+      if (t < 1) {
+        sparkFrame = requestAnimationFrame(step);
+      } else {
+        sparkFrame = 0;
+      }
+    }
+    sparkFrame = requestAnimationFrame(step);
+  }
+
+  function applyTheme(theme) {
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
+  }
+
+  // 环表示称号体系里的「总进度」：13 级把圆周等分，跨级时继续往前走，
+// 不会在阈值处跳回起点（与原型 levelFor 的 frac 一致）。
+  // 例：96–136 tok/s 是第 9 级，128 落在该级 80% 处 → (8 + 0.8) / 13 ≈ 67.7%。
+  function ringProgress(speed, active) {
+    const level = titleLevelForSpeed(speed, active);
+    if (level < 1) return 0;
+    const total = titleThresholds.length;
+    if (level >= total) return 100;
+    const lower = titleThresholds[level - 1];
+    const upper = titleThresholds[level];
+    const within = upper > lower
+      ? Math.min(1, Math.max(0, (speed - lower) / (upper - lower)))
+      : 1;
+    return ((level - 1 + within) / total) * 100;
+  }
+
+  function render(view) {
+    if (!view) return;
+    const speed = Number(view.output_tokens_per_second) || 0;
+    const active = Boolean(view.active);
+    themeId = normalizeTitleTheme(view.title_theme_id || themeId);
+
+    const text = compactTokenRate(speed);
+    setRoll(valueNode, text);
+    ball.classList.toggle("n4", text.length === 4);
+    ball.classList.toggle("n5", text.length >= 5);
+    ball.classList.toggle("idle", !active);
+    ball.classList.toggle("live", active);
+
+    // 环长度 = 称号总进度；颜色跟称号主题色相。进度头部的光点只随数值变化，
+    // 不做连续旋转/扫描动画。
+    const progress = ringProgress(speed, active);
+    ringBar.setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - progress / 100)));
+    animateSpark(progress);
+    ball.style.setProperty("--ball-hue", String(titleThemeHues[themeId] ?? 193));
+  }
+
+  // 贴边态：Go 把窗口缩到 44px，这里是纯 CSS 依据视口宽度切换内容。
+  function syncDocked() {
+    ball.classList.toggle("docked", window.innerWidth < 60);
+  }
+  window.addEventListener("resize", syncDocked);
+  syncDocked();
 
   Events.On("tokenspeed-changed", function (event) {
     if (!event || !event.data) return;
-    const view = asJSON(event.data);
-    renderSpeed(view && view.output_tokens_per_second);
+    render(asJSON(event.data));
+  });
+  Events.On("theme-changed", function (event) {
+    applyTheme(event && event.data);
   });
 
-  Bound.TokenSpeedGet().then(function (view) {
-    const snapshot = asJSON(view);
-    renderSpeed(snapshot && snapshot.output_tokens_per_second);
-  }).catch(function () {});
+  Bound.TokenSpeedGet()
+    .then(function (view) {
+      render(asJSON(view));
+    })
+    .catch(function () {});
 
-  const bar = document.getElementById("bar");
-  bar.addEventListener("click", function (event) {
+  ball.addEventListener("click", function (event) {
     event.stopPropagation();
     try {
-      const p = Bound.BarToggle();
-      if (p && typeof p.catch === "function") p.catch(function () {});
+      const pending = Bound.BarToggle();
+      if (pending && typeof pending.catch === "function") pending.catch(function () {});
     } catch (_) {}
   });
-  bar.addEventListener("contextmenu", function (event) {
+  ball.addEventListener("contextmenu", function (event) {
     event.preventDefault();
     event.stopPropagation();
     try {
-      const p = Bound.BarMenu();
-      if (p && typeof p.catch === "function") p.catch(function () {});
+      const pending = Bound.BarMenu();
+      if (pending && typeof pending.catch === "function") pending.catch(function () {});
     } catch (_) {}
   });
 </script>

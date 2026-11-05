@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<script>
+  (function () {
+    var theme = new URLSearchParams(location.search).get("theme");
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/qka-ui.css">
+<link rel="stylesheet" href="assets/ball.css">
+<style>
+  /* 窗口是实心方窗，圆角外的四角用卡片色填满，避免深色主题下露出白角。 */
+  html, body { background: var(--card); }
+</style>
+</head>
+<body>
+  <!-- Windows 悬浮球左键弹出的精简状态面板（244×180）。只做状态速览：
+       生成状态 / tok/s / 称号等级与下一级 / 今日合计，底部回主窗口。
+       管理、签到、宠物都在主窗口里，面板不再承载。 -->
+  <div class="ball-panel idle" id="panel">
+    <div class="h">
+      <span class="live" id="live"><span class="dot"></span><span id="live-text">当前空闲</span></span>
+      <div class="read"><b class="roll" id="panel-speed">0</b><span>tok/s 输出</span></div>
+      <div class="rank">
+        <span class="lvl" id="rank-level">--</span>
+        <span class="nm" id="rank-name">待机</span>
+        <span class="nx" id="rank-next"></span>
+      </div>
+      <div class="today" id="today">今日合计 0 tokens</div>
+    </div>
+    <div class="f">
+      <button class="btn ghost small" id="open-main" type="button">打开主界面</button>
+    </div>
+  </div>
+
+<script type="module">
+  import { Events } from "/wails/runtime.js";
+  import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
+  import { setRoll } from "./assets/odometer.js";
+  import {
+    normalizeTitleTheme,
+    titleLevelForSpeed,
+    titleThresholds,
+  } from "./assets/title-system.js";
+
+  function asJSON(value) {
+    return typeof value === "string" ? JSON.parse(value) : value;
+  }
+
+  // 与主窗口/面板一致的紧凑速率（0–10 保留一位小数，千以上 k/M/B）。
+  function compactTokenRate(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return "0";
+    if (number < 10) {
+      const rounded = Math.round(number * 10) / 10;
+      return rounded >= 10 ? "10" : rounded.toFixed(1);
+    }
+    if (number < 1000) return String(Math.round(number));
+    const units = [
+      { value: 1e9, suffix: "B" },
+      { value: 1e6, suffix: "M" },
+      { value: 1e3, suffix: "k" },
+    ];
+    for (const unit of units) {
+      if (number >= unit.value) {
+        const scaled = number / unit.value;
+        const text = scaled >= 10 ? String(Math.round(scaled)) : scaled.toFixed(1);
+        return text + unit.suffix;
+      }
+    }
+    return String(Math.round(number));
+  }
+
+  // 今日合计沿用主窗口的万/亿格式（与 panel.js 的 compactTokenCount 一致）。
+  function compactTokenCount(value) {
+    const number = Math.max(0, Number(value) || 0);
+    if (number >= 1e8) {
+      const scaled = number / 1e8;
+      return (scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)).replace(/\.0+$/, "") + " 亿";
+    }
+    if (number >= 1e4) {
+      const scaled = number / 1e4;
+      return (scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1)).replace(/\.0$/, "") + " 万";
+    }
+    return String(Math.round(number));
+  }
+
+  const panel = document.getElementById("panel");
+  const live = document.getElementById("live");
+  const liveText = document.getElementById("live-text");
+  const speedNode = document.getElementById("panel-speed");
+  const levelNode = document.getElementById("rank-level");
+  const nameNode = document.getElementById("rank-name");
+  const nextNode = document.getElementById("rank-next");
+  const todayNode = document.getElementById("today");
+
+  let level = -1;
+
+  function applyTheme(theme) {
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
+  }
+
+  function liveCopy(view) {
+    const agents = Number(view.generating_agents) || 0;
+    const agent = typeof view.agent === "string" ? view.agent.trim() : "";
+    if (agents === 1 && agent) return agent + " 正在生成";
+    if (agents > 1) return agents + " 个 Agent 正在生成";
+    if (view.active) return "正在输出";
+    return "当前空闲";
+  }
+
+  function render(view) {
+    if (!view) return;
+    const speed = Number(view.output_tokens_per_second) || 0;
+    const active = Boolean(view.active);
+    level = titleLevelForSpeed(speed, active);
+
+    setRoll(speedNode, compactTokenRate(speed));
+    panel.classList.toggle("idle", !active);
+    live.classList.toggle("active", active);
+    liveText.textContent = liveCopy(view);
+
+    levelNode.textContent = level > 0 ? String(level).padStart(2, "0") : "--";
+    nameNode.textContent = (view.title || "").trim() || (level > 0 ? "" : "待机");
+    if (level >= titleThresholds.length) {
+      nextNode.textContent = "已封顶";
+    } else {
+      const next = titleThresholds[Math.max(0, level)];
+      nextNode.textContent = "下一级 ≥ " + next + " tok/s";
+    }
+    todayNode.textContent = "今日合计 " + compactTokenCount(view.today_total_tokens) + " tokens";
+  }
+
+  Events.On("tokenspeed-changed", function (event) {
+    if (!event || !event.data) return;
+    render(asJSON(event.data));
+  });
+  Events.On("theme-changed", function (event) {
+    applyTheme(event && event.data);
+  });
+
+  Bound.TokenSpeedGet()
+    .then(function (view) {
+      render(asJSON(view));
+    })
+    .catch(function () {});
+
+  document.getElementById("open-main").addEventListener("click", function () {
+    try {
+      Events.Emit("open-main");
+    } catch (_) {}
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<script>
+  (function () {
+    var theme = new URLSearchParams(location.search).get("theme");
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
+    }
+  })();
+</script>
+<link rel="stylesheet" href="assets/qka-ui.css">
+<style>
+  /* 迷你伙伴：悬浮球左键弹出的缩小版宠物。只放伙伴本体、等级与当日 Token，
+     不放名单 / 进度 / 签到。深色能量底与悬浮球同一套材质。 */
+  :root {
+    --pm-bg: #0d0f13;
+    --pm-line: rgba(255, 255, 255, .1);
+    --pm-muted: rgba(255, 255, 255, .55);
+    --pet-accent: #63b978;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: var(--pm-bg); overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    font: 400 var(--fs-base, 13px)/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI",
+      "PingFang SC", "Microsoft YaHei", sans-serif;
+    color: #f3f6fa;
+    -webkit-font-smoothing: antialiased;
+  }
+  .pet-mini {
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    background:
+      radial-gradient(circle at 50% 64%,
+        color-mix(in srgb, var(--pet-accent) 26%, transparent), transparent 60%),
+      radial-gradient(circle at 30% 16%, rgba(255, 255, 255, .1), transparent 42%),
+      linear-gradient(165deg, #252a33 0%, #121419 56%, #08090c 100%);
+    border: 1px solid var(--pm-line);
+    border-radius: 16px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, .14),
+      inset 0 -12px 28px rgba(0, 0, 0, .5),
+      0 14px 34px -12px rgba(0, 0, 0, .65);
+    overflow: hidden;
+  }
+  .pm-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px 4px;
+    flex: none;
+  }
+  .pm-name {
+    font-size: 12.5px; font-weight: 600; color: #fff;
+    letter-spacing: .01em; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .pm-level {
+    flex: none;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 5px;
+    color: var(--pet-accent);
+    background: color-mix(in srgb, var(--pet-accent) 18%, transparent);
+    font-variant-numeric: tabular-nums;
+  }
+  .pm-stage {
+    position: relative;
+    flex: 1; min-height: 0;
+    margin: 2px 12px 0;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .pm-glow {
+    position: absolute; left: 14%; right: 14%; bottom: 6%; height: 58%;
+    background: radial-gradient(ellipse at 50% 100%,
+      color-mix(in srgb, var(--pet-accent) 32%, transparent), transparent 70%);
+    filter: blur(8px);
+    pointer-events: none;
+  }
+  .pm-ground {
+    position: absolute; left: 50%; bottom: 8px;
+    width: 100px; height: 16px;
+    border-radius: 50%;
+    background: radial-gradient(ellipse,
+      color-mix(in srgb, var(--pet-accent) 38%, transparent), transparent 70%);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+  .pm-avatar {
+    position: absolute; left: 50%; top: 50%;
+    width: 168px; height: 168px;
+    transform: translate(-50%, -54%);
+    transition: opacity .18s ease;
+  }
+  .pm-avatar .pokemon-3d-canvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    opacity: 0;
+  }
+  .pm-avatar.is-3d .pokemon-3d-canvas { opacity: 1; }
+  .pm-avatar.model-fallback .pokemon-3d-canvas { display: none; }
+  .pm-avatar .pokemon-sprites {
+    position: absolute; inset: 0; display: block;
+  }
+  .pm-avatar .pokemon-stage-image {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    opacity: 0;
+  }
+  .pm-avatar .pokemon-stage-image[data-stage="1"] { opacity: 1; }
+  .pm-avatar.is-3d .pokemon-sprites { visibility: hidden; opacity: 0; }
+  .pm-avatar.is-loading { opacity: .6; }
+  .pm-stage.is-poked .pm-avatar { animation: pm-hop .44s ease; }
+  @keyframes pm-hop {
+    0%, 100% { transform: translate(-50%, -54%); }
+    45% { transform: translate(-50%, -62%) scale(1.03); }
+  }
+  .pm-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+    padding: 6px 14px 12px;
+    flex: none;
+    color: var(--pm-muted);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+  <div class="pet-mini" id="pet-mini">
+    <div class="pm-head">
+      <span class="pm-name" id="pm-name">伙伴</span>
+      <span class="pm-level" id="pm-level">I</span>
+    </div>
+    <div class="pm-stage" id="pm-stage" role="button" tabindex="0" aria-label="逗一下伙伴">
+      <span class="pm-glow" aria-hidden="true"></span>
+      <span class="pm-ground" aria-hidden="true"></span>
+      <div class="pm-avatar is-loading" id="pm-avatar"></div>
+    </div>
+    <div class="pm-foot">
+      <span id="pm-today">今日 0 tokens</span>
+      <span id="pm-speed">0 tok/s</span>
+    </div>
+  </div>
+
+<script type="module">
+  import { Events } from "/wails/runtime.js";
+  import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
+  import {
+    POKEMON_CATALOG,
+    POKEMON_EVOLUTION_THRESHOLDS,
+    POKEMON_MAX_DAILY_TOKENS,
+    evolutionStageForDailyTokens,
+    pokemonById,
+  } from "./assets/pokemon-art.js";
+  import { createPokemon3D } from "./assets/pokemon-3d.js";
+  import { petAimPoint } from "./assets/pet-gaze.js";
+  import { initPerformanceMode } from "./assets/perf-mode.js";
+
+  const SELECTED_KEY = "qka.pet.selected";
+  const CAUGHT_KEY = "qka.pet.caught.v1";
+
+  const mini = document.getElementById("pet-mini");
+  const stage = document.getElementById("pm-stage");
+  const avatar = document.getElementById("pm-avatar");
+  const nameNode = document.getElementById("pm-name");
+  const levelNode = document.getElementById("pm-level");
+  const todayNode = document.getElementById("pm-today");
+  const speedNode = document.getElementById("pm-speed");
+
+  let pet = null;
+  let viewer = null;
+  let viewerPetId = "";
+  let todayTokens = 0;
+  let latestPointer = { x: null, y: null };
+
+  function asJSON(value) {
+    return typeof value === "string" ? JSON.parse(value) : value;
+  }
+
+  function compactTokenCount(value) {
+    const number = Math.max(0, Number(value) || 0);
+    if (number >= 1e8) {
+      const scaled = number / 1e8;
+      return (scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)).replace(/\.0+$/, "") + " 亿";
+    }
+    if (number >= 1e4) {
+      const scaled = number / 1e4;
+      return (scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1)).replace(/\.0$/, "") + " 万";
+    }
+    return String(Math.round(number));
+  }
+
+  function compactTokenRate(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return "0";
+    if (number < 10) {
+      const rounded = Math.round(number * 10) / 10;
+      return rounded >= 10 ? "10" : rounded.toFixed(1);
+    }
+    if (number < 1000) return String(Math.round(number));
+    const units = [
+      { value: 1e9, suffix: "B" },
+      { value: 1e6, suffix: "M" },
+      { value: 1e3, suffix: "k" },
+    ];
+    for (const unit of units) {
+      if (number >= unit.value) {
+        const scaled = number / unit.value;
+        return (scaled >= 10 ? String(Math.round(scaled)) : scaled.toFixed(1)) + unit.suffix;
+      }
+    }
+    return String(Math.round(number));
+  }
+
+  function readStoredString(key, fallback) {
+    try {
+      const value = localStorage.getItem(key);
+      return value || fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function selectedPet() {
+    const id = readStoredString(SELECTED_KEY, "");
+    return pokemonById(id) || POKEMON_CATALOG[0];
+  }
+
+  function readCaughtMap() {
+    try {
+      const raw = localStorage.getItem(CAUGHT_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function isCaught(petId) {
+    return !!readCaughtMap()[petId];
+  }
+
+  function writeCaught(petId, caught) {
+    const map = readCaughtMap();
+    if (caught) map[petId] = true;
+    else delete map[petId];
+    try {
+      localStorage.setItem(CAUGHT_KEY, JSON.stringify(map));
+    } catch (_) {}
+  }
+
+  function skillTier() {
+    return evolutionStageForDailyTokens(todayTokens);
+  }
+
+  function romanStage(tier) {
+    return ["I", "II", "III"][Math.max(0, Math.min(2, tier - 1))];
+  }
+
+  function effectIntensity() {
+    const tier = skillTier();
+    if (tier < 3) return tier;
+    const strengthened = Math.max(
+      0,
+      Math.min(
+        1,
+        (todayTokens - POKEMON_EVOLUTION_THRESHOLDS[2]) /
+          Math.max(1, POKEMON_MAX_DAILY_TOKENS - POKEMON_EVOLUTION_THRESHOLDS[2])
+      )
+    );
+    return 3 + Math.round(strengthened * 2);
+  }
+
+  function updateLevel() {
+    levelNode.textContent = romanStage(skillTier());
+    if (viewer) viewer.setEffectIntensity(effectIntensity());
+  }
+
+  function ensureViewer(nextPet) {
+    if (viewer && viewerPetId === nextPet.id) {
+      viewer.setEffectIntensity(effectIntensity());
+      return;
+    }
+    if (viewer) viewer.dispose();
+    viewer = null;
+    viewerPetId = nextPet.id;
+    avatar.innerHTML =
+      '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + nextPet.art;
+    avatar.className = "pm-avatar pet-" + nextPet.id + " is-loading";
+    mini.style.setProperty("--pet-accent", nextPet.accent);
+    const canvas = avatar.querySelector(".pokemon-3d-canvas");
+    viewer = createPokemon3D(canvas, {
+      models: [nextPet.stages[0].model],
+      boneAdjust: nextPet.stages[0].pose || null,
+      eyeMaterial: nextPet.eyeMaterial || null,
+      eyeMesh: nextPet.eyeMesh || null,
+      modelRotations: [nextPet.stages[0].rotation || null],
+      stage: 1,
+      enabled: true,
+      effectIntensity: effectIntensity(),
+      onLoading: function (loading) {
+        if (viewerPetId === nextPet.id) {
+          avatar.classList.toggle("is-loading", loading !== false);
+        }
+      },
+      onReady: function () {
+        if (viewerPetId !== nextPet.id) return;
+        avatar.classList.remove("is-loading", "model-fallback");
+        avatar.classList.add("is-3d");
+        if (latestPointer.x !== null && latestPointer.y !== null) {
+          viewer.setPointer(latestPointer.x, latestPointer.y);
+        }
+      },
+      onUnavailable: function () {
+        if (viewerPetId !== nextPet.id) return;
+        avatar.classList.remove("is-3d", "is-loading");
+        avatar.classList.add("model-fallback");
+      },
+      onError: function () {
+        if (viewerPetId !== nextPet.id) return;
+        avatar.classList.remove("is-3d", "is-loading");
+        avatar.classList.add("model-fallback");
+      },
+    });
+    if (viewer && !viewer.isCapturing()) {
+      viewer.setCaught(isCaught(nextPet.id) || viewer.isCaught(), false);
+    }
+  }
+
+  function refreshPet() {
+    pet = selectedPet();
+    nameNode.textContent = pet.name;
+    updateLevel();
+    ensureViewer(pet);
+  }
+
+  function renderSnapshot(view) {
+    if (!view) return;
+    todayTokens = Math.max(0, Number(view.today_total_tokens) || 0);
+    const speed = Number(view.output_tokens_per_second) || 0;
+    todayNode.textContent = "今日 " + compactTokenCount(todayTokens) + " tokens";
+    speedNode.textContent = compactTokenRate(speed) + " tok/s";
+    updateLevel();
+  }
+
+  function applyTheme(theme) {
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
+  }
+
+  function poke() {
+    if (!pet) return;
+    if (viewer && viewer.isCaught()) {
+      viewer.releaseBall();
+      writeCaught(pet.id, false);
+      try {
+        Events.Emit("pet-caught", { caught: false });
+      } catch (_) {}
+      return;
+    }
+    stage.classList.remove("is-poked");
+    void stage.offsetWidth;
+    stage.classList.add("is-poked");
+    if (viewer) viewer.playSkill(pet.effect, effectIntensity());
+  }
+  stage.addEventListener("click", poke);
+  stage.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      poke();
+    }
+  });
+  avatar.addEventListener("animationend", function () {
+    stage.classList.remove("is-poked");
+  });
+
+  stage.addEventListener("pointermove", function (event) {
+    if (!viewer) return;
+    const aim = petAimPoint(
+      event.clientX, event.clientY,
+      stage.getBoundingClientRect(),
+      avatar.getBoundingClientRect()
+    );
+    if (!aim) return;
+    latestPointer = aim;
+    viewer.setPointer(aim.x, aim.y);
+  });
+  stage.addEventListener("pointerleave", function () {
+    latestPointer = { x: null, y: null };
+    if (viewer) viewer.resetPointer();
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    try {
+      Events.Emit("collapse-petmini");
+    } catch (_) {}
+  });
+
+  Events.On("tokenspeed-changed", function (event) {
+    if (!event || !event.data) return;
+    renderSnapshot(asJSON(event.data));
+  });
+  Events.On("theme-changed", function (event) {
+    applyTheme(event && event.data);
+  });
+  Events.On("performance-changed", function (event) {
+    initPerformanceMode({ setting: event && event.data });
+  });
+  Events.On("pet-selected", function () {
+    refreshPet();
+  });
+  Events.On("pet-caught", function (event) {
+    const data = event && event.data;
+    const caught = data && typeof data === "object" ? !!data.caught : !!data;
+    if (viewer && !viewer.isCapturing()) viewer.setCaught(caught, false);
+  });
+  Events.On("common:WindowShow", function (event) {
+    if (event && event.sender && event.sender !== "petMini") return;
+    if (viewer) viewer.setEnabled(true);
+    refreshPet();
+    Bound.TokenSpeedGet()
+      .then(function (view) { renderSnapshot(asJSON(view)); })
+      .catch(function () {});
+  });
+  Events.On("common:WindowHide", function (event) {
+    if (event && event.sender && event.sender !== "petMini") return;
+    if (viewer) viewer.setEnabled(false);
+  });
+
+  refreshPet();
+
+  Bound.TokenSpeedGet()
+    .then(function (view) { renderSnapshot(asJSON(view)); })
+    .catch(function () {});
+
+  Bound.SettingsGet()
+    .then(function (values) {
+      const settings = asJSON(values);
+      initPerformanceMode({ setting: settings && settings.performance_mode });
+    })
+    .catch(function () {});
+</script>
+</body>
+</html>
