@@ -5,6 +5,7 @@ export const POKEMON_MAX_DAILY_TOKENS = 1000000000;
 const POKEMON_SOURCE = [
   {
     id: "bulbasaur",
+    eyeMaterial: "Eye",
     name: "妙蛙种子",
     stageNames: ["妙蛙种子", "妙蛙草", "妙蛙花"],
     stages: [
@@ -23,6 +24,7 @@ const POKEMON_SOURCE = [
   },
   {
     id: "charmander",
+    eyeMaterial: "Eye",
     name: "小火龙",
     stageNames: ["小火龙", "火恐龙", "喷火龙"],
     stages: [
@@ -48,6 +50,7 @@ const POKEMON_SOURCE = [
   },
   {
     id: "squirtle",
+    eyeMaterial: "Eye",
     name: "杰尼龟",
     stageNames: ["杰尼龟", "卡咪龟", "水箭龟"],
     stages: [
@@ -66,6 +69,7 @@ const POKEMON_SOURCE = [
   },
   {
     id: "pikachu",
+    eyeMesh: "Object_9",
     name: "皮卡丘",
     stageNames: ["皮卡丘", "雷丘", "皮卡丘·巅峰"],
     stages: [

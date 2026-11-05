@@ -182,6 +182,18 @@ function addToonOutlines(root) {
   return outlineMaterial;
 }
 
+// setPokeBallGlow 给精灵球上色发光：蓄力时是金色，吸入时是红白，成功时金闪。
+function setPokeBallGlow(entry, amount, colorHex) {
+  const value = Math.max(0, Math.min(1, Number(amount) || 0));
+  const color = new THREE.Color(colorHex === undefined ? 0xffe066 : colorHex);
+  [entry.top, entry.bottom, entry.button].forEach(function (mesh) {
+    const material = mesh && mesh.material;
+    if (!material || !material.emissive) return;
+    material.emissive.copy(color);
+    material.emissiveIntensity = value * 1.35;
+  });
+}
+
 function materialList(root) {
   const list = [];
   root.traverse(function (object) {
@@ -229,6 +241,30 @@ function findRigBones(root) {
   });
   if (!neck) neck = necks[necks.length - 1] || null;
   return { head, neck };
+}
+
+// findEyeMeshes 找出模型里的眼睛网格：眼睛通常是单独一层贴图（材质/贴图名带
+// Eye），单独一层才可能做「眼神跟随」和眨眼；找不到就当作没有眼睛层。
+function findEyeMeshes(root, settings) {
+  const hint = String(settings.eyeMaterial || "").toLowerCase().trim();
+  const meshHint = String(settings.eyeMesh || "").trim();
+  const eyes = [];
+  root.traverse(function (object) {
+    if (!object.isMesh || object.userData.qkaOutline) return;
+    if (meshHint && object.name === meshHint) {
+      eyes.push(object);
+      return;
+    }
+    if (!hint) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    const haystack = materials.map(function (material) {
+      if (!material) return "";
+      return String(material.name || "") + " " +
+        String(material.map && material.map.name ? material.map.name : "");
+    }).join(" ").toLowerCase();
+    if (haystack.indexOf(hint) >= 0) eyes.push(object);
+  });
+  return eyes;
 }
 
 function captureBone(bone) {
@@ -696,6 +732,41 @@ function createSkillEffects(scene, camera, options) {
         life: [0.16, 0.3],
       }, origin, 0, 0, 1);
     },
+    // suckIn 让粒子从宠物身上朝精灵球汇聚：动画里「被吸进去」的能量流。
+    suckIn: function (from, to, count, colorHex) {
+      const total = Math.max(1, Math.round(Number(count) || 6));
+      const profile = {
+        particles: total,
+        colors: [colorHex || 0xff5b47, 0xffffff],
+        speed: 0,
+        spread: 0,
+        forward: 0,
+        yAccel: 0,
+        size: [0.05, 0.12],
+        life: [0.18, 0.34],
+      };
+      const origin = new THREE.Vector3(from.x, from.y, from.z);
+      const target = to.clone();
+      const start = cursor;
+      emitParticles(profile, origin, 0, 0, 1);
+      // emitParticles 给的是随机方向；这里逐颗改写成「朝球心」的速度。
+      const direction = target.clone().sub(origin);
+      const length = Math.max(0.001, direction.length());
+      direction.normalize();
+      for (let i = 0; i < total; i += 1) {
+        const slot = (start + i) % VFX_MAX_PARTICLES;
+        const base = slot * 3;
+        const speed = length / profile.life[0] * (0.7 + Math.random() * 0.6);
+        velocity[base] = direction.x * speed + (Math.random() - 0.5) * 0.4;
+        velocity[base + 1] = direction.y * speed + (Math.random() - 0.5) * 0.4;
+        velocity[base + 2] = direction.z * speed + (Math.random() - 0.5) * 0.4;
+      }
+    },
+    // kick 只给一次轻微镜头冲击，用于投球出手/精灵球闭合的「手感」。
+    kick: function (power) {
+      punchMax = Math.max(punchMax, Math.max(0, Number(power) || 0.04));
+      punchAge = 0;
+    },
     // sparkle 用同一套池子做「捕获成功/放出」的星点爆发：不需要技能参数。
     sparkle: function (origin, colorHex, power) {
       const level = Math.max(1, Math.min(5, Number(power) || 2));
@@ -774,6 +845,7 @@ function createStageViewer(canvas, options) {
   let chargeGlow = 0;
   let resizeObserver = null;
   let lastDrawTime = 0;
+  let lastPointerAt = 0;
 
   // 低配模式下降采样：DPR 2 的屏幕上像素量降到 1/4，软件渲染下收益最大。
   function pixelRatioCap() {
@@ -838,6 +910,12 @@ function createStageViewer(canvas, options) {
   const ball = createPokeBall();
   ball.group.position.set(CAPTURE_REST_X, CAPTURE_REST_Y, CAPTURE_REST_Z);
   scene.add(ball.group);
+  // 蓄力时出现在画面右下角的手持精灵球：动画里「举起球准备投」的提示。
+  const readyBall = createPokeBall();
+  readyBall.group.position.set(0.68, -0.12, 2.3);
+  readyBall.group.scale.setScalar(0.5);
+  readyBall.group.visible = false;
+  scene.add(readyBall.group);
   let caught = false;
   let ballOpen = 0;
   // capture 是当前正在播放的捕获动画：
@@ -907,6 +985,24 @@ function createStageViewer(canvas, options) {
       if (!performanceLow()) addToonOutlines(root);
     }
     const rig = findRigBones(root);
+    // 眼睛是单独一层网格时，保留引用用于「眼神跟随 + 眨眼」。
+    const eyes = findEyeMeshes(root, settings).map(function (mesh) {
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      materials.forEach(function (material) {
+        if (!material) return;
+        material.transparent = true;
+        material.userData.qkaEyeOpacity = Number.isFinite(material.opacity)
+          ? material.opacity : 1;
+      });
+      return {
+        mesh,
+        base: mesh.position.clone(),
+        materials,
+        baseOpacity: materials.map(function (material) {
+          return material && Number.isFinite(material.opacity) ? material.opacity : 1;
+        }),
+      };
+    });
     // 轻微放大头部骨骼：模型本身是标准比例，放大 5%-8% 后头身比更接近
     // 动画/手办的「可爱」比例，又不会把颈部接缝拉断。
     const headBoost = Number.isFinite(Number(settings.headBoost))
@@ -941,6 +1037,7 @@ function createStageViewer(canvas, options) {
         head: captureBone(rig.head),
         neck: captureBone(rig.neck),
       },
+      eyes,
       materials,
       baseY: holder.position.y,
     };
@@ -1093,6 +1190,68 @@ function skillOrigin() {
     });
   }
 
+  // applyEyeLook 让眼睛层跟着指针做一点点位移：模型的眼睛是一整层贴图时，
+  // 旋转头骨只能「转头」，眼珠本身不会动；平移眼睛层能补上这半步，眼神就不再
+  // 是死的。位移在世界坐标里算，再换算回父节点局部坐标，适配任意模型朝向。
+  // 复用临时对象，避免每帧给 GC 添垃圾。
+  const eyeWorldOffset = new THREE.Vector3();
+  const eyeParentQuat = new THREE.Quaternion();
+  const eyeLocalOffset = new THREE.Vector3();
+  function applyEyeLook(aimX, aimY) {
+    if (!current || !current.eyes || !current.eyes.length) return;
+    eyeWorldOffset.set(
+      Math.max(-1, Math.min(1, aimX)) * 0.014,
+      -Math.max(-1, Math.min(1, aimY)) * 0.01,
+      0
+    );
+    current.eyes.forEach(function (eye) {
+      const parent = eye.mesh.parent;
+      if (!parent) return;
+      parent.getWorldQuaternion(eyeParentQuat);
+      eyeLocalOffset.copy(eyeWorldOffset).applyQuaternion(eyeParentQuat.invert());
+      eye.mesh.position.copy(eye.base).add(eyeLocalOffset);
+    });
+  }
+
+  // applyBlink 用眼睛层透明度做眨眼：眼睛单独一层时淡出会露出底色，
+  // 读起来就是「闭眼」；间隔随机 2.5-5.7 秒，避免机械感。
+  let nextBlinkAt = 0;
+  let blinkStart = -1;
+  function applyBlink(time) {
+    if (!current || !current.eyes || !current.eyes.length) return;
+    if (!nextBlinkAt) nextBlinkAt = time + 2200 + Math.random() * 2500;
+    if (blinkStart < 0 && time >= nextBlinkAt) blinkStart = time;
+    let amount = 0;
+    if (blinkStart >= 0) {
+      const progress = (time - blinkStart) / 140;
+      if (progress >= 1) {
+        blinkStart = -1;
+        nextBlinkAt = time + 2500 + Math.random() * 3200;
+      } else {
+        amount = Math.sin(Math.max(0, Math.min(1, progress)) * Math.PI);
+      }
+    }
+    current.eyes.forEach(function (eye) {
+      eye.materials.forEach(function (material, index) {
+        if (!material) return;
+        material.opacity = eye.baseOpacity[index] * (1 - amount * 0.96);
+      });
+    });
+  }
+
+  // idleGazeDrift 在鼠标停住一段时间后给一点缓慢扫视，避免宠物「定住不动」。
+  function idleGazeDrift(time) {
+    if (!lastPointerAt) return { x: 0, y: 0 };
+    const idleFor = time - lastPointerAt;
+    if (idleFor < 1800) return { x: 0, y: 0 };
+    const ramp = Math.min(1, (idleFor - 1800) / 1200);
+    return {
+      x: Math.sin(elapsed * 0.9) * 0.035 * ramp +
+        Math.sin(elapsed * 0.37 + 1.1) * 0.02 * ramp,
+      y: Math.sin(elapsed * 0.63 + 0.4) * 0.018 * ramp,
+    };
+  }
+
   // applyCharge 在蓄力期间接管姿态：下蹲、轻微抖动、自发光渐强。
   // 长按越久 glow 越足，玩家能看出「再按住就要放大招了」。
   function applyCharge(time) {
@@ -1130,6 +1289,16 @@ function skillOrigin() {
           .lerp(accent, chargeGlow * 0.28);
       }
     });
+
+    // 手持精灵球：随蓄力旋转加速、金色渐亮，高蓄力时往球上吸星星。
+    readyBall.group.rotation.y += 0.03 + chargeGlow * 0.2;
+    readyBall.group.rotation.z = Math.sin(held * 5) * 0.08 * chargeGlow;
+    readyBall.group.position.y = -0.12 + Math.sin(held * 3.4) * 0.018;
+    readyBall.group.scale.setScalar(0.5 + chargeGlow * 0.07);
+    setPokeBallGlow(readyBall, 0.1 + chargeGlow * 0.3, 0xffe9b0);
+    if (chargeGlow > 0.45 && Math.random() < 0.3) {
+      effects.trail(readyBall.group.position, 1);
+    }
   }
 
   function clearChargeGlow() {
@@ -1180,8 +1349,6 @@ function skillOrigin() {
       phase: "throw",
       start: performance.now(),
       plan: plan || {},
-      // 由远到近：起点在宠物身后的深处（z 负值），飞向镜头方向，透视会让球
-      // 从小变大，配合放大曲线就是「精灵球从远处抛过来」的观感。
       // 从画面右上方远处飞来：初段留在宠物轮廓之外，观众能看清「由小到大
       // 冲过来」，最后才落向头顶。
       startPos: new THREE.Vector3(2.2, 1.7, -4.0),
@@ -1189,12 +1356,17 @@ function skillOrigin() {
       dodgeDir: 1,
       impact: new THREE.Vector3(),
     };
+    readyBall.group.visible = false;
+    setPokeBallGlow(readyBall, 0, 0xffd54a);
     ball.group.visible = true;
     ball.group.position.copy(capture.startPos);
     ball.group.rotation.set(0, 0, 0);
     ball.group.scale.setScalar(0.55);
     ball.top.rotation.x = 0;
     ballOpen = 0;
+    setPokeBallGlow(ball, 0, 0xffffff);
+    // 出手瞬间的轻微镜头冲击，投球才有「掷出去」的重量感。
+    effects.kick(0.045);
     return true;
   }
 
@@ -1212,6 +1384,8 @@ function skillOrigin() {
         ball.group.rotation.set(0, 0, 0);
         ball.group.scale.setScalar(1);
         ball.top.rotation.x = 0;
+        // 捕获成功后的精灵球保持着金色呼吸光（动画里的「已收服」提示）。
+        setPokeBallGlow(ball, 0.55 + 0.15 * Math.sin(elapsed * 3.2), 0xffd54a);
       }
     }
     if (!capture) return;
@@ -1233,9 +1407,19 @@ function skillOrigin() {
       effects.trail(ball.group.position, performanceLow() ? 1 : 2);
       if (t >= 1) {
         capture.impact.copy(ball.group.position);
-        effects.sparkle(capture.impact.clone(), 0xffffff, 2);
-        capture.phase = capture.plan.willDodge ? "dodge" : "suck";
-        capture.dodgeDir = Math.random() < 0.5 ? -1 : 1;
+        if (capture.plan.willDodge) {
+          capture.phase = "dodge";
+          capture.dodgeDir = Math.random() < 0.5 ? -1 : 1;
+          effects.sparkle(capture.impact.clone(), 0xffffff, 1);
+        } else {
+          // 命中：球盖弹开，白光把宠物包住（动画里的「开球—吸入」起手）。
+          ball.top.rotation.x = -1.55;
+          setPokeBallGlow(ball, 1, 0xfff2e6);
+          effects.sparkle(capture.impact.clone(), 0xfff2e6, 3);
+          effects.kick(0.075);
+          capture.phase = "suck";
+          capture.suckFlash = 0;
+        }
         capture.start = time;
       }
       return;
@@ -1264,18 +1448,25 @@ function skillOrigin() {
     }
     if (capture.phase === "suck") {
       const t = Math.min(1, (time - capture.start) / CAPTURE_SUCK_MS);
-      const flashWindow = 0.42;
+      const flashWindow = 0.4;
       const ballPos = ball.group.position;
+      const petCenter = current
+        ? new THREE.Vector3(
+          current.holder.position.x,
+          current.holder.position.y + 0.55,
+          current.holder.position.z + 0.2
+        )
+        : ballPos;
       if (current) {
         if (t < flashWindow) {
-          // 动画式「一闪」：原地白闪三下，身体微抖，红白交替。
+          // 动画式「一闪」：原地白闪三下，身体微抖，同时能量朝球心汇聚。
           const local = t / flashWindow;
           const blink = Math.abs(Math.sin(local * Math.PI * 3));
           setPetFlash(blink * 0.85, 0xffffff);
           current.holder.scale.setScalar(1 + blink * 0.06);
           current.holder.rotation.z = (blink - 0.5) * 0.05;
           current.holder.rotation.y += 0.06;
-          effects.trail(new THREE.Vector3(0, 0.2, 0.45), 1);
+          effects.suckIn(petCenter, ballPos, performanceLow() ? 1 : 2, 0xfff2e6);
         } else {
           // 化成红色能量，急速缩进精灵球；位置也向球心收拢。
           const shrink = (t - flashWindow) / (1 - flashWindow);
@@ -1285,14 +1476,20 @@ function skillOrigin() {
           current.holder.position.x += (ballPos.x - current.holder.position.x) * eased;
           current.holder.position.y += (ballPos.y - current.holder.position.y) * eased;
           current.holder.rotation.y += 0.18 + eased * 0.5;
-          effects.trail(ballPos, performanceLow() ? 1 : 2);
+          effects.suckIn(petCenter, ballPos, performanceLow() ? 2 : 4, 0xff4a3d);
           current.holder.visible = shrink < 0.98;
         }
       }
       ball.group.scale.setScalar(1 + t * 0.12);
+      setPokeBallGlow(ball, 0.9 - t * 0.35, 0xff5b47);
       if (t >= 1) {
         restorePetColors();
         if (current) current.holder.visible = false;
+        // 合盖「咔哒」：白闪一下、镜头轻震，再落向地面。
+        ball.top.rotation.x = 0;
+        setPokeBallGlow(ball, 1, 0xffffff);
+        effects.sparkle(ballPos.clone(), 0xffffff, 2);
+        effects.kick(0.05);
         capture.phase = "drop";
         capture.start = time;
         capture.ballFrom = ball.group.position.clone();
@@ -1303,34 +1500,60 @@ function skillOrigin() {
       const t = Math.min(1, (time - capture.start) / CAPTURE_DROP_MS);
       const eased = t * t;
       const from = capture.ballFrom;
+      const bounce = t > 0.78 ? Math.sin((t - 0.78) / 0.22 * Math.PI) * 0.16 : 0;
       ball.group.position.set(
         from.x + (CAPTURE_REST_X - from.x) * eased,
-        from.y + (CAPTURE_REST_Y - from.y) * eased,
+        from.y + (CAPTURE_REST_Y - from.y) * eased + bounce,
         from.z + (CAPTURE_REST_Z - from.z) * eased
       );
       ball.group.rotation.z = Math.sin(t * Math.PI) * 0.12;
+      setPokeBallGlow(ball, Math.max(0, 0.6 - t * 0.6), 0xffffff);
       if (t >= 1) {
         capture.phase = "wobble";
         capture.start = time;
-        effects.sparkle(capture.impact.clone(), 0xffe066, 1);
+        capture.wobbleIndex = -1;
+        setPokeBallGlow(ball, 0.5, 0xffd54a);
       }
       return;
     }
     if (capture.phase === "wobble") {
       const t = Math.min(1, (time - capture.start) / CAPTURE_WOBBLE_MS);
-      ball.group.rotation.z = Math.sin(t * Math.PI * 6) * 0.34 * (1 - t);
+      // 三次「左右各晃一下 + 停顿」：用分段正弦，比连续摆动更像动画。
+      const cycle = t * 3;
+      const index = Math.min(2, Math.floor(cycle));
+      const local = Math.min(1, cycle - index);
       ball.group.position.set(CAPTURE_REST_X, CAPTURE_REST_Y, CAPTURE_REST_Z);
+      ball.group.rotation.z = Math.sin(local * Math.PI * 2) * 0.32;
+      if (index !== capture.wobbleIndex) {
+        capture.wobbleIndex = index;
+        effects.sparkle(new THREE.Vector3(
+          CAPTURE_REST_X, CAPTURE_REST_Y + 0.18, CAPTURE_REST_Z + 0.1
+        ), 0xffe066, 1);
+        effects.kick(0.015);
+      }
+      setPokeBallGlow(ball, 0.35 + (1 - local) * 0.6, 0xffd54a);
       if (t >= 1) {
         ball.group.rotation.z = 0;
         if (capture.plan.willCatch === false) {
-          // 命中但没抓住：球自己弹开，宠物从球里跳回来。
+          // 命中但没抓住：球盖炸开、白光四散，宠物从球里跳回来。
+          ball.top.rotation.x = -1.6;
+          ball.group.position.set(
+            CAPTURE_REST_X, CAPTURE_REST_Y + 0.2, CAPTURE_REST_Z
+          );
+          effects.sparkle(ball.group.position.clone(), 0xffffff, 3);
+          effects.kick(0.07);
           capture.phase = "release";
           capture.start = time;
-          effects.sparkle(ball.group.position.clone(), 0xffffff, 2);
           notifyCaptureResolved({ caught: false, dodged: false });
           return;
         }
         caught = true;
+        // 捕获成功：金星爆发 + 球体金光常亮（动画里的收服星点）。
+        setPokeBallGlow(ball, 1, 0xffd54a);
+        effects.sparkle(new THREE.Vector3(
+          CAPTURE_REST_X, CAPTURE_REST_Y + 0.2, CAPTURE_REST_Z
+        ), 0xffd54a, 3);
+        effects.kick(0.04);
         notifyCaptureResolved({ caught: true, dodged: false });
         capture = null;
       }
@@ -1339,8 +1562,9 @@ function skillOrigin() {
     if (capture.phase === "release") {
       const t = Math.min(1, (time - capture.start) / CAPTURE_RELEASE_MS);
       ballOpen = Math.min(1, t * 2.4);
-      ball.top.rotation.x = -ballOpen * 1.35;
+      ball.top.rotation.x = -ballOpen * 1.45;
       ball.group.scale.setScalar(1 - Math.min(0.35, t * 0.35));
+      setPokeBallGlow(ball, 1 - t, 0xffffff);
       if (current) {
         current.holder.visible = true;
         const pop = Math.min(1, t * 1.5);
@@ -1378,6 +1602,7 @@ function skillOrigin() {
       ball.group.rotation.set(0, 0, 0);
       ball.group.scale.setScalar(1);
       ball.top.rotation.x = 0;
+      setPokeBallGlow(ball, 0.6, 0xffd54a);
       if (animate) effects.sparkle(ball.group.position.clone(), 0xffe066, 1);
       return;
     }
@@ -1387,6 +1612,7 @@ function skillOrigin() {
     restorePetColors();
     ball.group.visible = false;
     ball.top.rotation.x = 0;
+    setPokeBallGlow(ball, 0, 0xffffff);
     if (current) {
       current.holder.visible = true;
       current.holder.scale.setScalar(1);
@@ -1400,6 +1626,7 @@ function skillOrigin() {
     if (!caught) return false;
     caught = false;
     ballOpen = 0;
+    setPokeBallGlow(ball, 1, 0xffffff);
     capture = { phase: "release", start: performance.now() };
     effects.sparkle(ball.group.position.clone(), 0xffffff, 3);
     if (current) {
@@ -1454,14 +1681,19 @@ function skillOrigin() {
     }
     const breathing = reduceMotion ? 0 : Math.sin(elapsed * 1.55) * 0.008;
     const idleNod = reduceMotion ? 0 : Math.sin(elapsed * 1.9 + 0.6) * 0.004;
-    const pose = gazePose(currentAimX, currentAimY);
+    const drift = idleGazeDrift(time);
+    const gazeX = THREE.MathUtils.clamp(currentAimX + drift.x, -1.2, 1.2);
+    const gazeY = THREE.MathUtils.clamp(currentAimY + drift.y, -1.2, 1.2);
+    const pose = gazePose(gazeX, gazeY);
     holder.position.y += breathing;
     // 身体只分走很小一部分角度：头颈负责「看」，身体负责「重心跟着挪」。
     holder.position.x = pose.bodyShift + bodyAimX * 0.01;
     holder.rotation.y += pose.bodyYaw + bodyAimX * 0.02;
     holder.rotation.x += pose.bodyPitch - idleNod;
     holder.rotation.z += pose.bodyRoll + currentAimX * 0.006;
-    if (currentRig) applyBoneAim(currentRig, currentAimX, currentAimY, delta);
+    if (currentRig) applyBoneAim(currentRig, gazeX, gazeY, delta);
+    applyEyeLook(gazeX, gazeY);
+    applyBlink(time);
     applySkill(time);
     applyCapture(time);
     effects.setChargeGlow(chargeGlow);
@@ -1526,6 +1758,7 @@ function skillOrigin() {
   }
 
   function setPointer(x, y) {
+    lastPointerAt = performance.now();
     aimX = THREE.MathUtils.clamp(Number(x) || 0, -1, 1);
     aimY = THREE.MathUtils.clamp(Number(y) || 0, -1, 1);
     if (reduceMotion) {
@@ -1572,6 +1805,14 @@ function skillOrigin() {
     const next = !!on;
     if (next === (chargeStart >= 0)) return;
     chargeStart = next ? performance.now() : -1;
+    readyBall.group.visible = next;
+    if (next) {
+      readyBall.group.rotation.set(0, 0, 0);
+      readyBall.group.scale.setScalar(0.5);
+      setPokeBallGlow(readyBall, 0.2, 0xffd54a);
+    } else {
+      setPokeBallGlow(readyBall, 0, 0xffd54a);
+    }
     if (!next) clearChargeGlow();
   }
 
@@ -1666,10 +1907,50 @@ function skillOrigin() {
         currentAimY,
         aimVelocityX,
         aimVelocityY,
+        eyeCount: current && current.eyes ? current.eyes.length : 0,
+        eyeOffset: current && current.eyes && current.eyes[0]
+          ? current.eyes[0].mesh.position.clone().sub(current.eyes[0].base).toArray()
+            .map(function (n) { return Math.round(n * 10000) / 10000; })
+          : [],
         caught,
         capturePhase: capture ? capture.phase : "",
         effects: effects.stats(),
         sceneStats: sceneStats(),
+        meshInfo: (function () {
+          if (!current) return [];
+          const list = [];
+          current.root.traverse(function (object) {
+            if (!object.isMesh || object.userData.qkaOutline) return;
+            const geometry = object.geometry;
+            if (geometry && geometry.computeBoundingBox) geometry.computeBoundingBox();
+            const box = geometry && geometry.boundingBox;
+            const size = box ? box.getSize(new THREE.Vector3()) : new THREE.Vector3();
+            const center = box ? box.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+            const material = Array.isArray(object.material) ? object.material[0] : object.material;
+            list.push({
+              name: object.name || "",
+              material: material ? material.name || "" : "",
+              map: material && material.map ? material.map.name || "map" : "",
+              vertices: geometry && geometry.attributes.position
+                ? geometry.attributes.position.count : 0,
+              size: size.toArray().map(function (n) { return Math.round(n * 100) / 100; }),
+              center: center.toArray().map(function (n) { return Math.round(n * 100) / 100; }),
+            });
+          });
+          return list;
+        })(),
+        nodes: (function () {
+          if (!current) return [];
+          const list = [];
+          current.root.traverse(function (object) {
+            const name = object.name || "";
+            if (!name) return;
+            if (object.isBone) list.push("bone:" + name);
+            else if (object.isMesh) list.push("mesh:" + name);
+            else if (object.isSkinnedMesh) list.push("skin:" + name);
+          });
+          return list.slice(0, 80);
+        })(),
         ball: {
           visible: ball.group.visible,
           position: ball.group.position.toArray().map(function (n) {

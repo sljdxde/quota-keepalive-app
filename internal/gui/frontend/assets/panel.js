@@ -1060,6 +1060,8 @@ function ensurePetViewer(pet) {
   petViewer = createPokemon3D(canvas, {
     models: pet.stages.map(function (entry) { return entry.model; }),
     boneAdjust: pet.stages[0].pose || null,
+    eyeMaterial: pet.eyeMaterial || null,
+    eyeMesh: pet.eyeMesh || null,
     modelRotations: pet.stages.map(function (entry) { return entry.rotation || null; }),
     stage: 1,
     enabled: activeTab === "pet",

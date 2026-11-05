@@ -9,13 +9,13 @@
 //    持续时间、颜色。档位 1-5 与「大招」在同一张表上单调递增，视觉差异由
 //    参数保证，而不是靠调几个系数碰运气。
 export const GAZE_LIMITS = {
-  headYaw: 0.62,
-  headPitch: 0.34,
+  headYaw: 0.72,
+  headPitch: 0.48,
   headRoll: 0.1,
-  neckYaw: 0.3,
-  neckPitch: 0.18,
-  bodyYaw: 0.16,
-  bodyPitch: 0.08,
+  neckYaw: 0.34,
+  neckPitch: 0.26,
+  bodyYaw: 0.2,
+  bodyPitch: 0.1,
   bodyRoll: 0.04,
   bodyShift: 0.06,
 };
