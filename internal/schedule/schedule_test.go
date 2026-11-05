@@ -16,7 +16,7 @@ func TestMissingFileReturnsDisabledDefault(t *testing.T) {
 	}
 	if cfg.Enabled || cfg.IntervalMinutes != DefaultIntervalMinutes ||
 		cfg.Action != ActionCheckin || cfg.Timezone != TimezoneLocal {
-		t.Fatalf("默认调度应停用并采用 30 分钟/签到，实际 %+v", cfg)
+		t.Fatalf("默认调度应停用并采用 2 小时/签到，实际 %+v", cfg)
 	}
 }
 
@@ -35,7 +35,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Enabled || got.IntervalMinutes != 30 || got.Action != ActionCheckin || got.LastRun == nil ||
+	if !got.Enabled || got.IntervalMinutes != DefaultIntervalMinutes || got.Action != ActionCheckin || got.LastRun == nil ||
 		got.LastRun.Succeeded != 2 {
 		t.Fatalf("往返结果不符: %+v", got)
 	}

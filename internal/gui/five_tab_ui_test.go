@@ -44,8 +44,6 @@ func TestMainUsesFiveTabProductShell(t *testing.T) {
 		`id="agent-modal"`,
 		`id="agent-modal-body"`,
 		"Bound.SettingsSchema()",
-		`id="settings-schedule-toggle"`,
-		"Bound.ScheduleSetEnabled",
 		`Events.On("open-settings"`,
 		`Events.On("open-checkin"`,
 		`function focusCheckinRequest(`,
@@ -54,7 +52,6 @@ func TestMainUsesFiveTabProductShell(t *testing.T) {
 		`function finishAuthorizedProviderLogin(`,
 		"scrollbar-width: none",
 		`values.__qka_version`,
-		`"约" + scheduleIntervalText`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("五页签主窗口缺少 %q", want)

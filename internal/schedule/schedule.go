@@ -21,8 +21,9 @@ const (
 	// FileName is the auto-run state file under the QKA config directory.
 	FileName = "schedule.json"
 	lockName = "schedule.lock"
-	// DefaultIntervalMinutes is the first-version execution interval.
-	DefaultIntervalMinutes = 30
+	// DefaultIntervalMinutes is the product default: 自动执行固定每 2 小时
+	// 跑一次签到，不再提供用户可选间隔。
+	DefaultIntervalMinutes = 120
 	// TimezoneLocal means the system task follows the current machine timezone.
 	TimezoneLocal = "local"
 )

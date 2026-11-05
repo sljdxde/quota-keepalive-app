@@ -144,7 +144,6 @@ func TestCheckinManagementHasPerTaskActionsAndQuotaHistory(t *testing.T) {
 		"background: var(--bg)",
 		`document.documentElement.dataset.theme = theme`,
 		`Events.On("theme-changed"`,
-		`Events.On("schedule-changed", renderSchedule)`,
 		"自动执行：已启用",
 	} {
 		if !strings.Contains(page, want) {

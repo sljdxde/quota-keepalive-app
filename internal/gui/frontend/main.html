@@ -2483,7 +2483,6 @@
           <span class="sep"></span>
           <span id="apps-last">—</span>
           <span class="sp"></span>
-          <button class="text action" id="schedule-settings" type="button">自动执行设置</button>
           <button class="btn" id="run-all" type="button">立即巡检</button>
         </div>
         <p class="muted" style="margin:-6px 0 10px;font-size:var(--fs-xs);line-height:1.5;">
@@ -2692,7 +2691,7 @@
         <div class="page-head">
           <div class="copy">
             <h1>设置</h1>
-            <p>外观、启动、自动执行、日志与软件更新统一由 Quota Keepalive 管理。</p>
+            <p>外观、启动、日志与软件更新统一由 Quota Keepalive 管理。</p>
           </div>
         </div>
         <div class="settings-stack">
@@ -2720,57 +2719,6 @@
                  aria-label="选择自定义背景图片" hidden>
         </section>
         <p class="settings-hint" id="settings-message" role="status" hidden></p>
-        <section class="card settings-schedule" aria-labelledby="settings-schedule-title">
-          <div class="settings-schedule-head">
-            <div class="settings-copy">
-              <b id="settings-schedule-title">自动执行</b>
-              <small>由 Quota Keepalive 自己的系统任务调用 task-run，不依赖任何 Agent。</small>
-            </div>
-            <span class="pill" id="settings-schedule-state">读取中</span>
-          </div>
-          <label class="settings-row">
-            <span class="settings-copy">
-              <b>启用内置自动执行</b>
-              <small>保存后同步安装或删除当前用户系统任务。</small>
-            </span>
-            <span class="settings-switch">
-              <input type="checkbox" id="settings-schedule-toggle" aria-label="启用内置自动执行">
-            </span>
-          </label>
-          <div class="settings-schedule-controls">
-            <label>
-              <small>执行间隔</small>
-              <span class="settings-select-shell block">
-              <select class="settings-select" id="settings-schedule-interval">
-                <option value="5">每 5 分钟</option>
-                <option value="10">每 10 分钟</option>
-                <option value="15">每 15 分钟</option>
-                <option value="30">每 30 分钟</option>
-                <option value="60">每小时</option>
-                <option value="120">每 2 小时</option>
-                <option value="360">每 6 小时</option>
-                <option value="720">每 12 小时</option>
-                <option value="1440">每天</option>
-                <option value="10080">每 7 天</option>
-              </select>
-              </span>
-            </label>
-            <label>
-              <small>执行内容</small>
-              <span class="settings-select-shell block">
-              <select class="settings-select" id="settings-schedule-action">
-                <option value="checkin">签到</option>
-              </select>
-              </span>
-            </label>
-          </div>
-          <dl class="settings-status">
-            <dt>计划</dt><dd id="settings-schedule-time">—</dd>
-            <dt>执行内容</dt><dd id="settings-schedule-action-label">—</dd>
-            <dt>下次执行</dt><dd id="settings-schedule-next">—</dd>
-            <dt>上次结果</dt><dd id="settings-schedule-last">尚未执行</dd>
-          </dl>
-        </section>
         <section class="card settings-schedule" aria-labelledby="settings-update-title">
           <div class="settings-schedule-head">
             <div class="settings-copy">
@@ -3236,7 +3184,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     },
     {
       group: "页面", icon: "设", title: "设置",
-      subtitle: "外观、启动、自动执行、日志与软件更新",
+      subtitle: "外观、启动、日志与软件更新",
       keywords: "settings preferences 设置 外观",
       run: function () { openTab("settings"); },
     },
@@ -3265,15 +3213,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       keywords: "refresh reload 刷新 重载",
       run: function () {
         document.getElementById("refresh-all").click();
-      },
-    },
-    {
-      group: "设置", icon: "时", title: "自动执行计划",
-      subtitle: "设置内置系统任务的执行间隔与内容",
-      keywords: "schedule automation interval 自动执行 定时",
-      run: function () {
-        openTab("settings");
-        revealSettingSection("settings-schedule-title");
       },
     },
     {
@@ -3522,10 +3461,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     openTab("settings");
   };
 
-  document.getElementById("schedule-settings").onclick = function () {
-    openTab("settings");
-  };
-
   const healthLabel = {
     healthy: "健康", reauth_required: "待重登",
     disabled: "已停用", no_account: "无账号",
@@ -3580,15 +3515,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const detail = document.getElementById("schedule-detail");
     try {
       const view = asJSON(await Bound.ScheduleGet());
-      updateSettingsSchedule(view);
       if (!view.enabled) {
         title.textContent = "自动执行：已关闭";
-        detail.textContent = "可在设置中启用按间隔自动巡检";
+        detail.textContent = "请重启 Quota Keepalive，启动时会自动恢复默认计划";
         return;
       }
       if (!view.installed) {
         title.textContent = "自动执行：需要修复";
-        detail.textContent = "设置已开启，但系统任务不存在；请打开设置重新启用";
+        detail.textContent = "请重启 Quota Keepalive，启动时会自动重新安装系统任务";
         return;
       }
       const last = view.last_run
@@ -3601,17 +3535,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     } catch (_) {
       title.textContent = "自动执行：读取失败";
       detail.textContent = "请刷新后重试";
-      const state = document.getElementById("settings-schedule-state");
-      state.textContent = "读取失败";
-      state.className = "pill warn";
-      document.getElementById("settings-schedule-last").textContent =
-        "无法读取系统调度状态，请刷新后重试。";
-      document.getElementById("settings-schedule-last").className = "error";
     }
   }
 
   function scheduleIntervalText(minutes) {
-    const value = Number(minutes) || 30;
+    const value = Number(minutes) || 120;
     if (value >= 1440) return "每 " + Math.round(value / 1440) + " 天";
     if (value >= 60) return "每 " + Math.round(value / 60) + " 小时";
     return "每 " + value + " 分钟";
@@ -3619,54 +3547,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function scheduleActionText(action) {
     return "签到";
-  }
-
-  function updateSettingsSchedule(view) {
-    const state = document.getElementById("settings-schedule-state");
-    const toggle = document.getElementById("settings-schedule-toggle");
-    if (!state || !toggle) return;
-
-    if (!view.enabled) {
-      state.textContent = "已关闭";
-      state.className = "pill";
-    } else if (!view.installed) {
-      state.textContent = "需要修复";
-      state.className = "pill warn";
-    } else {
-      state.textContent = "已启用";
-      state.className = "pill good";
-    }
-    toggle.checked = !!view.enabled;
-    toggle.disabled = false;
-    const interval = document.getElementById("settings-schedule-interval");
-    const action = document.getElementById("settings-schedule-action");
-    interval.value = String(view.interval_minutes || 30);
-    interval.disabled = false;
-    action.value = "checkin";
-    action.disabled = false;
-    document.getElementById("settings-schedule-time").textContent =
-      scheduleIntervalText(view.interval_minutes) + "（本机时间）";
-    document.getElementById("settings-schedule-action-label").textContent =
-      scheduleActionText(view.action);
-    document.getElementById("settings-schedule-next").textContent =
-      "约" + scheduleIntervalText(view.interval_minutes) + "（由系统调度锚定）";
-    const last = document.getElementById("settings-schedule-last");
-    last.className = view.last_error ? "error" : "";
-    last.textContent = settingsLastRunText(view.last_run);
-    if (view.last_error) last.textContent += " · " + view.last_error;
-  }
-
-  function settingsLastRunText(run) {
-    if (!run) return "尚未执行";
-    const result = {
-      success: "成功",
-      needs_attention: "需要处理",
-      failed: "失败",
-      disabled: "未启用",
-    }[run.result] || run.result;
-    const at = run.at ? run.at.replace("T", " ").slice(0, 16) : "";
-    return at + " · " + result + " · 成功 " + run.succeeded +
-      "，需处理 " + run.needs_attention;
   }
 
   function settingsMessage(text, isError) {
@@ -3860,49 +3740,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       settingsMessage("设置读取失败。", true);
     }
   }
-
-  Events.On("schedule-changed", renderSchedule);
-  document.getElementById("settings-schedule-toggle").onchange = async function () {
-    const control = this;
-    const enabled = control.checked;
-    control.disabled = true;
-    settingsMessage("");
-    const state = document.getElementById("settings-schedule-state");
-    state.textContent = enabled ? "正在安装" : "正在移除";
-    state.className = "pill";
-    try {
-      updateSettingsSchedule(asJSON(await Bound.ScheduleSetEnabled(enabled)));
-      Events.Emit("schedule-changed");
-    } catch (err) {
-      control.checked = !enabled;
-      control.disabled = false;
-      state.textContent = "操作失败";
-      state.className = "pill warn";
-      settingsMessage((err && err.message ? String(err.message) : "") ||
-        "系统调度操作失败；已保持原状态。", true);
-    }
-  };
-
-  async function saveScheduleConfig() {
-    const interval = document.getElementById("settings-schedule-interval");
-    const action = document.getElementById("settings-schedule-action");
-    const intervalValue = interval.value;
-    const actionValue = action.value;
-    interval.disabled = true;
-    action.disabled = true;
-    settingsMessage("");
-    try {
-      updateSettingsSchedule(asJSON(await Bound.ScheduleSetConfig(
-        Number(intervalValue), actionValue)));
-      Events.Emit("schedule-changed");
-    } catch (err) {
-      settingsMessage((err && err.message ? String(err.message) : "") ||
-        "自动执行设置保存失败；已恢复为当前生效值。", true);
-      await renderSchedule();
-    }
-  }
-  document.getElementById("settings-schedule-interval").onchange = saveScheduleConfig;
-  document.getElementById("settings-schedule-action").onchange = saveScheduleConfig;
 
   let updateAvailable = false;
 
@@ -5015,6 +4852,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       renderApps();
     }
     renderAccounts();
+    renderSchedule();
   });
 
   Events.On("tokenspeed-changed", function (event) {

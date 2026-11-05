@@ -211,70 +211,15 @@
     </span>
     <div>
       <h1>设置</h1>
-      <p class="subtitle">Quota Keepalive 使用同一份声明式配置管理外观、启动与自动执行。</p>
+      <p class="subtitle">Quota Keepalive 使用同一份声明式配置管理外观与启动。</p>
     </div>
   </header>
   <div class="settings-page">
     <section class="card settings-card">
       <div class="settings-head">
-        <span><b>外观与启动</b><small>跟随系统，或固定使用浅色、深色外观；启动与自动执行在同一处管理。</small></span>
+        <span><b>外观与启动</b><small>跟随系统，或固定使用浅色、深色外观。</small></span>
       </div>
       <div id="form" class="rows-list"></div>
-    </section>
-
-    <section class="card settings-card" aria-labelledby="schedule-title">
-      <div class="settings-head">
-        <span><b id="schedule-title">内置自动执行</b><small>由 Quota Keepalive 自己的系统任务调用 <code>task-run</code>，不依赖任何 Agent。</small></span>
-        <span class="sched-state" id="schedule-state">读取中</span>
-      </div>
-      <div class="rows-list">
-        <label class="row">
-          <span class="copy">
-            <b>启用内置自动执行</b>
-            <span class="desc">按下方间隔执行；开关会同步安装或删除系统任务。</span>
-          </span>
-          <span class="switch">
-            <input type="checkbox" id="schedule-toggle" aria-label="内置自动执行">
-          </span>
-        </label>
-        <label class="row">
-          <span class="copy">
-            <b>执行间隔</b>
-            <span class="desc">系统任务按本机时间重复运行。</span>
-          </span>
-          <span class="select-control-shell">
-          <select class="select-control" id="schedule-interval" aria-label="执行间隔">
-            <option value="5">每 5 分钟</option>
-            <option value="10">每 10 分钟</option>
-            <option value="15">每 15 分钟</option>
-            <option value="30">每 30 分钟</option>
-            <option value="60">每小时</option>
-            <option value="120">每 2 小时</option>
-            <option value="360">每 6 小时</option>
-            <option value="720">每 12 小时</option>
-            <option value="1440">每天</option>
-            <option value="10080">每 7 天</option>
-          </select>
-          </span>
-        </label>
-        <label class="row">
-          <span class="copy">
-            <b>执行内容</b>
-            <span class="desc">只运行选中的任务类型。</span>
-          </span>
-          <span class="select-control-shell">
-          <select class="select-control" id="schedule-action" aria-label="执行内容">
-            <option value="checkin">签到</option>
-          </select>
-          </span>
-        </label>
-      </div>
-      <dl class="settings-status" id="schedule-status">
-        <dt>计划</dt><dd id="schedule-time">每 30 分钟（本机时间）</dd>
-        <dt>执行内容</dt><dd id="schedule-action-label">签到</dd>
-        <dt>下次执行</dt><dd id="schedule-next">—</dd>
-        <dt>上次结果</dt><dd id="schedule-last">尚未执行</dd>
-      </dl>
     </section>
 
     <section class="card settings-card" aria-labelledby="update-title">
@@ -490,117 +435,6 @@
     return row;
   }
 
-  function scheduleState(view) {
-    if (!view.enabled) return { text: "已关闭", kind: "" };
-    if (!view.installed) return { text: "需要修复", kind: "warn" };
-    return { text: "已启用", kind: "on" };
-  }
-
-  function lastRunText(run) {
-    if (!run) return "尚未执行";
-    const result = {
-      success: "成功",
-      needs_attention: "需要处理",
-      failed: "失败",
-      disabled: "未启用",
-    }[run.result] || run.result;
-    const at = run.at ? run.at.replace("T", " ").slice(0, 16) : "";
-    return at + " · " + result + " · 成功 " + run.succeeded +
-      "，需处理 " + run.needs_attention;
-  }
-
-  function renderSchedule(view) {
-    const state = scheduleState(view);
-    const stateEl = document.getElementById("schedule-state");
-    stateEl.textContent = state.text;
-    stateEl.className = "sched-state" + (state.kind ? " " + state.kind : "");
-    const toggle = document.getElementById("schedule-toggle");
-    toggle.checked = !!view.enabled;
-    toggle.disabled = false;
-    document.getElementById("schedule-interval").value =
-      String(view.interval_minutes || 30);
-    document.getElementById("schedule-action").value = "checkin";
-    document.getElementById("schedule-time").textContent =
-      intervalText(view.interval_minutes) + "（本机时间）";
-    document.getElementById("schedule-action-label").textContent =
-      actionText(view.action);
-    document.getElementById("schedule-next").textContent = view.next_run || "—";
-    const last = document.getElementById("schedule-last");
-    last.textContent = lastRunText(view.last_run);
-    last.className = view.last_error ? "error" : "";
-    if (view.last_error) last.textContent += " · " + view.last_error;
-  }
-
-  function intervalText(minutes) {
-    const value = Number(minutes) || 30;
-    if (value >= 1440) return "每 " + Math.round(value / 1440) + " 天";
-    if (value >= 60) return "每 " + Math.round(value / 60) + " 小时";
-    return "每 " + value + " 分钟";
-  }
-
-  function actionText(action) {
-    return "签到";
-  }
-
-  async function saveScheduleConfig() {
-    const interval = document.getElementById("schedule-interval");
-    const action = document.getElementById("schedule-action");
-    interval.disabled = true;
-    action.disabled = true;
-    try {
-      renderSchedule(asJSON(await Bound.ScheduleSetConfig(
-        Number(interval.value), action.value)));
-      Events.Emit("schedule-changed");
-    } catch (err) {
-      const last = document.getElementById("schedule-last");
-      last.textContent = (err && err.message ? String(err.message) : "") ||
-        "自动执行设置保存失败；已恢复为当前生效值。";
-      last.className = "error";
-      await loadSchedule();
-    } finally {
-      interval.disabled = false;
-      action.disabled = false;
-    }
-  }
-
-  async function loadSchedule() {
-    try {
-      renderSchedule(asJSON(await Bound.ScheduleGet()));
-    } catch (_) {
-      const state = document.getElementById("schedule-state");
-      state.textContent = "读取失败";
-      state.className = "sched-state warn";
-      document.getElementById("schedule-last").textContent =
-        "无法读取系统调度状态，请重新打开设置窗口。";
-      document.getElementById("schedule-last").className = "error";
-    }
-  }
-
-  document.getElementById("schedule-toggle").onchange = async function () {
-    const control = this;
-    const enabled = control.checked;
-    control.disabled = true;
-    document.getElementById("schedule-state").textContent =
-      enabled ? "正在安装" : "正在移除";
-    try {
-      const view = asJSON(await Bound.ScheduleSetEnabled(enabled));
-      renderSchedule(view);
-      Events.Emit("schedule-changed");
-    } catch (err) {
-      control.checked = !enabled;
-      control.disabled = false;
-      const state = document.getElementById("schedule-state");
-      state.textContent = "操作失败";
-      state.className = "sched-state warn";
-      const last = document.getElementById("schedule-last");
-      last.textContent = (err && err.message ? String(err.message) : "") ||
-        "系统调度操作失败；已保持原状态。";
-      last.className = "error";
-    }
-  };
-  document.getElementById("schedule-interval").onchange = saveScheduleConfig;
-  document.getElementById("schedule-action").onchange = saveScheduleConfig;
-
   let updateAvailable = false;
 
   function renderUpdate(view) {
@@ -672,7 +506,6 @@
         form.appendChild(boolRow(f, values[f.key]));
       }
     });
-    await loadSchedule();
     checkUpdate();
     // 诊断区块独立初始化：失败时它自己显示「读取失败」，不拖垮设置表单。
     initDiagnostics().catch(function () {});

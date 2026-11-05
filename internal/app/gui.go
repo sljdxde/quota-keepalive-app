@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"qka/internal/applog"
 	"qka/internal/autostart"
 	"qka/internal/capabilities"
 	"qka/internal/gui"
@@ -49,7 +51,43 @@ type guiState struct {
 // GUI 装配并返回菜单栏 GUI（托盘 + 吸附面板 + 五页签主窗口）。
 // 调用方负责通过 Run() 进入事件循环。
 func (a *App) GUI() *gui.App {
+	// 自动执行不再提供用户开关：启动时幂等地把系统计划任务收敛为
+	// 「每 2 小时签到一次」。异步执行，不拖慢窗口出现。
+	go a.ensureDefaultSchedule()
 	return gui.New(a.guiDeps())
+}
+
+// ensureDefaultSchedule 把内置自动执行收敛到产品默认：始终开启、每 2 小时
+// 签到一次。失败只记日志（下次启动再收敛），绝不阻塞启动。
+func (a *App) ensureDefaultSchedule() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	exe, err := appExecutable()
+	if err != nil {
+		applog.Warnf("app", "自动执行默认计划：定位可执行文件失败：%v", err)
+		return
+	}
+	mgr := schedule.NewManager(a.cfg.ConfigDir, exe, scheduler.New(), a.now)
+	view, err := mgr.Get(ctx)
+	if err != nil {
+		applog.Warnf("app", "自动执行默认计划：读取状态失败：%v", err)
+		return
+	}
+	if view.Enabled && view.Installed &&
+		view.IntervalMinutes == 120 && view.Action == schedule.ActionCheckin {
+		return
+	}
+	if _, err := mgr.SetConfig(ctx, 120, schedule.ActionCheckin); err != nil {
+		applog.Warnf("app", "自动执行默认计划：写入间隔失败：%v", err)
+		return
+	}
+	if !view.Enabled {
+		if _, err := mgr.SetEnabled(ctx, true); err != nil {
+			applog.Warnf("app", "自动执行默认计划：安装系统任务失败：%v", err)
+			return
+		}
+	}
+	applog.Infof("app", "自动执行已按默认计划运行：每 2 小时签到一次")
 }
 
 func (a *App) guiDeps() gui.Deps {

@@ -22,11 +22,6 @@ func TestSettingsPageRendersThreeWayAppearance(t *testing.T) {
 		`Events.On("theme-changed"`,
 		`document.documentElement.dataset.theme = theme`,
 		"background: var(--bg)",
-		`id="schedule-toggle"`,
-		"Bound.ScheduleGet",
-		"Bound.ScheduleSetEnabled",
-		`Events.Emit("schedule-changed")`,
-		"上次结果",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("设置页缺少三档外观或主题响应 %q", want)
