@@ -1090,7 +1090,9 @@ function ensurePetViewer(pet) {
       avatar.classList.add("model-fallback");
     },
   });
-  if (petViewer) petViewer.setCaught(panelPetIsCaught(pet.id), false);
+  if (petViewer && !petViewer.isCapturing()) {
+    petViewer.setCaught(panelPetIsCaught(pet.id) || petViewer.isCaught(), false);
+  }
 }
 
 function renderPetAvatar(pet) {

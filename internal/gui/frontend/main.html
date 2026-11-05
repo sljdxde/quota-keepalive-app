@@ -4281,11 +4281,16 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     viewerNode.dataset.evolution = "1";
     mainPetRenderedTier = tier;
     // 已捕获的宠物保持精灵球状态；切走再切回、重开窗口都按 localStorage 恢复。
-    const caught = mainPetIsCaught(pet.id);
+    // 捕获演出期间不按 storage 覆盖 3D 状态，否则轮询渲染会把宠物「放出来」；
+    // 演出结束后 storage 与 viewer 任意一方认为已捕获，都保持精灵球状态。
+    const caught = mainPetIsCaught(pet.id) ||
+      !!(mainPetViewer && mainPetViewer.isCaught());
     const stageNode = document.getElementById("main-pet-stage");
     const wasCaught = !!(stageNode && stageNode.classList.contains("is-caught"));
     if (stageNode) stageNode.classList.toggle("is-caught", caught);
-    if (mainPetViewer) mainPetViewer.setCaught(caught, false);
+    if (mainPetViewer && !mainPetViewer.isCapturing()) {
+      mainPetViewer.setCaught(caught, false);
+    }
     const hintNode = document.querySelector(".main-pet-hint");
     if (hintNode) {
       hintNode.textContent = caught

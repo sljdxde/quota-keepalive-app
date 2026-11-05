@@ -210,6 +210,8 @@ func TestPokemonHeadTrackingUsesDampedBoneMotion(t *testing.T) {
 		`CAPTURE_WOBBLE_MS`,
 		`effects.burst(skillVfx, skillOrigin(), currentAimX, currentAimY)`,
 		`createPokeBall()`,
+		// 捕获演出期间不允许外部状态把宠物放出来（修复「收进球后自己弹出」）。
+		`if (capture) return;`,
 	)
 	if strings.Contains(source, "entry.bone.quaternion.copy(desired)") {
 		t.Fatal("头颈骨骼不应每帧硬覆盖目标姿态")
@@ -335,7 +337,8 @@ func TestMenuPanelPetUnlocksPersistAndPlay(t *testing.T) {
 		`writeStoredValue(petSelectedStorageKey`,
 		// 捕获：点击/按住蓄力投球，技能改为自动释放。
 		`PET_CAUGHT_STORAGE_KEY`,
-		`petViewer.setCaught(panelPetIsCaught(pet.id), false)`,
+		`petViewer.setCaught(panelPetIsCaught(pet.id) || petViewer.isCaught(), false)`,
+		`if (petViewer && !petViewer.isCapturing()) {`,
 		`function throwPanelBall(accuracy)`,
 		`captureOutcome({ accuracy: accuracy, tier: currentSkillTier() })`,
 		`sweepProgress(performance.now() - petPressStart)`,
@@ -541,5 +544,20 @@ func TestCheckinPanelNavigationCollapseAndHiddenScrollbars(t *testing.T) {
 	requireStrings(t, string(settings), "独立设置窗口滚动条",
 		`scrollbar-width: none`,
 		`*::-webkit-scrollbar`,
+	)
+}
+
+func TestMainWindowRenderKeepsCaptureState(t *testing.T) {
+	mainData, err := frontendFS.ReadFile("frontend/main.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	main := string(mainData)
+	// 统计轮询会周期性 renderMainPet：必须跳过捕获演出中的状态覆盖，
+	// 否则精灵球刚收下宠物就会被打回「未捕获」而自己弹出来。
+	requireStrings(t, main, "主窗口捕获状态保真",
+		`if (mainPetViewer && !mainPetViewer.isCapturing()) {`,
+		`mainPetIsCaught(pet.id) ||`,
+		`mainPetViewer.isCaught()`,
 	)
 }

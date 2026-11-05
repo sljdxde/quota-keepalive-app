@@ -1585,7 +1585,10 @@ function skillOrigin() {
   }
 
   // setCaught 由 UI 恢复持久化状态：不播动画，直接把宠物收成球 / 放出来。
+  // 捕获演出进行中一律不接受外部状态覆盖：窗口刷新/统计轮询会周期性重新渲染，
+  // 若此时按「未捕获」把宠物放出来，就会看到宠物被收进球后又自己弹出来。
   function setCaught(value, animate) {
+    if (capture) return;
     const next = !!value;
     if (next) {
       if (caught && !capture) return;
