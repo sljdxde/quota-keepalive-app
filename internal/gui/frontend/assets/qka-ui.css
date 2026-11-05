@@ -252,6 +252,32 @@
 .empty-acct b { color: var(--ink2); font-weight: 560; }
 .empty-acct .btn { min-width: 156px; }
 
+/* 账号卡里的额度行：窗口型用 4px 细条（满额转琥珀），积分型/文案型直接写 */
+.account-quota {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 2px 14px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line2);
+  border-radius: var(--r-sm);
+  background: var(--card2);
+  color: var(--ink2);
+  font-size: var(--fs-xs);
+}
+.account-quota .quota-label { flex: none; color: var(--ink3); font-weight: 560; }
+.account-quota .quota-body { flex: 1; min-width: 0; display: grid; gap: 5px; }
+.account-quota .quota-window { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.account-quota .quota-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.account-quota .quota-track {
+  flex: none; width: 84px; height: 4px; border-radius: 999px;
+  background: var(--track); overflow: hidden;
+}
+.account-quota .quota-bar { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.account-quota .quota-bar.full { background: var(--warn); }
+
 /* 弹层里复用旧的账号卡 / 模型面板：去掉外层多余描边，融进弹层区域 */
 .sec-body .account-card { box-shadow: none; background: transparent; border: 1px solid var(--line); }
 .sec-body .provider-model-panel { margin-top: 10px; }

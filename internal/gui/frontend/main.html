@@ -5560,7 +5560,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const head = document.createElement("div");
     head.className = "provider-model-head";
     const title = document.createElement("b");
-    title.textContent = "全部模型";
+    // 模型不多时折叠标题直接写名字：用户不用展开就知道「有什么模型」。
+    title.textContent = models.length && models.length <= 2
+      ? models.map(modelLabel).join("、")
+      : "全部模型";
     const count = document.createElement("small");
     count.textContent = models.length + " 个";
     const headActions = document.createElement("div");
@@ -5892,6 +5895,66 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     meta.appendChild(sw);
     top.appendChild(meta);
     box.appendChild(top);
+
+    // 额度行：账号卡不再只看 op.balance（不少供应商只在用量窗口里给额度，
+    // 比如 Qoder CN 的 "900 / 900 credits"）。异步取最近一次读数并画出来。
+    const accountKey = account.key || account.id || "";
+    const quotaLine = document.createElement("div");
+    quotaLine.className = "account-quota";
+    quotaLine.textContent = "额度 读取中…";
+    box.appendChild(quotaLine);
+    if (accountKey) {
+      (async function () {
+        try {
+          const page = asJSON(await Bound.ProvidersHistory(provider.id, accountKey, 1));
+          const reading = (page.quota || [])[0];
+          quotaLine.textContent = "";
+          const windows = ((reading && reading.windows) || []).filter(function (w) { return !w.aside; });
+          const label = document.createElement("span");
+          label.className = "quota-label";
+          label.textContent = "额度";
+          quotaLine.appendChild(label);
+          const body = document.createElement("div");
+          body.className = "quota-body";
+          quotaLine.appendChild(body);
+          if (windows.length) {
+            windows.forEach(function (w) {
+              const text = (w.name ? w.name + " · " : "") +
+                (w.display || (w.limit > 0
+                  ? Math.round(w.amount) + " / " + Math.round(w.limit) + (w.unit ? " " + w.unit : "")
+                  : (w.balance != null ? String(w.balance) : "")));
+              const hasBar = w.limit > 0 && w.amount >= 0;
+              if (!text && !hasBar) return;
+              const row = document.createElement("div");
+              row.className = "quota-window";
+              if (text) {
+                const span = document.createElement("span");
+                span.className = "quota-text";
+                span.textContent = text;
+                row.appendChild(span);
+              }
+              if (hasBar) {
+                const pct = Math.max(0, Math.min(100, (w.amount / w.limit) * 100));
+                const track = document.createElement("span");
+                track.className = "quota-track";
+                const bar = document.createElement("i");
+                bar.className = "quota-bar" + (pct >= 100 ? " full" : "");
+                bar.style.width = pct.toFixed(1) + "%";
+                track.appendChild(bar);
+                row.appendChild(track);
+              }
+              body.appendChild(row);
+            });
+          } else if (reading && reading.balance) {
+            body.textContent = reading.balance;
+          } else {
+            body.textContent = "暂无额度读数；点「刷新额度」后再看。";
+          }
+        } catch (_) {
+          quotaLine.textContent = "额度 暂不可读";
+        }
+      })();
+    }
 
     const taskList = document.createElement("div");
     taskList.className = "task-list";
