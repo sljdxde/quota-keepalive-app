@@ -1226,14 +1226,6 @@
   @keyframes main-pet-charge {
     50% { transform: translateY(4px) scale(1.025, .965); }
   }
-  .main-pet-viewer.is-ultimate { animation: main-pet-ultimate .9s cubic-bezier(.2,.9,.3,1.15); }
-  @keyframes main-pet-ultimate {
-    0% { transform: translateY(7px) scale(1.05, .93); }
-    32% { transform: translateY(-18px) scale(.93, 1.12) rotate(-2.6deg); }
-    58% { transform: translateY(5px) scale(1.07, .95) rotate(1.2deg); }
-    100% { transform: none; }
-  }
-  .main-pet-viewer.is-pouncing { animation: main-pet-pounce .42s cubic-bezier(.2,.9,.3,1.25); }
   .main-pet-shockwave {
     position: absolute;
     left: 50%;
@@ -1256,16 +1248,6 @@
     100% { opacity: 0; transform: scale(3.1); }
   }
   .main-pet-bubble.is-charging { color: var(--accent); }
-  .main-pet-bubble.is-ultimate {
-    color: var(--accent);
-    font-weight: 650;
-    box-shadow:
-      0 8px 22px rgba(0,0,0,.1),
-      inset 0 0 0 1px color-mix(in srgb, var(--pet-accent, var(--accent)) 45%, transparent);
-  }
-  @keyframes main-pet-pounce {
-    42% { transform: translateY(-8px) scale(.97,1.035) rotate(-1.4deg); }
-  }
   .main-pet-viewer.model-fallback .pokemon-3d-canvas { display: none; }
   .main-pet-bubble {
     position: absolute;
@@ -1290,6 +1272,60 @@
     color: var(--muted);
     font-size: var(--fs-2xs);
   }
+  /* 捕获蓄力条：甜点区固定在 64%-80%，对应 pet-motion 的 0.72±0.08。 */
+  .main-pet-charge {
+    position: absolute;
+    z-index: 4;
+    left: 50%;
+    bottom: 34px;
+    width: min(320px, 72%);
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease;
+  }
+  .main-pet-stage.is-charging .main-pet-charge { opacity: 1; }
+  .main-pet-charge-track {
+    position: relative;
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--fg) 12%, transparent);
+    box-shadow: inset 0 0 0 .5px var(--line);
+  }
+  .main-pet-charge-track i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--pet-accent, var(--accent)) 55%, transparent),
+      var(--pet-accent, var(--accent)));
+    transition: width .06s linear;
+  }
+  .main-pet-charge-track b {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: 64%;
+    width: 16%;
+    border-radius: 3px;
+    background: color-mix(in srgb, #fff 62%, transparent);
+    mix-blend-mode: screen;
+  }
+  .main-pet-charge-label {
+    color: var(--muted);
+    font-size: var(--fs-3xs);
+    font-weight: 650;
+    letter-spacing: .02em;
+  }
+  .main-pet-stage.is-caught { cursor: pointer; }
+  .main-pet-stage.is-caught .main-pet-hint { color: var(--accent); }
   .main-pet-metrics {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2617,11 +2653,18 @@
               </div>
             </div>
             <div class="main-pet-stage" id="main-pet-stage" tabindex="0" role="application"
-                 aria-label="宝可梦预览：移动鼠标观察，点击切换互动">
+                 aria-label="宝可梦预览：移动鼠标观察，点击投出精灵球，按住蓄力">
               <span class="main-pet-ground" aria-hidden="true"></span>
               <div class="main-pet-viewer" id="main-pet-viewer"></div>
               <div class="main-pet-bubble" id="main-pet-bubble">移动鼠标，它会转头看你</div>
-              <span class="main-pet-hint">点击互动 · 与菜单栏共用伙伴</span>
+              <div class="main-pet-charge" id="main-pet-charge" aria-hidden="true">
+                <span class="main-pet-charge-track">
+                  <i id="main-pet-charge-fill"></i>
+                  <b class="main-pet-charge-sweet"></b>
+                </span>
+                <span class="main-pet-charge-label" id="main-pet-charge-label">按住蓄力 · 甜点区松手</span>
+              </div>
+              <span class="main-pet-hint">点击投球 · 按住蓄力，甜点区松手更稳</span>
             </div>
             <div class="main-pet-metrics">
               <div class="main-pet-metric">
@@ -2917,6 +2960,14 @@
     pokemonById,
   } from "./assets/pokemon-art.js";
   import { petAimPoint } from "./assets/pet-gaze.js";
+  import {
+    CAPTURE_CHARGE_SECONDS,
+    CAPTURE_SWEET_HALF_WIDTH,
+    CAPTURE_SWEET_SPOT,
+    autoSkillDelay,
+    captureCharge,
+    captureOutcome,
+  } from "./assets/pet-motion.js";
   import { resolveAccountProviderView } from "./assets/account-view.js";
   import { createPokemon3D } from "./assets/pokemon-3d.js";
   import {
@@ -4073,9 +4124,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         } catch (_) {}
         resetMainPetGaze();
         renderMainPet();
-        document.getElementById("main-pet-bubble").textContent =
-          "轮到「" + next.name + "」啦，技能等级 " +
-          mainPetRoman(mainPetStageForToday());
+        document.getElementById("main-pet-bubble").textContent = mainPetIsCaught(next.id)
+          ? "「" + next.name + "」在精灵球里，点一下放出来"
+          : "轮到「" + next.name + "」啦，技能等级 " +
+            mainPetRoman(mainPetStageForToday());
       };
     });
   }
@@ -4138,6 +4190,22 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     ensureMainPetViewer(pet);
     viewerNode.dataset.evolution = "1";
     mainPetRenderedTier = tier;
+    // 已捕获的宠物保持精灵球状态；切走再切回、重开窗口都按 localStorage 恢复。
+    const caught = mainPetIsCaught(pet.id);
+    const stageNode = document.getElementById("main-pet-stage");
+    const wasCaught = !!(stageNode && stageNode.classList.contains("is-caught"));
+    if (stageNode) stageNode.classList.toggle("is-caught", caught);
+    if (mainPetViewer) mainPetViewer.setCaught(caught, false);
+    const hintNode = document.querySelector(".main-pet-hint");
+    if (hintNode) {
+      hintNode.textContent = caught
+        ? "点击精灵球放出伙伴"
+        : "点击投球 · 按住蓄力，甜点区松手更稳";
+    }
+    if (caught && !wasCaught) {
+      const bubbleNode = mainPetBubbleNode();
+      if (bubbleNode) bubbleNode.textContent = "捕获成功！点一下精灵球把它放出来";
+    }
     document.getElementById("main-pet-title").textContent = pet.name;
     document.getElementById("main-pet-subtitle").textContent = pet.subtitle;
     document.getElementById("main-pet-level").innerHTML =
@@ -4178,6 +4246,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       compactTokenCount(mainPetTodayTokens) + " / " +
       compactTokenCount(to) + " Token";
     renderMainPetOptions();
+    scheduleMainPetAutoSkill();
   }
 
   function updateMainPetGaze(clientX, clientY) {
@@ -4223,17 +4292,15 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     updateMainPetGaze(event.clientX, event.clientY);
   }, { passive: true });
   mainPetStageNode.addEventListener("pointerleave", resetMainPetGaze);
-  // 短按放小技能，按住超过 PET_LONG_PRESS_MS 进入蓄力并放大招。
-  const PET_LONG_PRESS_MS = 520;
-  const PET_ULTIMATE_MESSAGES = {
-    leaf: ["飞叶风暴！", "花瓣全部甩出去了。"],
-    ember: ["大字爆炎！", "尾巴的火一下子窜高了。"],
-    water: ["水炮齐射！", "龟壳里的水全打出去了。"],
-    electric: ["十万伏特！", "整只都亮起来了。"],
-  };
+  // 捕获交互：点击或按住蓄力后松手，投出精灵球；命中概率与宠物躲避都在
+  // pet-motion.captureOutcome 里算好，这里只负责时长、UI 与持久化。
+  // 每只宠物独立记住「已捕获」状态：切走再切回、重开窗口都保持原样。
+  const PET_CAUGHT_STORAGE_KEY = "qka.pet.caught.v1";
   let petPressStart = 0;
-  let petPressTimer = 0;
-  let petPressCharging = false;
+  let petChargeFrame = 0;
+  let petCharging = false;
+  // 捕获态下 pointerdown 只负责开球；同一次 pointerup 不能再补一记弱投。
+  let petSuppressThrow = false;
 
   function mainPetViewerNode() {
     return document.getElementById("main-pet-viewer");
@@ -4241,6 +4308,29 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function mainPetBubbleNode() {
     return document.getElementById("main-pet-bubble");
+  }
+
+  function readMainPetCaughtMap() {
+    try {
+      const raw = localStorage.getItem(PET_CAUGHT_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function mainPetIsCaught(petId) {
+    return !!readMainPetCaughtMap()[petId || mainPetId];
+  }
+
+  function writeMainPetCaught(petId, caught) {
+    const map = readMainPetCaughtMap();
+    if (caught) map[petId] = true;
+    else delete map[petId];
+    try {
+      localStorage.setItem(PET_CAUGHT_STORAGE_KEY, JSON.stringify(map));
+    } catch (_) {}
   }
 
   function spawnMainPetShockwave(count) {
@@ -4254,81 +4344,151 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
   }
 
-  function clearMainPetPressState() {
-    window.clearTimeout(petPressTimer);
-    petPressTimer = 0;
-    petPressCharging = false;
-    const viewer = mainPetViewerNode();
-    if (viewer) viewer.classList.remove("is-charging");
-    if (mainPetViewer) mainPetViewer.setCharging(false);
-    const bubble = mainPetBubbleNode();
-    if (bubble) bubble.classList.remove("is-charging");
-  }
-
-  function releaseMainPetSmallSkill() {
-    const pet = currentMainPet();
-    const viewer = mainPetViewerNode();
-    if (viewer) {
-      viewer.classList.remove("is-pouncing", "is-ultimate");
-      void viewer.offsetWidth;
-      viewer.classList.add("is-pouncing");
-    }
-    if (mainPetViewer) {
-      mainPetViewer.playSkill(pet.effect, mainPetEffectPower(mainPetStageForToday()));
-    }
-    const bubble = mainPetBubbleNode();
-    if (bubble) {
-      bubble.classList.remove("is-ultimate");
-      bubble.textContent = pet.messages[mainPetMessageIndex++ % pet.messages.length];
+  function mainPetChargeUi(charge) {
+    const stage = document.getElementById("main-pet-stage");
+    const fill = document.getElementById("main-pet-charge-fill");
+    const label = document.getElementById("main-pet-charge-label");
+    const value = Math.max(0, Math.min(1, Number(charge) || 0));
+    if (stage) stage.style.setProperty("--pet-charge", String(value));
+    if (fill) fill.style.width = Math.round(value * 100) + "%";
+    if (!label) return;
+    if (Math.abs(value - CAPTURE_SWEET_SPOT) <= CAPTURE_SWEET_HALF_WIDTH) {
+      label.textContent = "完美区间！松手";
+    } else if (value > CAPTURE_SWEET_SPOT + CAPTURE_SWEET_HALF_WIDTH) {
+      label.textContent = "蓄力过头了，会飘";
+    } else {
+      label.textContent = "按住蓄力 · 瞄准甜点区";
     }
   }
 
-  function releaseMainPetUltimate() {
-    const pet = currentMainPet();
-    const viewer = mainPetViewerNode();
-    if (viewer) {
-      viewer.classList.remove("is-pouncing", "is-ultimate");
-      void viewer.offsetWidth;
-      viewer.classList.add("is-ultimate");
-    }
-    if (mainPetViewer) {
-      mainPetViewer.playSkill(pet.effect, 5, { ultimate: true });
-    }
-    spawnMainPetShockwave(2);
-    const lines = PET_ULTIMATE_MESSAGES[pet.effect] ||
-      [pet.name + "放出了大招！", "这一下很用力。"];
-    const bubble = mainPetBubbleNode();
-    if (bubble) {
-      bubble.classList.add("is-ultimate");
-      bubble.textContent = lines[mainPetUltimateIndex++ % lines.length];
-    }
+  function stopPetChargeLoop() {
+    if (!petChargeFrame) return;
+    cancelAnimationFrame(petChargeFrame);
+    petChargeFrame = 0;
   }
 
-  let mainPetUltimateIndex = 0;
+  function petChargeTick() {
+    petChargeFrame = 0;
+    if (!petCharging) return;
+    const charge = captureCharge(performance.now() - petPressStart, CAPTURE_CHARGE_SECONDS);
+    mainPetChargeUi(charge);
+    if (charge >= 1) return;
+    petChargeFrame = requestAnimationFrame(petChargeTick);
+  }
 
   function beginMainPetPress() {
-    clearMainPetPressState();
+    if (mainPetIsCaught()) {
+      petSuppressThrow = true;
+      releaseMainPetBall();
+      return;
+    }
+    if (mainPetViewer && (mainPetViewer.isCapturing() || mainPetViewer.isCharging())) return;
+    stopPetChargeLoop();
     petPressStart = performance.now();
-    petPressTimer = window.setTimeout(function () {
-      petPressCharging = true;
-      const viewer = mainPetViewerNode();
-      if (viewer) viewer.classList.add("is-charging");
-      if (mainPetViewer) mainPetViewer.setCharging(true);
-      const bubble = mainPetBubbleNode();
-      if (bubble) {
-        bubble.classList.add("is-charging");
-        bubble.textContent = "蓄力中…松手放大招";
-      }
-    }, PET_LONG_PRESS_MS);
+    petCharging = true;
+    const stage = document.getElementById("main-pet-stage");
+    if (stage) stage.classList.add("is-charging");
+    const viewerNode = mainPetViewerNode();
+    if (viewerNode) viewerNode.classList.add("is-charging");
+    if (mainPetViewer) mainPetViewer.setCharging(true);
+    mainPetChargeUi(0);
+    petChargeFrame = requestAnimationFrame(petChargeTick);
+    const bubble = mainPetBubbleNode();
+    if (bubble) bubble.textContent = "按住蓄力，甜点区松手命中率最高";
   }
 
   function endMainPetPress(cancelled) {
-    const held = performance.now() - petPressStart;
-    const wasCharging = petPressCharging;
-    clearMainPetPressState();
-    if (cancelled) return;
-    if (wasCharging || held >= PET_LONG_PRESS_MS) releaseMainPetUltimate();
-    else releaseMainPetSmallSkill();
+    const held = petPressStart ? performance.now() - petPressStart : 0;
+    stopPetChargeLoop();
+    petCharging = false;
+    petPressStart = 0;
+    const stage = document.getElementById("main-pet-stage");
+    if (stage) stage.classList.remove("is-charging");
+    const viewerNode = mainPetViewerNode();
+    if (viewerNode) viewerNode.classList.remove("is-charging");
+    if (mainPetViewer) mainPetViewer.setCharging(false);
+    mainPetChargeUi(0);
+    if (cancelled || !mainPetViewer || petSuppressThrow) {
+      petSuppressThrow = false;
+      return;
+    }
+    throwMainPetBall(captureCharge(held, CAPTURE_CHARGE_SECONDS));
+  }
+
+  function throwMainPetBall(charge) {
+    if (!mainPetViewer || mainPetViewer.isCapturing() || mainPetIsCaught()) return;
+    const pet = currentMainPet();
+    const outcome = captureOutcome({ charge: charge, tier: mainPetStageForToday() });
+    const bubble = mainPetBubbleNode();
+    if (bubble) {
+      bubble.textContent = outcome.rating === "perfect"
+        ? "完美投球！"
+        : outcome.rating === "good" ? "投得不错…" : "这一球有点飘。";
+    }
+    if (outcome.rating === "perfect") spawnMainPetShockwave(1);
+    mainPetViewer.throwBall({
+      willDodge: outcome.dodged,
+      willCatch: outcome.caught,
+      onResolved: function (result) {
+        const stageNode = document.getElementById("main-pet-stage");
+        if (result.caught) {
+          writeMainPetCaught(pet.id, true);
+          if (stageNode) stageNode.classList.add("is-caught");
+          if (bubble) bubble.textContent = "捕获成功！点一下精灵球把它放出来";
+          spawnMainPetShockwave(2);
+        } else if (bubble) {
+          bubble.textContent = result.dodged
+            ? "它躲开了！再来一球"
+            : "球晃了两下弹开了…蓄到甜点区更稳";
+        }
+        scheduleMainPetAutoSkill();
+      },
+    });
+  }
+
+  function releaseMainPetBall() {
+    if (!mainPetViewer || !mainPetViewer.isCaught()) return;
+    const pet = currentMainPet();
+    mainPetViewer.releaseBall();
+    writeMainPetCaught(pet.id, false);
+    const stage = document.getElementById("main-pet-stage");
+    if (stage) stage.classList.remove("is-caught", "is-charging");
+    const bubble = mainPetBubbleNode();
+    if (bubble) bubble.textContent = pet.name + "回来了！";
+    spawnMainPetShockwave(1);
+    scheduleMainPetAutoSkill();
+  }
+
+  // 技能改为自动释放：只按档位间隔触发，鼠标点击不再放技能。
+  let mainPetAutoSkillTimer = 0;
+  function scheduleMainPetAutoSkill() {
+    if (mainPetIsCaught()) {
+      window.clearTimeout(mainPetAutoSkillTimer);
+      mainPetAutoSkillTimer = 0;
+      return;
+    }
+    if (mainPetAutoSkillTimer) return;
+    const petTab = document.getElementById("pet");
+    if (!petTab || !petTab.classList.contains("active")) return;
+    if (mainPetIsCaught() || document.visibilityState === "hidden") return;
+    mainPetAutoSkillTimer = window.setTimeout(function () {
+      mainPetAutoSkillTimer = 0;
+      if (!mainPetViewer || mainPetIsCaught()) return;
+      if (document.visibilityState === "hidden" || !petTab.classList.contains("active")) {
+        scheduleMainPetAutoSkill();
+        return;
+      }
+      if (!mainPetViewer.isCapturing() && !mainPetViewer.isCharging()) {
+        const pet = currentMainPet();
+        const power = mainPetEffectPower(mainPetStageForToday());
+        mainPetViewer.playSkill(pet.effect, power);
+        // 档位越高圈越多：DOM 冲击环与 3D 粒子一起说明「这次更强」。
+        spawnMainPetShockwave(power >= 4 ? 3 : power >= 2 ? 2 : 1);
+        const bubble = mainPetBubbleNode();
+        if (bubble) bubble.textContent = pet.messages[mainPetMessageIndex++ % pet.messages.length];
+      }
+      scheduleMainPetAutoSkill();
+    }, autoSkillDelay(mainPetStageForToday()));
   }
 
   mainPetStageNode.addEventListener("pointerdown", function (event) {
@@ -4352,16 +4512,13 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     event.preventDefault();
     endMainPetPress(false);
   });
-  document.getElementById("main-pet-viewer").addEventListener("animationend", function (event) {
-    if (event.animationName && event.animationName.indexOf("shock") >= 0) return;
-    this.classList.remove("is-pouncing", "is-ultimate");
-  });
   document.addEventListener("visibilitychange", function () {
     if (!mainPetViewer) return;
     mainPetViewer.setEnabled(
       document.visibilityState !== "hidden" &&
       document.getElementById("pet").classList.contains("active")
     );
+    scheduleMainPetAutoSkill();
   });
 
   let titleCatalog = [];

@@ -9,6 +9,14 @@ import {
 } from "./pokemon-art.js";
 import { nextGroupExpansion } from "./group-collapse.js";
 import { petAimPoint } from "./pet-gaze.js";
+import {
+  CAPTURE_CHARGE_SECONDS,
+  CAPTURE_SWEET_HALF_WIDTH,
+  CAPTURE_SWEET_SPOT,
+  autoSkillDelay,
+  captureCharge,
+  captureOutcome,
+} from "./pet-motion.js";
 import { createPokemon3D } from "./pokemon-3d.js";
 import { initPerformanceMode, PERFORMANCE_MODE_KEY } from "./perf-mode.js";
 import { populateProviderIcon, providerIconSpec } from "./provider-icons.js";
@@ -206,6 +214,7 @@ function activateTab(tabId, options) {
     resetPetGaze();
     renderPet();
   }
+  schedulePanelAutoSkill();
   if (settings.persist !== false) writeStoredValue(panelTabStorageKey, selected);
   updateFooter();
   if (settings.focus) {
@@ -997,7 +1006,7 @@ function updateFooter() {
     const tier = currentSkillTier();
     count.innerHTML = "<b>" + romanStage(tier) + "</b> / III 技能";
     run.textContent = "放技能";
-    run.setAttribute("aria-label", "让当前宝可梦伙伴释放技能");
+    run.setAttribute("aria-label", "投出精灵球或放出伙伴");
     return;
   }
   count.innerHTML = "<b>" + currentAccounts.length + "</b> 个账号";
@@ -1080,11 +1089,14 @@ function ensurePetViewer(pet) {
       avatar.classList.add("model-fallback");
     },
   });
+  if (petViewer) petViewer.setCaught(panelPetIsCaught(pet.id), false);
 }
 
 function renderPetAvatar(pet) {
   const avatar = document.getElementById("pet-avatar");
+  const stageNode = document.getElementById("pet-stage");
   ensurePetViewer(pet);
+  if (stageNode) stageNode.classList.toggle("is-caught", panelPetIsCaught(pet.id));
   avatar.dataset.renderedPet = pet.id;
   avatar.dataset.evolution = "1";
   if (latestPointer.x !== null && latestPointer.y !== null) {
@@ -1174,6 +1186,7 @@ function renderPet() {
     );
   });
   updateFooter();
+  schedulePanelAutoSkill();
   return { pet, tier, previousTier, changedTier };
 }
 
@@ -1477,15 +1490,37 @@ function spawnPetEffect(pet, x, y, rect, options) {
   }, 760 + power * 110);
 }
 
-// 长按放大招：短按仍走原来的小技能路径。
-const PANEL_LONG_PRESS_MS = 520;
-const ULTIMATE_MESSAGES = {
-  leaf: ["飞叶风暴！", "花瓣全部甩了出去。"],
-  ember: ["大字爆炎！", "尾巴的火一下窜高了。"],
-  water: ["水炮齐射！", "龟壳里的水全打了出去。"],
-  electric: ["十万伏特！", "整只都亮起来了。"],
-};
-let ultimateMessageIndex = 0;
+// 捕获交互：点击或按住蓄力后松手投出精灵球；技能改成自动释放。
+// 已捕获状态按宠物 id 存在 localStorage，和主窗口共用同一份记录。
+const PET_CAUGHT_STORAGE_KEY = "qka.pet.caught.v1";
+let petPressStart = 0;
+let petChargeFrame = 0;
+let petCharging = false;
+// 捕获态下 pointerdown 只负责开球；同一次 pointerup 不能再补一记弱投。
+let petSuppressThrow = false;
+
+function readPetCaughtMap() {
+  try {
+    const raw = localStorage.getItem(PET_CAUGHT_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function panelPetIsCaught(petId) {
+  return !!readPetCaughtMap()[petId || selectedPetId];
+}
+
+function writePanelPetCaught(petId, caught) {
+  const map = readPetCaughtMap();
+  if (caught) map[petId] = true;
+  else delete map[petId];
+  try {
+    localStorage.setItem(PET_CAUGHT_STORAGE_KEY, JSON.stringify(map));
+  } catch (_) {}
+}
 
 function spawnPanelShockwave(count) {
   const stage = document.getElementById("pet-stage");
@@ -1499,43 +1534,178 @@ function spawnPanelShockwave(count) {
   }
 }
 
-function triggerPetPlay(x, y, options) {
-  const ultimate = !!(options && options.ultimate);
-  const stage = document.getElementById("pet-stage");
-  const avatar = document.getElementById("pet-avatar");
-  const rect = stage.getBoundingClientRect();
-  const targetX = Number.isFinite(x) ? x : (latestPointer.x ?? rect.width * 0.65);
-  const targetY = Number.isFinite(y) ? y : (latestPointer.y ?? rect.height * 0.42);
-  const centerX = rect.width / 2;
-  const centerY = rect.height * 0.53;
-  const dx = Math.max(-42, Math.min(42, (targetX - centerX) * 0.3));
-  const dy = Math.max(-26, Math.min(20, (targetY - centerY) * 0.28));
-  stage.style.setProperty("--pet-dx", dx.toFixed(1) + "px");
-  stage.style.setProperty("--pet-dy", dy.toFixed(1) + "px");
-  avatar.classList.remove("pounce", "ultimate");
-  void avatar.offsetWidth;
-  avatar.classList.add(ultimate ? "ultimate" : "pounce");
-
+// 技能自动释放：随机挑一个目标点放 2D 技能层 + 3D 特效。
+function spawnPanelAutoSkill() {
   const pet = currentPet();
-  if (petViewer) {
-    petViewer.playSkill(pet.effect, ultimate ? 5 : petEffectIntensity(),
-      ultimate ? { ultimate: true } : undefined);
+  const stage = document.getElementById("pet-stage");
+  if (!stage) return;
+  const rect = stage.getBoundingClientRect();
+  const targetX = rect.width * (0.5 + (Math.random() - 0.5) * 0.46);
+  const targetY = rect.height * (0.3 + Math.random() * 0.24);
+  const avatar = document.getElementById("pet-avatar");
+  if (avatar) {
+    avatar.classList.remove("pounce", "ultimate");
+    void avatar.offsetWidth;
+    avatar.classList.add("pounce");
   }
+  const power = petEffectIntensity();
+  if (petViewer) petViewer.playSkill(pet.effect, power);
+  // 档位越高圈越多：与 3D 粒子一起把「这次更强」讲清楚。
+  spawnPanelShockwave(power >= 4 ? 3 : power >= 2 ? 2 : 1);
   const bubble = document.getElementById("pet-bubble");
   if (bubble) {
-    bubble.classList.toggle("is-ultimate", ultimate);
-    if (ultimate) {
-      const lines = ULTIMATE_MESSAGES[pet.effect] || [pet.name + "放出了大招！"];
-      bubble.textContent = lines[ultimateMessageIndex++ % lines.length];
-    } else {
-      bubble.textContent = pet.messages[petMessageIndex++ % pet.messages.length];
-    }
+    bubble.classList.remove("is-ultimate");
+    bubble.textContent = pet.messages[petMessageIndex++ % pet.messages.length];
   }
-  spawnPetEffect(pet, targetX, targetY, rect, ultimate ? { ultimate: true } : undefined);
-  if (ultimate) spawnPanelShockwave(2);
+  spawnPetEffect(pet, targetX, targetY, rect);
   stage.classList.remove("playing");
   void stage.offsetWidth;
   stage.classList.add("playing");
+}
+
+function panelChargeUi(charge) {
+  const stage = document.getElementById("pet-stage");
+  const bubble = document.getElementById("pet-bubble");
+  const value = Math.max(0, Math.min(1, Number(charge) || 0));
+  if (stage) {
+    stage.style.setProperty("--pet-charge", String(value));
+    stage.style.setProperty("--pet-charge-pct", Math.round(value * 100) + "%");
+  }
+  if (!bubble) return;
+  if (Math.abs(value - CAPTURE_SWEET_SPOT) <= CAPTURE_SWEET_HALF_WIDTH) {
+    bubble.textContent = "完美区间！松手投球";
+  } else if (value > CAPTURE_SWEET_SPOT + CAPTURE_SWEET_HALF_WIDTH) {
+    bubble.textContent = "蓄力过头，球会飘";
+  } else {
+    bubble.textContent = "蓄力 " + Math.round(value * 100) + "% · 甜美点松手";
+  }
+}
+
+function stopPanelChargeLoop() {
+  if (!petChargeFrame) return;
+  cancelAnimationFrame(petChargeFrame);
+  petChargeFrame = 0;
+}
+
+function panelChargeTick() {
+  petChargeFrame = 0;
+  if (!petCharging) return;
+  const charge = captureCharge(performance.now() - petPressStart, CAPTURE_CHARGE_SECONDS);
+  panelChargeUi(charge);
+  if (charge >= 1) return;
+  petChargeFrame = requestAnimationFrame(panelChargeTick);
+}
+
+function beginPanelPetPress() {
+  if (panelPetIsCaught()) {
+    petSuppressThrow = true;
+    releasePanelPetBall();
+    return;
+  }
+  if (petViewer && (petViewer.isCapturing() || petViewer.isCharging())) return;
+  stopPanelChargeLoop();
+  petPressStart = performance.now();
+  petCharging = true;
+  const stage = document.getElementById("pet-stage");
+  if (stage) stage.classList.add("is-charging");
+  const avatar = document.getElementById("pet-avatar");
+  if (avatar) avatar.classList.add("charge");
+  if (petViewer) petViewer.setCharging(true);
+  panelChargeUi(0);
+  petChargeFrame = requestAnimationFrame(panelChargeTick);
+}
+
+function endPanelPetPress(cancelled) {
+  const held = petPressStart ? performance.now() - petPressStart : 0;
+  stopPanelChargeLoop();
+  petCharging = false;
+  petPressStart = 0;
+  const stage = document.getElementById("pet-stage");
+  if (stage) stage.classList.remove("is-charging");
+  const avatar = document.getElementById("pet-avatar");
+  if (avatar) avatar.classList.remove("charge");
+  if (petViewer) petViewer.setCharging(false);
+  if (cancelled || !petViewer || petSuppressThrow) {
+    petSuppressThrow = false;
+    return;
+  }
+  throwPanelBall(captureCharge(held, CAPTURE_CHARGE_SECONDS));
+}
+
+function throwPanelBall(charge) {
+  if (!petViewer || petViewer.isCapturing() || panelPetIsCaught()) return;
+  const pet = currentPet();
+  const outcome = captureOutcome({ charge: charge, tier: currentSkillTier() });
+  const bubble = document.getElementById("pet-bubble");
+  if (bubble) {
+    bubble.textContent = outcome.rating === "perfect"
+      ? "完美投球！"
+      : outcome.rating === "good" ? "投得不错…" : "这一球有点飘。";
+  }
+  if (outcome.rating === "perfect") spawnPanelShockwave(1);
+  petViewer.throwBall({
+    willDodge: outcome.dodged,
+    willCatch: outcome.caught,
+    onResolved: function (result) {
+      const stageNode = document.getElementById("pet-stage");
+      if (result.caught) {
+        writePanelPetCaught(pet.id, true);
+        if (stageNode) stageNode.classList.add("is-caught");
+        if (bubble) bubble.textContent = "捕获成功！点精灵球放出伙伴";
+        spawnPanelShockwave(2);
+      } else if (bubble) {
+        bubble.textContent = result.dodged
+          ? "它躲开了！再来一球"
+          : "球晃了两下弹开了…蓄到甜点区更稳";
+      }
+      schedulePanelAutoSkill();
+    },
+  });
+}
+
+// panelPetAction 供面板顶部的按钮使用：已捕获就放出，否则按甜点区投一球。
+function panelPetAction() {
+  if (panelPetIsCaught()) {
+    releasePanelPetBall();
+    return;
+  }
+  throwPanelBall(CAPTURE_SWEET_SPOT);
+}
+
+function releasePanelPetBall() {
+  if (!petViewer || !petViewer.isCaught()) return;
+  const pet = currentPet();
+  petViewer.releaseBall();
+  writePanelPetCaught(pet.id, false);
+  const stage = document.getElementById("pet-stage");
+  if (stage) stage.classList.remove("is-caught");
+  const bubble = document.getElementById("pet-bubble");
+  if (bubble) bubble.textContent = pet.name + "回来了！";
+  spawnPanelShockwave(1);
+  schedulePanelAutoSkill();
+}
+
+let panelAutoSkillTimer = 0;
+function schedulePanelAutoSkill() {
+  if (activeTab !== "pet" || panelPetIsCaught() || document.visibilityState === "hidden") {
+    window.clearTimeout(panelAutoSkillTimer);
+    panelAutoSkillTimer = 0;
+    return;
+  }
+  if (panelAutoSkillTimer) return;
+  panelAutoSkillTimer = window.setTimeout(function () {
+    panelAutoSkillTimer = 0;
+    if (activeTab !== "pet" || panelPetIsCaught() || document.visibilityState === "hidden") {
+      schedulePanelAutoSkill();
+      return;
+    }
+    if (!petViewer || petViewer.isCapturing() || petViewer.isCharging()) {
+      schedulePanelAutoSkill();
+      return;
+    }
+    spawnPanelAutoSkill();
+    schedulePanelAutoSkill();
+  }, autoSkillDelay(currentSkillTier()));
 }
 
 const petStage = document.getElementById("pet-stage");
@@ -1560,57 +1730,13 @@ document.addEventListener("visibilitychange", function () {
   if (petViewer) {
     petViewer.setEnabled(document.visibilityState !== "hidden" && activeTab === "pet");
   }
+  schedulePanelAutoSkill();
 });
 window.addEventListener("blur", resetPetGaze);
-let petPressStart = 0;
-let petPressTimer = 0;
-let petPressCharging = false;
-let petPressPoint = null;
-
-function clearPanelPetPress() {
-  window.clearTimeout(petPressTimer);
-  petPressTimer = 0;
-  petPressCharging = false;
-  const avatar = document.getElementById("pet-avatar");
-  if (avatar) avatar.classList.remove("charge");
-  if (petViewer) petViewer.setCharging(false);
-}
-
-function beginPanelPetPress(event) {
-  clearPanelPetPress();
-  const rect = petStage.getBoundingClientRect();
-  petPressPoint = event
-    ? { x: event.clientX - rect.left, y: event.clientY - rect.top }
-    : null;
-  petPressStart = performance.now();
-  petPressTimer = window.setTimeout(function () {
-    petPressCharging = true;
-    const avatar = document.getElementById("pet-avatar");
-    if (avatar) avatar.classList.add("charge");
-    if (petViewer) petViewer.setCharging(true);
-    const bubble = document.getElementById("pet-bubble");
-    if (bubble) {
-      bubble.classList.remove("is-ultimate");
-      bubble.textContent = "蓄力中…松手放大招";
-    }
-  }, PANEL_LONG_PRESS_MS);
-}
-
-function endPanelPetPress(cancelled) {
-  const held = performance.now() - petPressStart;
-  const wasCharging = petPressCharging;
-  const point = petPressPoint;
-  clearPanelPetPress();
-  petPressPoint = null;
-  if (cancelled) return;
-  const ultimate = wasCharging || held >= PANEL_LONG_PRESS_MS;
-  triggerPetPlay(point ? point.x : undefined, point ? point.y : undefined,
-    ultimate ? { ultimate: true } : undefined);
-}
 
 petStage.addEventListener("pointerdown", function (event) {
   if (event.button !== 0) return;
-  beginPanelPetPress(event);
+  beginPanelPetPress();
 });
 petStage.addEventListener("pointerup", function (event) {
   if (event.button !== 0) return;
@@ -1622,7 +1748,7 @@ petStage.addEventListener("keydown", function (event) {
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
   if (event.repeat) return;
-  beginPanelPetPress(null);
+  beginPanelPetPress();
 });
 petStage.addEventListener("keyup", function (event) {
   if (event.key !== "Enter" && event.key !== " ") return;
@@ -1630,7 +1756,7 @@ petStage.addEventListener("keyup", function (event) {
   endPanelPetPress(false);
 });
 document.getElementById("pet-avatar").addEventListener("animationend", function () {
-  this.classList.remove("pounce", "ultimate");
+  this.classList.remove("pounce");
 });
 document.getElementById("pet-stage").addEventListener("animationend", function () {
   this.classList.remove("playing");
@@ -1671,7 +1797,7 @@ document.getElementById("refresh").addEventListener("click", function () {
     return;
   }
   if (activeTab === "pet") {
-    triggerPetPlay();
+    panelPetAction();
     return;
   }
   refresh();
@@ -1708,7 +1834,7 @@ document.getElementById("run").addEventListener("click", async function () {
     return;
   }
   if (activeTab === "pet") {
-    triggerPetPlay();
+    panelPetAction();
     return;
   }
   button.disabled = true;

@@ -1079,6 +1079,41 @@
     touch-action: none;
     transition: background .35s ease, box-shadow .35s ease;
   }
+  .pet-stage.is-caught { cursor: pointer; }
+  /* 蓄力条：宽度由 JS 的 --pet-charge-pct 驱动，甜点区固定在 64%-80%。 */
+  .pet-charge {
+    position: absolute;
+    z-index: 4;
+    left: 14%;
+    right: 14%;
+    bottom: 30px;
+    height: 5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--fg) 14%, transparent);
+    opacity: 0;
+    transition: opacity .16s ease;
+    pointer-events: none;
+  }
+  .pet-stage.is-charging .pet-charge { opacity: 1; }
+  .pet-charge i {
+    display: block;
+    width: var(--pet-charge-pct, 0%);
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--pet-accent) 55%, transparent), var(--pet-accent));
+  }
+  .pet-stage.is-charging .pet-charge::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: 64%;
+    width: 16%;
+    border-radius: 3px;
+    background: color-mix(in srgb, #fff 60%, transparent);
+    mix-blend-mode: screen;
+  }
   .pet-stage[data-pet="bulbasaur"] {
     --pet-accent: #63b978;
     background:
@@ -1894,13 +1929,14 @@
 
         <div class="pet-stage" id="pet-stage" tabindex="0" role="application"
              data-pet="bulbasaur" data-evolution="1"
-             aria-label="宝可梦伙伴舞台：移动鼠标观察视线，按回车或点击释放技能">
+             aria-label="宝可梦伙伴舞台：移动鼠标观察视线，点击或按住投出精灵球">
           <span class="pet-ground" aria-hidden="true"></span>
           <div class="pet-skill-layer" id="pet-skill-layer" aria-hidden="true"></div>
           <div class="pet-avatar" id="pet-avatar"></div>
-          <div class="pet-bubble" id="pet-bubble">点击伙伴释放技能</div>
+          <div class="pet-bubble" id="pet-bubble">点击投球 · 按住蓄力更稳</div>
           <div class="pet-particles" id="pet-particles" aria-hidden="true"></div>
-          <div class="pet-stage-caption">点击放技能 · 2 亿 / 4 亿 Token 升级技能</div>
+          <div class="pet-charge" id="pet-charge" aria-hidden="true"><i></i></div>
+          <div class="pet-stage-caption">技能自动释放 · 投球捕获后点精灵球放出</div>
         </div>
 
         <div class="pet-stats" aria-label="宝可梦技能统计">
