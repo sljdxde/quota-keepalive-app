@@ -5310,8 +5310,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         }
       };
     }
+    // 底部的次要入口只在已有账号时显示；空状态用空状态卡里的主按钮，避免同屏两个「添加账号」。
     const add = document.getElementById("agent-modal-add");
-    if (add) add.onclick = function () { openProviderLogin(provider); };
+    if (add) {
+      add.hidden = accounts.length === 0;
+      add.onclick = function () { openProviderLogin(provider); };
+    }
     const emptyAdd = document.getElementById("empty-add-account");
     if (emptyAdd) emptyAdd.onclick = function () { openProviderLogin(provider); };
   }
