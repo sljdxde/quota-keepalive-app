@@ -561,3 +561,25 @@ func TestMainWindowRenderKeepsCaptureState(t *testing.T) {
 		`mainPetViewer.isCaught()`,
 	)
 }
+
+func TestMenuBarIconSyncsWithSelectedPet(t *testing.T) {
+	mainData, err := frontendFS.ReadFile("frontend/main.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireStrings(t, string(mainData), "主窗口菜单栏宠物图标",
+		`function syncMainPetTrayIcon()`,
+		`Events.Emit("pet-selected", { pet: mainPetId })`,
+		`syncMainPetTrayIcon();`,
+	)
+
+	scriptData, err := frontendFS.ReadFile("frontend/assets/panel.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireStrings(t, string(scriptData), "面板菜单栏宠物图标",
+		`function syncPanelTrayIcon()`,
+		`Events.Emit("pet-selected", { pet: selectedPetId })`,
+		`syncPanelTrayIcon();`,
+	)
+}

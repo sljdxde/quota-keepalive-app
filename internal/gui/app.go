@@ -168,6 +168,12 @@ func New(deps Deps) *App {
 	wails.Event.On("collapse-panel", func(*application.CustomEvent) {
 		go result.hidePanel()
 	})
+	// 前端切换伙伴时同步 macOS 菜单栏图标：主窗口与菜单栏面板都会发这条事件。
+	wails.Event.On("pet-selected", func(event *application.CustomEvent) {
+		if petID := trayPetFromEventData(event.Data); petID != "" {
+			result.setTrayPet(petID)
+		}
+	})
 
 	// 测试钩子：QKA_DEBUG_SHOW=main/settings/both 时，事件循环启动后显示对应窗口（不影响正式行为）。
 	if debugShow := os.Getenv("QKA_DEBUG_SHOW"); debugShow != "" {
@@ -342,6 +348,34 @@ func (a *App) PanelToggleAt(x, y int) { a.togglePanelAtNotch(x, y) }
 
 func (a *App) onApplicationStarted(*application.ApplicationEvent) {
 	a.startedAt.Store(time.Now().UnixNano())
+}
+
+// trayPetFromEventData 从「pet-selected」事件里取出伙伴 id：前端发的是
+// { pet: "pikachu" }，个别调用方也可能直接发字符串。
+func trayPetFromEventData(data any) string {
+	switch value := data.(type) {
+	case map[string]any:
+		if pet, ok := value["pet"].(string); ok {
+			return strings.TrimSpace(pet)
+		}
+	case map[string]string:
+		return strings.TrimSpace(value["pet"])
+	case string:
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+// setTrayPet 把菜单栏图标换成当前伙伴。macOS 上模板图标会随菜单栏深浅色
+// 自动反相；Windows 仍用彩色应用图标（单色 glyph 在深色任务栏上看不清）。
+func (a *App) setTrayPet(petID string) {
+	tray := a.tray
+	if tray == nil {
+		return
+	}
+	// Wails 的 SetIcon/SetTemplateIcon 内部已经 InvokeSync 回主线程；
+	// 这里不要再套一层，避免事件处理器本身就在主线程时自锁。
+	applyTrayIconForPet(tray, goos, petID)
 }
 
 func (a *App) setDockPreference(show bool) {

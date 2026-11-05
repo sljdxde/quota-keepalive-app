@@ -1017,6 +1017,15 @@ function currentPet() {
   return pokemonById(selectedPetId) || POKEMON_CATALOG[0];
 }
 
+let panelTrayPetId = "";
+function syncPanelTrayIcon() {
+  if (panelTrayPetId === selectedPetId) return;
+  panelTrayPetId = selectedPetId;
+  try {
+    Events.Emit("pet-selected", { pet: selectedPetId });
+  } catch (_) {}
+}
+
 function currentSkillTier() {
   return evolutionStageForDailyTokens(latestTodayTokens);
 }
@@ -1118,6 +1127,7 @@ function renderPet() {
     tier !== previousTier;
 
   selectedPetId = pet.id;
+  syncPanelTrayIcon();
   const stageNode = document.getElementById("pet-stage");
   stageNode.dataset.pet = pet.id;
   stageNode.dataset.evolution = "1";
@@ -1245,6 +1255,7 @@ function selectPet(petId) {
   const pet = pokemonById(petId);
   if (!pet) return;
   selectedPetId = pet.id;
+  syncPanelTrayIcon();
   writeStoredValue(petSelectedStorageKey, selectedPetId);
   latestPointer.x = null;
   latestPointer.y = null;

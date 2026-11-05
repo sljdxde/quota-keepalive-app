@@ -26,12 +26,30 @@ func applicationIcon(size int) []byte {
 // 自动着色；Windows 等平台不认 template 语义，会把单色 glyph 原样画出来，
 // 深色任务栏上就是漆黑一片，所以必须换成彩色应用图标。
 func applyTrayIcon(tray *application.SystemTray, platform string) {
-	icon, template := trayIcon(platform)
+	applyTrayIconForPet(tray, platform, "")
+}
+
+// applyTrayIconForPet 与 applyTrayIcon 相同，但 macOS 上优先使用当前宠物的
+// 专属模板字形；没有对应宠物（或非 macOS）时退回原来的行为。
+func applyTrayIconForPet(tray *application.SystemTray, platform, petID string) {
+	icon, template := trayIconForPet(platform, petID)
 	if template {
 		tray.SetTemplateIcon(icon)
 		return
 	}
 	tray.SetIcon(icon)
+}
+
+// trayIconForPet 返回平台与宠物对应的托盘图标。macOS：宠物模板 > Q 模板；
+// 其它平台保持彩色应用图标。
+func trayIconForPet(platform, petID string) (icon []byte, template bool) {
+	if platform == "darwin" {
+		if petIcon, ok := brandicon.PetTemplate(petID); ok {
+			return petIcon, true
+		}
+		return templateIcon(), true
+	}
+	return applicationIcon(64), false
 }
 
 // trayIcon 返回平台对应的托盘图标，以及它是需要系统着色的模板图标（仅 macOS）。

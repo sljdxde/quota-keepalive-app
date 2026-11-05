@@ -16,6 +16,29 @@ var applicationMaster []byte
 //go:embed assets/menu-44.png
 var templateMaster []byte
 
+// 每只宠物一枚菜单栏模板图标：直接从 2D 宠物立绘提取 alpha 单色模板，
+// 系统按菜单栏深浅色自动反相。PNG 由 internal/brandicon/petgen 生成。
+//
+//go:embed assets/pets/bulbasaur.png
+var petBulbasaur []byte
+
+//go:embed assets/pets/charmander.png
+var petCharmander []byte
+
+//go:embed assets/pets/squirtle.png
+var petSquirtle []byte
+
+//go:embed assets/pets/pikachu.png
+var petPikachu []byte
+
+// petTemplates 是菜单栏可用的宠物模板图标；key 与前端 pokemon id 一致。
+var petTemplates = map[string][]byte{
+	"bulbasaur":  petBulbasaur,
+	"charmander": petCharmander,
+	"squirtle":   petSquirtle,
+	"pikachu":    petPikachu,
+}
+
 // Application returns the full-color application icon at the requested size.
 func Application(size int) []byte {
 	return resizePNG(applicationMaster, size)
@@ -30,6 +53,22 @@ func MasterPNG() []byte {
 // images automatically for light and dark menu bars.
 func Template() []byte {
 	return bytes.Clone(templateMaster)
+}
+
+// PetTemplate returns the menu bar template icon for one pet, or false when
+// the pet has no dedicated glyph (caller should fall back to the Q mark).
+func PetTemplate(petID string) ([]byte, bool) {
+	icon, ok := petTemplates[petID]
+	if !ok {
+		return nil, false
+	}
+	return bytes.Clone(icon), true
+}
+
+// PetTemplateIDs lists the pets with their own menu bar glyph, for tests and
+// documentation.
+func PetTemplateIDs() []string {
+	return []string{"bulbasaur", "charmander", "squirtle", "pikachu"}
 }
 
 func resizePNG(data []byte, size int) []byte {

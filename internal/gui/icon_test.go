@@ -9,6 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"qka/internal/brandicon"
 )
 
 func decode(t *testing.T, data []byte) image.Image {
@@ -85,5 +87,66 @@ func TestApplyTrayIconWritesPlatformChoice(t *testing.T) {
 	icon, template = trayIconFields(t, tray)
 	if !template || !bytes.Equal(icon, templateIcon()) {
 		t.Fatalf("macOS 应写入模板图标: template=%v len=%d", template, len(icon))
+	}
+}
+
+func TestTrayIconUsesPetTemplateOnMac(t *testing.T) {
+	icon, template := trayIconForPet("darwin", "pikachu")
+	if !template {
+		t.Error("macOS 宠物图标应为模板图标")
+	}
+	want, _ := brandicon.PetTemplate("pikachu")
+	if !bytes.Equal(icon, want) {
+		t.Error("macOS 应使用皮卡丘模板图标")
+	}
+
+	icon, template = trayIconForPet("darwin", "missingno")
+	if !template || !bytes.Equal(icon, templateIcon()) {
+		t.Error("未知宠物应退回 Q 模板图标")
+	}
+
+	icon, template = trayIconForPet("windows", "pikachu")
+	if template || !bytes.Equal(icon, applicationIcon(64)) {
+		t.Error("Windows 仍应使用彩色应用图标")
+	}
+}
+
+func TestApplyTrayIconForPetWritesTemplate(t *testing.T) {
+	app := New(Deps{})
+	tray := app.wails.SystemTray.New()
+
+	applyTrayIconForPet(tray, "darwin", "charmander")
+	icon, template := trayIconFields(t, tray)
+	want, _ := brandicon.PetTemplate("charmander")
+	if !template || !bytes.Equal(icon, want) {
+		t.Fatalf("macOS 应写入小火龙模板: template=%v", template)
+	}
+
+	// SetIcon 不会清掉 isTemplateIcon 标记，Windows 分支用一条新托盘验证。
+	tray = app.wails.SystemTray.New()
+	applyTrayIconForPet(tray, "windows", "charmander")
+	icon, template = trayIconFields(t, tray)
+	if template || !bytes.Equal(icon, applicationIcon(64)) {
+		t.Fatalf("Windows 应写入彩色图标: template=%v", template)
+	}
+}
+
+func TestTrayPetFromEventData(t *testing.T) {
+	cases := []struct {
+		name string
+		data any
+		want string
+	}{
+		{"map", map[string]any{"pet": "pikachu"}, "pikachu"},
+		{"string", "squirtle", "squirtle"},
+		{"spaces", map[string]any{"pet": "  bulbasaur  "}, "bulbasaur"},
+		{"empty", map[string]any{}, ""},
+		{"nil", nil, ""},
+		{"number", 42, ""},
+	}
+	for _, tc := range cases {
+		if got := trayPetFromEventData(tc.data); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
