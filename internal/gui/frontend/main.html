@@ -5370,12 +5370,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return n.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   }
 
-  function quotaSummary(op) {
-    const parts = [];
-    if (op.balance != null) parts.push("当前额度 " + formatQuota(op.balance));
-    return parts.join(" · ");
-  }
-
   function claimGrowth(op) {
     if (quotaStates.indexOf(op.state) === -1) return null;
     if (op.credits != null) {
@@ -5918,21 +5912,29 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           body.className = "quota-body";
           quotaLine.appendChild(body);
           if (windows.length) {
+            const multi = windows.length > 1;
             windows.forEach(function (w) {
-              const text = (w.name ? w.name + " · " : "") +
-                (w.display || (w.limit > 0
-                  ? Math.round(w.amount) + " / " + Math.round(w.limit) + (w.unit ? " " + w.unit : "")
-                  : (w.balance != null ? String(w.balance) : "")));
-              const hasBar = w.limit > 0 && w.amount >= 0;
+              // 统一语义：只说「剩余 / 总量」。amount 是已用量，
+              // 剩余 = limit - amount；供应商没给数值窗口时才退回它的原文。
+              let text = "";
+              let hasBar = false;
+              if (w.limit > 0 && w.amount >= 0) {
+                const remaining = Math.max(0, w.limit - w.amount);
+                text = "剩余 " + formatQuota(remaining) + " / 总量 " + formatQuota(w.limit) +
+                  (w.unit ? " " + w.unit : "");
+                hasBar = true;
+              } else if (w.balance != null) {
+                text = "剩余 " + formatQuota(Number(w.balance));
+              } else if (w.display) {
+                text = w.display;
+              }
               if (!text && !hasBar) return;
               const row = document.createElement("div");
               row.className = "quota-window";
-              if (text) {
-                const span = document.createElement("span");
-                span.className = "quota-text";
-                span.textContent = text;
-                row.appendChild(span);
-              }
+              const span = document.createElement("span");
+              span.className = "quota-text";
+              span.textContent = (multi && w.name ? w.name + " · " : "") + text;
+              row.appendChild(span);
               if (hasBar) {
                 const pct = Math.max(0, Math.min(100, (w.amount / w.limit) * 100));
                 const track = document.createElement("span");
@@ -5981,11 +5983,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       const growth = op ? claimGrowth(op) : null;
       if (!op || !op.state) stateText.textContent = "今日尚未执行";
       else {
+        // 额度统一在上方「额度」行展示（剩余 / 总量）；这里只说签到结果本身，
+        // 不再追加「当前额度」，避免同屏出现两套口径的第三个数字。
         stateText.textContent = growth == null
           ? (opStateLabel[op.state] || op.state)
           : "今日已领取 +" + formatQuota(growth);
-        const quota = quotaSummary(op);
-        if (quota) stateText.textContent += " · " + quota;
       }
       taskCopy.appendChild(stateText);
       if (op && op.message &&
