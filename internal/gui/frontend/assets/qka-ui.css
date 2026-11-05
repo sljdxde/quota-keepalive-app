@@ -122,6 +122,8 @@
 .btn:active { transform: translateY(1px); }
 .btn.ghost { background: transparent; color: var(--ink); border-color: var(--line-strong); }
 .btn.ghost:hover { border-color: var(--ink3); opacity: 1; }
+/* 强调主按钮：空状态 / 关键动作用品牌色填充，比黑底更醒目。 */
+.btn.accent { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 .btn.small { height: 28px; padding: 0 10px; font-size: var(--fs-sm); border-radius: 7px; }
 .btn svg { width: 15px; height: 15px; flex: none; }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
@@ -213,8 +215,7 @@
   position: absolute; inset: 0; z-index: 40;
   display: grid; place-items: center;
   background: color-mix(in srgb, var(--bg) 62%, transparent);
-  backdrop-filter: blur(3px) saturate(1.1);
-  -webkit-backdrop-filter: blur(3px) saturate(1.1);
+  /* 不加 backdrop-filter：底下的列表每 10s 重绘一次，模糊层会跟着整层闪烁 */
 }
 .modal.hidden { display: none; }
 .modal .dialog { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 16px 44px -14px rgba(0,0,0,.28); overflow: hidden; }
@@ -247,8 +248,9 @@
 .info-row { border-top: 1px solid var(--line2); padding: 12px 16px; display: grid; gap: 3px; }
 .info-row .ik { font-size: var(--fs-base); font-weight: 560; }
 .info-row .id { color: var(--ink2); font-size: var(--fs-xs); line-height: 1.55; }
-.empty-acct { display: grid; justify-items: center; gap: 4px; padding: 16px; background: var(--card); border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--ink3); font-size: var(--fs-sm); text-align: center; }
+.empty-acct { display: grid; justify-items: center; gap: 10px; padding: 18px 16px; background: var(--card); border: 1px dashed var(--line-strong); border-radius: var(--r-md); color: var(--ink3); font-size: var(--fs-sm); text-align: center; }
 .empty-acct b { color: var(--ink2); font-weight: 560; }
+.empty-acct .btn { min-width: 156px; }
 
 /* 弹层里复用旧的账号卡 / 模型面板：去掉外层多余描边，融进弹层区域 */
 .sec-body .account-card { box-shadow: none; background: transparent; border: 1px solid var(--line); }
