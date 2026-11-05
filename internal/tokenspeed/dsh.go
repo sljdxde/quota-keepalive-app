@@ -394,8 +394,8 @@ func (s *Service) ingestDSH(path string, state *dshFileState, line []byte) {
 		if json.Unmarshal(line, &ev) == nil {
 			// 会话名来自会话自身的标题事件（LLM 生成或首条消息回退），只取标题
 			// 文本，不读取提示词或响应正文。后到的 provider 标题覆盖 fallback。
-			if title := strings.TrimSpace(ev.Data.Title); title != "" {
-				s.sessionTitles[dshSessionID(path)] = title
+			if title := normalizeSessionTitle(ev.Data.Title); title != "" {
+				s.sessionTitles["dsh:"+dshSessionID(path)] = title
 			}
 		}
 		return

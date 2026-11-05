@@ -202,7 +202,15 @@ LIMIT ?`, state.lastUpdatedMS, opencodeEventLimit)
 		s.ingestZCodeMessage(id, sessionID, createdMS, updatedMS, data,
 			firstText, firstReason, nowMS)
 	}
-	return rows.Err()
+	// 先关闭消息游标再查会话元数据：连接池只有 1 条连接，游标未关时第二次
+	// Query 会一直等连接。
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	s.ingestSQLiteSessions(db, "zcode", now)
+	return nil
 }
 
 func (s *Service) ingestZCodeMessage(
@@ -305,7 +313,14 @@ LIMIT ?`, state.lastRowID, opencodeEventLimit)
 		state.lastRowID = rowID
 		s.ingestOpenCodeEvent(data, nowMS)
 	}
-	return rows.Err()
+	// 同上：先释放游标，再复用这条连接读会话元数据。
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	s.ingestSQLiteSessions(db, "opencode", now)
+	return nil
 }
 
 func (s *Service) ingestOpenCodeEvent(data []byte, nowMS int64) {
