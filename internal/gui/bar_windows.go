@@ -62,14 +62,15 @@ func shapeBarWindow(window *application.WebviewWindow) {
 
 // shapeBarWindowSide 把悬浮球窗口裁成圆；贴边态（left/right）再与半矩形求交，
 // 只保留朝向屏幕内的半圆。这样即使贴边的一侧还有另一台显示器，被藏起来的
-// 那一半也不会出现在隔壁屏上。
-func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) {
+// 那一半也不会出现在隔壁屏上。返回是否真的设置了区域（调用方据此决定
+// 是否记忆「已裁剪」状态，失败时下次要重试）。
+func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) bool {
 	if window == nil {
-		return
+		return false
 	}
 	hwnd := window.NativeWindow()
 	if hwnd == nil {
-		return
+		return false
 	}
 	width, height := window.Size()
 	if width <= 0 {
@@ -98,7 +99,7 @@ func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) {
 	)
 	if rgn == 0 {
 		applog.Warnf("gui", "创建悬浮球窗口圆形区域失败：%v", err)
-		return
+		return false
 	}
 	if dockedSide != "" {
 		// 左贴边露出窗口的右半，右贴边露出左半。先算出半矩形，再把圆形与它
@@ -114,21 +115,21 @@ func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) {
 		if halfRgn == 0 {
 			applog.Warnf("gui", "创建悬浮球贴边区域失败")
 			_, _, _ = procDeleteObject.Call(rgn)
-			return
+			return false
 		}
 		clipped, _, _ := procCreateRectRgn.Call(0, 0, 0, 0)
 		if clipped == 0 {
 			applog.Warnf("gui", "创建悬浮球裁剪区域失败")
 			_, _, _ = procDeleteObject.Call(halfRgn)
 			_, _, _ = procDeleteObject.Call(rgn)
-			return
+			return false
 		}
 		if ret, _, callErr := procCombineRgn.Call(clipped, rgn, halfRgn, rgnAnd); ret == 0 {
 			applog.Warnf("gui", "裁剪悬浮球贴边区域失败：%v", callErr)
 			_, _, _ = procDeleteObject.Call(clipped)
 			_, _, _ = procDeleteObject.Call(halfRgn)
 			_, _, _ = procDeleteObject.Call(rgn)
-			return
+			return false
 		}
 		_, _, _ = procDeleteObject.Call(halfRgn)
 		_, _, _ = procDeleteObject.Call(rgn)
@@ -139,5 +140,7 @@ func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) {
 	if ret, _, callErr := procSetWindowRgn.Call(uintptr(unsafe.Pointer(hwnd)), rgn, 1); ret == 0 {
 		applog.Warnf("gui", "设置悬浮球窗口圆形区域失败：%v", callErr)
 		_, _, _ = procDeleteObject.Call(rgn)
+		return false
 	}
+	return true
 }

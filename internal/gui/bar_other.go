@@ -15,5 +15,5 @@ func barWindowOptions(string) application.WebviewWindowOptions {
 // shapeBarWindow 在非 Windows 平台是 no-op：没有悬浮球窗口需要裁圆。
 func shapeBarWindow(*application.WebviewWindow) {}
 
-// shapeBarWindowSide 在非 Windows 平台是 no-op。
-func shapeBarWindowSide(*application.WebviewWindow, string) {}
+// shapeBarWindowSide 在非 Windows 平台是 no-op，恒返回「没设置」。
+func shapeBarWindowSide(*application.WebviewWindow, string) bool { return false }

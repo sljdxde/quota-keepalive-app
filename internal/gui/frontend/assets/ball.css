@@ -76,14 +76,10 @@ html, body {
   transition: opacity .3s ease;
   filter: drop-shadow(0 0 4px hsl(var(--ball-hue, 193) 95% 70%));
 }
-/* 生成中：光环柔和呼吸（只改发光强度，不旋转）。 */
-.ball.live .ring .bar { animation: ring-breathe 3.2s ease-in-out infinite; }
-@keyframes ring-breathe {
-  0%, 100% { filter: drop-shadow(0 0 2px hsl(var(--ball-hue, 193) 90% 65% / .55)); }
-  50% { filter: drop-shadow(0 0 5px hsl(var(--ball-hue, 193) 95% 68% / .95)); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ball.live .ring .bar { animation: none; }
+/* 生成中不做任何持续动画（呼吸/旋转/扫描都会让这块置顶小窗以 60fps
+     重绘，部分显卡驱动下会带得整个屏幕闪）：发光是静止的，随数值变化。 */
+.ball.live .ring .bar {
+  filter: drop-shadow(0 0 3px hsl(var(--ball-hue, 193) 95% 65% / .8));
 }
 .ball .core {
   position: relative;

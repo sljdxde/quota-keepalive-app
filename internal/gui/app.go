@@ -56,11 +56,16 @@ type App struct {
 	barDocked   string
 	barRestoreX int
 	barRestoreY int
-	startedAt   atomic.Int64
-	dockShow    atomic.Bool
-	failureOn   atomic.Bool
-	dockApply   func(bool)
-	quitStop    func()
+	// barShaped 记录上一次 SetWindowRgn 的尺寸与贴边侧：resize 事件反复到
+	// 达时，同形状直接跳过，避免 SetWindowRgn 被连续调用带着屏幕闪。
+	barShapedW    int
+	barShapedH    int
+	barShapedSide string
+	startedAt     atomic.Int64
+	dockShow      atomic.Bool
+	failureOn     atomic.Bool
+	dockApply     func(bool)
+	quitStop      func()
 	// barShow/barHide 控制常驻状态项（Windows 悬浮球）的显隐。默认指向真实
 	// 窗口操作；单测替换这两个字段即可验证「主窗口可见时收起、关闭后恢复」
 	// 的策略，不必创建真实 WebView2 窗口（同 dockApply 的接缝写法）。
@@ -418,12 +423,29 @@ func (a *App) barDockState() (string, int, int) {
 }
 
 // shapeBall 按当前贴边状态重裁悬浮球窗口：浮动态正圆，贴边态半圆。
+// 同尺寸同侧直接跳过——SetWindowRgn 每次调用都会强制窗口与桌面区域重绘，
+// 冗余调用在部分驱动下会表现为整屏闪动。
 func (a *App) shapeBall(bar *application.WebviewWindow) {
 	if bar == nil {
 		return
 	}
 	side, _, _ := a.barDockState()
-	shapeBarWindowSide(bar, side)
+	width, height := bar.Size()
+	a.barStateMu.Lock()
+	same := a.barShapedW == width && a.barShapedH == height && a.barShapedSide == side
+	a.barStateMu.Unlock()
+	if same {
+		return
+	}
+	if !shapeBarWindowSide(bar, side) {
+		// 没裁成（窗口还没创建/系统调用失败）：不记忆，下次事件重试。
+		return
+	}
+	a.barStateMu.Lock()
+	a.barShapedW = width
+	a.barShapedH = height
+	a.barShapedSide = side
+	a.barStateMu.Unlock()
 }
 
 // rememberBarState 更新内存中的贴边状态并写盘（原子写、失败只记日志）。
@@ -471,7 +493,9 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 		// 在用户松手的位置。
 		delta := (ballSize - ballDockSize) / 2
 		nx, ny := clampBallPosition(area, x-delta, y-delta, ballSize)
-		bar.SetSize(ballSize, ballSize)
+		if width != ballSize || height != ballSize {
+			bar.SetSize(ballSize, ballSize)
+		}
 		bar.SetPosition(nx, ny)
 		a.rememberBarState(barWindowState{X: nx, Y: ny})
 		a.shapeBall(bar)
