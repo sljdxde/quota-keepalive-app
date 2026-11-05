@@ -30,6 +30,9 @@ var frontendFS embed.FS
 type App struct {
 	wails         *application.App
 	tray          *application.SystemTray
+	trayStateMu   sync.Mutex
+	trayPet       string
+	trayCaught    bool
 	panel         *application.WebviewWindow
 	bar           *application.WebviewWindow
 	main          *application.WebviewWindow
@@ -172,6 +175,12 @@ func New(deps Deps) *App {
 	wails.Event.On("pet-selected", func(event *application.CustomEvent) {
 		if petID := trayPetFromEventData(event.Data); petID != "" {
 			result.setTrayPet(petID)
+		}
+	})
+	// 伙伴被收进精灵球/放出时，菜单栏图标也切成精灵球/伙伴剪影。
+	wails.Event.On("pet-caught", func(event *application.CustomEvent) {
+		if caught, ok := trayCaughtFromEventData(event.Data); ok {
+			result.setTrayCaught(caught)
 		}
 	})
 
@@ -366,16 +375,50 @@ func trayPetFromEventData(data any) string {
 	return ""
 }
 
-// setTrayPet 把菜单栏图标换成当前伙伴。macOS 上模板图标会随菜单栏深浅色
-// 自动反相；Windows 仍用彩色应用图标（单色 glyph 在深色任务栏上看不清）。
+// trayCaughtFromEventData 解析「pet-caught」事件里的布尔状态。
+func trayCaughtFromEventData(data any) (bool, bool) {
+	switch value := data.(type) {
+	case map[string]any:
+		if caught, ok := value["caught"].(bool); ok {
+			return caught, true
+		}
+	case map[string]bool:
+		if caught, ok := value["caught"]; ok {
+			return caught, true
+		}
+	case bool:
+		return value, true
+	}
+	return false, false
+}
+
+// setTrayPet 记录当前伙伴并刷新菜单栏图标。macOS 上模板图标会随菜单栏
+// 深浅色自动反相；Windows 仍用彩色应用图标（单色 glyph 在深色任务栏上看不清）。
 func (a *App) setTrayPet(petID string) {
+	a.trayStateMu.Lock()
+	a.trayPet = petID
+	caught := a.trayCaught
+	a.trayStateMu.Unlock()
+	a.applyTrayState(petID, caught)
+}
+
+// setTrayCaught 切换「已捕获」展示：菜单栏图标变成精灵球，放出后恢复伙伴。
+func (a *App) setTrayCaught(caught bool) {
+	a.trayStateMu.Lock()
+	a.trayCaught = caught
+	petID := a.trayPet
+	a.trayStateMu.Unlock()
+	a.applyTrayState(petID, caught)
+}
+
+func (a *App) applyTrayState(petID string, caught bool) {
 	tray := a.tray
 	if tray == nil {
 		return
 	}
 	// Wails 的 SetIcon/SetTemplateIcon 内部已经 InvokeSync 回主线程；
 	// 这里不要再套一层，避免事件处理器本身就在主线程时自锁。
-	applyTrayIconForPet(tray, goos, petID)
+	applyTrayIconForPetState(tray, goos, petID, caught)
 }
 
 func (a *App) setDockPreference(show bool) {

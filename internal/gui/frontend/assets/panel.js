@@ -1018,11 +1018,21 @@ function currentPet() {
 }
 
 let panelTrayPetId = "";
+let panelTrayCaught = null;
 function syncPanelTrayIcon() {
   if (panelTrayPetId === selectedPetId) return;
   panelTrayPetId = selectedPetId;
   try {
     Events.Emit("pet-selected", { pet: selectedPetId });
+  } catch (_) {}
+}
+
+function syncPanelTrayCaught() {
+  const caught = panelPetIsCaught(selectedPetId);
+  if (panelTrayCaught === caught) return;
+  panelTrayCaught = caught;
+  try {
+    Events.Emit("pet-caught", { caught: caught });
   } catch (_) {}
 }
 
@@ -1128,6 +1138,7 @@ function renderPet() {
 
   selectedPetId = pet.id;
   syncPanelTrayIcon();
+  syncPanelTrayCaught();
   const stageNode = document.getElementById("pet-stage");
   stageNode.dataset.pet = pet.id;
   stageNode.dataset.evolution = "1";
@@ -1256,6 +1267,7 @@ function selectPet(petId) {
   if (!pet) return;
   selectedPetId = pet.id;
   syncPanelTrayIcon();
+  syncPanelTrayCaught();
   writeStoredValue(petSelectedStorageKey, selectedPetId);
   latestPointer.x = null;
   latestPointer.y = null;
@@ -1673,6 +1685,7 @@ function throwPanelBall(accuracy) {
       const stageNode = document.getElementById("pet-stage");
       if (result.caught) {
         writePanelPetCaught(pet.id, true);
+        syncPanelTrayCaught();
         if (stageNode) stageNode.classList.add("is-caught");
         if (bubble) bubble.textContent = "捕获成功！点精灵球放出伙伴";
         spawnPanelShockwave(2);
@@ -1700,6 +1713,7 @@ function releasePanelPetBall() {
   const pet = currentPet();
   petViewer.releaseBall();
   writePanelPetCaught(pet.id, false);
+  syncPanelTrayCaught();
   const stage = document.getElementById("pet-stage");
   if (stage) stage.classList.remove("is-caught");
   const bubble = document.getElementById("pet-bubble");

@@ -151,10 +151,83 @@ func components(src *mask) []blob {
 // Usage (from the repository root):
 //
 //	go run ./internal/brandicon/petgen
+//
+// drawBall renders the Poké Ball menu bar template directly in Go (4× super
+// sampled, then box filtered) so the asset is reproducible without an SVG
+// rasterizer: black ball, transparent band, black button with a white ring.
+func drawBall() *image.RGBA {
+	const ss = 4
+	const size = 44
+	big := ss * size
+	img := image.NewRGBA(image.Rect(0, 0, big, big))
+	px := func(unit float64) float64 { return unit / 24.0 * float64(big) }
+	cx, cy := px(12), px(12)
+	r := px(9.6) * 0.94
+	for y := 0; y < big; y++ {
+		for x := 0; x < big; x++ {
+			dx, dy := float64(x)+0.5-cx, float64(y)+0.5-cy
+			if dx*dx+dy*dy > r*r {
+				continue
+			}
+			img.SetRGBA(x, y, color.RGBA{0, 0, 0, 255})
+		}
+	}
+	clearCircle := func(radius float64) {
+		for y := 0; y < big; y++ {
+			for x := 0; x < big; x++ {
+				dx, dy := float64(x)+0.5-cx, float64(y)+0.5-cy
+				if dx*dx+dy*dy <= radius*radius {
+					img.SetRGBA(x, y, color.RGBA{0, 0, 0, 0})
+				}
+			}
+		}
+	}
+	clearRect := func(y0, y1 float64) {
+		for y := int(y0); y < int(y1); y++ {
+			for x := 0; x < big; x++ {
+				img.SetRGBA(x, y, color.RGBA{0, 0, 0, 0})
+			}
+		}
+	}
+	clearRect(px(10.9), px(13.1))
+	clearCircle(px(3.8))
+	fillCircle := func(radius float64, alpha uint8) {
+		for y := 0; y < big; y++ {
+			for x := 0; x < big; x++ {
+				dx, dy := float64(x)+0.5-cx, float64(y)+0.5-cy
+				if dx*dx+dy*dy <= radius*radius {
+					img.SetRGBA(x, y, color.RGBA{0, 0, 0, alpha})
+				}
+			}
+		}
+	}
+	fillCircle(px(2.4), 255)
+	clearCircle(px(1.1))
+	// 4× box downscale.
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			var sum float64
+			for yy := 0; yy < ss; yy++ {
+				for xx := 0; xx < ss; xx++ {
+					sum += float64(img.RGBAAt(x*ss+xx, y*ss+yy).A)
+				}
+			}
+			dst.SetRGBA(x, y, color.RGBA{0, 0, 0, uint8(math.Round(sum / (ss * ss)))})
+		}
+	}
+	return dst
+}
+
 func main() {
 	spriteDir := flag.String("sprites", "internal/gui/frontend/assets/pokemon", "directory with 2D pet sprites")
 	outDir := flag.String("out", "internal/brandicon/assets/pets", "output directory for 44px template PNGs")
 	flag.Parse()
+	ballPath := filepath.Join(filepath.Dir(*outDir), "poke-ball-44.png")
+	if f, err := os.Create(ballPath); err == nil {
+		png.Encode(f, drawBall())
+		f.Close()
+	}
 	for _, name := range []string{"bulbasaur", "charmander", "squirtle", "pikachu"} {
 		img := load(filepath.Join(*spriteDir, name+".png"))
 		b := img.Bounds()

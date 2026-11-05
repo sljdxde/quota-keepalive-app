@@ -144,3 +144,45 @@ func TestPetTemplatesAreCleanMonochromeMarks(t *testing.T) {
 		t.Fatal("未知宠物不应返回模板图标")
 	}
 }
+
+func TestBallTemplateIsCleanMonochrome(t *testing.T) {
+	data := BallTemplate()
+	if len(data) == 0 {
+		t.Fatal("精灵球模板为空")
+	}
+	for _, id := range PetTemplateIDs() {
+		pet, _ := PetTemplate(id)
+		if bytes.Equal(pet, data) {
+			t.Fatalf("精灵球模板不应与宠物 %s 重复", id)
+		}
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if img.Bounds().Dx() != 44 || img.Bounds().Dy() != 44 {
+		t.Fatalf("精灵球模板尺寸 = %v，期望 44×44", img.Bounds())
+	}
+	bbox := image.Rectangle{}
+	seen := false
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA()
+			if r != g || g != b {
+				t.Fatalf("精灵球模板 (%d,%d) 不是单色", x, y)
+			}
+			if a == 0 {
+				continue
+			}
+			point := image.Rect(x, y, x+1, y+1)
+			if !seen {
+				bbox, seen = point, true
+			} else {
+				bbox = bbox.Union(point)
+			}
+		}
+	}
+	if !seen || bbox.Dx() < 30 || bbox.Dy() < 30 || bbox.Min.X < 2 || bbox.Min.Y < 2 {
+		t.Fatalf("精灵球模板字形异常: bbox=%v", bbox)
+	}
+}

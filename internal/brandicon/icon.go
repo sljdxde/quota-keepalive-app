@@ -31,6 +31,9 @@ var petSquirtle []byte
 //go:embed assets/pets/pikachu.png
 var petPikachu []byte
 
+//go:embed assets/poke-ball-44.png
+var pokeBallTemplate []byte
+
 // petTemplates 是菜单栏可用的宠物模板图标；key 与前端 pokemon id 一致。
 var petTemplates = map[string][]byte{
 	"bulbasaur":  petBulbasaur,
@@ -63,6 +66,12 @@ func PetTemplate(petID string) ([]byte, bool) {
 		return nil, false
 	}
 	return bytes.Clone(icon), true
+}
+
+// BallTemplate returns the Poké Ball menu bar template used while the current
+// pet is caught in its ball.
+func BallTemplate() []byte {
+	return bytes.Clone(pokeBallTemplate)
 }
 
 // PetTemplateIDs lists the pets with their own menu bar glyph, for tests and

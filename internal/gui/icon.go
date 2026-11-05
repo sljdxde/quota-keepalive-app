@@ -32,12 +32,29 @@ func applyTrayIcon(tray *application.SystemTray, platform string) {
 // applyTrayIconForPet 与 applyTrayIcon 相同，但 macOS 上优先使用当前宠物的
 // 专属模板字形；没有对应宠物（或非 macOS）时退回原来的行为。
 func applyTrayIconForPet(tray *application.SystemTray, platform, petID string) {
-	icon, template := trayIconForPet(platform, petID)
+	applyTrayIconForPetState(tray, platform, petID, false)
+}
+
+// applyTrayIconForPetState 在宠物「已捕获」时把 macOS 菜单栏换成精灵球模板，
+// 否则用伙伴剪影；Windows 仍保持彩色应用图标。
+func applyTrayIconForPetState(tray *application.SystemTray, platform, petID string, caught bool) {
+	icon, template := trayIconForPetState(platform, petID, caught)
 	if template {
 		tray.SetTemplateIcon(icon)
 		return
 	}
 	tray.SetIcon(icon)
+}
+
+// trayIconForPetState 返回平台/伙伴/捕获状态对应的托盘图标。
+func trayIconForPetState(platform, petID string, caught bool) (icon []byte, template bool) {
+	if platform == "darwin" {
+		if caught {
+			return brandicon.BallTemplate(), true
+		}
+		return trayIconForPet(platform, petID)
+	}
+	return applicationIcon(64), false
 }
 
 // trayIconForPet 返回平台与宠物对应的托盘图标。macOS：宠物模板 > Q 模板；

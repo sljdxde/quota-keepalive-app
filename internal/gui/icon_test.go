@@ -150,3 +150,52 @@ func TestTrayPetFromEventData(t *testing.T) {
 		}
 	}
 }
+
+func TestTrayIconUsesBallWhenCaught(t *testing.T) {
+	icon, template := trayIconForPetState("darwin", "pikachu", true)
+	if !template || !bytes.Equal(icon, brandicon.BallTemplate()) {
+		t.Error("已捕获时 macOS 菜单栏应显示精灵球模板")
+	}
+
+	icon, template = trayIconForPetState("darwin", "pikachu", false)
+	want, _ := brandicon.PetTemplate("pikachu")
+	if !template || !bytes.Equal(icon, want) {
+		t.Error("未捕获时应显示伙伴剪影")
+	}
+
+	icon, template = trayIconForPetState("windows", "pikachu", true)
+	if template || !bytes.Equal(icon, applicationIcon(64)) {
+		t.Error("Windows 不受捕获状态影响，仍用彩色应用图标")
+	}
+}
+
+func TestApplyTrayIconForPetStateWritesBall(t *testing.T) {
+	app := New(Deps{})
+	tray := app.wails.SystemTray.New()
+	applyTrayIconForPetState(tray, "darwin", "squirtle", true)
+	icon, template := trayIconFields(t, tray)
+	if !template || !bytes.Equal(icon, brandicon.BallTemplate()) {
+		t.Fatalf("已捕获应写入精灵球模板: template=%v", template)
+	}
+}
+
+func TestTrayCaughtFromEventData(t *testing.T) {
+	cases := []struct {
+		name string
+		data any
+		want bool
+		ok   bool
+	}{
+		{"true", map[string]any{"caught": true}, true, true},
+		{"false", map[string]any{"caught": false}, false, true},
+		{"bool", true, true, true},
+		{"missing", map[string]any{}, false, false},
+		{"nil", nil, false, false},
+	}
+	for _, tc := range cases {
+		got, ok := trayCaughtFromEventData(tc.data)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("%s: got (%v,%v), want (%v,%v)", tc.name, got, ok, tc.want, tc.ok)
+		}
+	}
+}

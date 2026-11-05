@@ -583,3 +583,24 @@ func TestMenuBarIconSyncsWithSelectedPet(t *testing.T) {
 		`syncPanelTrayIcon();`,
 	)
 }
+
+func TestMenuBarIconSyncsCaughtState(t *testing.T) {
+	mainData, err := frontendFS.ReadFile("frontend/main.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireStrings(t, string(mainData), "主窗口菜单栏捕获状态",
+		`function syncMainPetTrayCaught()`,
+		`Events.Emit("pet-caught", { caught: caught })`,
+		`syncMainPetTrayCaught();`,
+	)
+	scriptData, err := frontendFS.ReadFile("frontend/assets/panel.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireStrings(t, string(scriptData), "面板菜单栏捕获状态",
+		`function syncPanelTrayCaught()`,
+		`Events.Emit("pet-caught", { caught: caught })`,
+		`syncPanelTrayCaught();`,
+	)
+}

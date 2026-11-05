@@ -4343,15 +4343,26 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     renderMainPetOptions();
     scheduleMainPetAutoSkill();
     syncMainPetTrayIcon();
+    syncMainPetTrayCaught();
   }
 
-  // 只在实际切换伙伴时发一次事件，避免统计轮询反复重设菜单栏图标。
+  // 只在实际切换伙伴 / 捕获状态变化时发事件，避免统计轮询反复重设菜单栏图标。
   let mainPetTrayId = "";
+  let mainPetTrayCaught = null;
   function syncMainPetTrayIcon() {
     if (mainPetTrayId === mainPetId) return;
     mainPetTrayId = mainPetId;
     try {
       Events.Emit("pet-selected", { pet: mainPetId });
+    } catch (_) {}
+  }
+
+  function syncMainPetTrayCaught() {
+    const caught = mainPetIsCaught();
+    if (mainPetTrayCaught === caught) return;
+    mainPetTrayCaught = caught;
+    try {
+      Events.Emit("pet-caught", { caught: caught });
     } catch (_) {}
   }
 
@@ -4549,6 +4560,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         const stageNode = document.getElementById("main-pet-stage");
         if (result.caught) {
           writeMainPetCaught(pet.id, true);
+          syncMainPetTrayCaught();
           if (stageNode) stageNode.classList.add("is-caught");
           if (bubble) bubble.textContent = "捕获成功！点一下精灵球把它放出来";
           spawnMainPetShockwave(2);
@@ -4567,6 +4579,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const pet = currentMainPet();
     mainPetViewer.releaseBall();
     writeMainPetCaught(pet.id, false);
+    syncMainPetTrayCaught();
     const stage = document.getElementById("main-pet-stage");
     if (stage) stage.classList.remove("is-caught", "is-charging");
     const bubble = mainPetBubbleNode();
