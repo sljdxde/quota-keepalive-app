@@ -5929,7 +5929,15 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           !(growth != null && /^今天?已领取/.test(op.message.trim()))) {
         const hint = document.createElement("div");
         hint.className = "task-hint";
-        hint.textContent = op.message;
+        if (op.state === "inactive") {
+          // 插件的原始说明是一段英文实现细节（设备身份 / runtime-info），
+          // 用户只需要「今天没有可领的活动」这一个事实；原文收进悬停提示。
+          hint.textContent = "供应商今天没有可领取的签到活动，明天会自动再试；" +
+            "若其官方客户端显示今日额度，请在那里领取。";
+          hint.title = op.message;
+        } else {
+          hint.textContent = op.message;
+        }
         taskCopy.appendChild(hint);
       }
       row.appendChild(taskCopy);
@@ -5956,7 +5964,13 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       actions.className = "task-actions";
       const trigger = document.createElement("button");
       trigger.className = "primary";
-      trigger.textContent = terminal ? "今日已完成" : "立即签到";
+      // 没有可领活动（inactive/ineligible）不是"完成"：按钮文案照实说，
+      // 避免用户把「今天没活动」读成签到失败或已到账。
+      trigger.textContent = terminal
+        ? (op && (op.state === "inactive" || op.state === "ineligible")
+          ? "今日无需签到"
+          : "今日已完成")
+        : "立即签到";
       trigger.disabled = !account.enabled || terminal;
       trigger.onclick = async function () {
         trigger.disabled = true;
