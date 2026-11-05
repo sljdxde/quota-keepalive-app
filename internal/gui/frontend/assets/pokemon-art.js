@@ -70,7 +70,10 @@ const POKEMON_SOURCE = [
     stageNames: ["皮卡丘", "雷丘", "皮卡丘·巅峰"],
     stages: [
       { name: "皮卡丘", sprite: "pikachu.png", model: "./assets/pokemon3d/25.glb",
-        rotation: [-Math.PI / 2, 0, 0] },
+        rotation: [-Math.PI / 2, 0, 0],
+        // 模型绑定姿势的头部略微上仰，正视时看起来「总在看天」。给头骨一个
+        // 约 11° 的下压作为默认平视基准；鼠标跟随仍以它为基准摆动。
+        pose: { Head: [0.2, 0, 0] } },
       { name: "雷丘", sprite: "raichu.png", model: "./assets/pokemon3d/26.glb" },
       { name: "皮卡丘·巅峰", sprite: "pikachu.png", model: "./assets/pokemon3d/25.glb",
         rotation: [-Math.PI / 2, 0, 0] },

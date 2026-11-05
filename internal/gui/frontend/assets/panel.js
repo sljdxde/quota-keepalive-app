@@ -10,12 +10,11 @@ import {
 import { nextGroupExpansion } from "./group-collapse.js";
 import { petAimPoint } from "./pet-gaze.js";
 import {
-  CAPTURE_CHARGE_SECONDS,
-  CAPTURE_SWEET_HALF_WIDTH,
-  CAPTURE_SWEET_SPOT,
+  CAPTURE_SWEEP,
   autoSkillDelay,
-  captureCharge,
   captureOutcome,
+  sweepProgress,
+  timingAccuracy,
 } from "./pet-motion.js";
 import { createPokemon3D } from "./pokemon-3d.js";
 import { initPerformanceMode, PERFORMANCE_MODE_KEY } from "./perf-mode.js";
@@ -1563,21 +1562,30 @@ function spawnPanelAutoSkill() {
   stage.classList.add("playing");
 }
 
-function panelChargeUi(charge) {
+function panelChargeUi(sweep) {
   const stage = document.getElementById("pet-stage");
+  const gauge = document.getElementById("pet-gauge");
+  const fill = document.getElementById("pet-charge-fill");
+  const needle = document.getElementById("pet-charge-needle");
   const bubble = document.getElementById("pet-bubble");
-  const value = Math.max(0, Math.min(1, Number(charge) || 0));
+  const position = Math.max(0, Math.min(1, Number(sweep.position) || 0));
+  const perfect = Math.abs(position - CAPTURE_SWEEP.perfectCenter) <=
+    CAPTURE_SWEEP.perfectHalfWidth;
+  const percent = position * 100;
   if (stage) {
-    stage.style.setProperty("--pet-charge", String(value));
-    stage.style.setProperty("--pet-charge-pct", Math.round(value * 100) + "%");
+    stage.style.setProperty("--pet-charge", String(position));
+    stage.style.setProperty("--pet-charge-pct", percent.toFixed(1) + "%");
   }
+  if (fill) fill.style.width = percent.toFixed(1) + "%";
+  if (needle) needle.style.left = percent.toFixed(1) + "%";
+  if (gauge) gauge.classList.toggle("is-perfect", perfect);
   if (!bubble) return;
-  if (Math.abs(value - CAPTURE_SWEET_SPOT) <= CAPTURE_SWEET_HALF_WIDTH) {
-    bubble.textContent = "完美区间！松手投球";
-  } else if (value > CAPTURE_SWEET_SPOT + CAPTURE_SWEET_HALF_WIDTH) {
-    bubble.textContent = "蓄力过头，球会飘";
+  if (perfect) {
+    bubble.textContent = "PERFECT！松手投球";
   } else {
-    bubble.textContent = "蓄力 " + Math.round(value * 100) + "% · 甜美点松手";
+    const speed = Number(sweep.speed) || CAPTURE_SWEEP.baseSpeed;
+    bubble.textContent = "指针进 PERFECT 再松手（×" +
+      (speed / CAPTURE_SWEEP.baseSpeed).toFixed(1) + "）";
   }
 }
 
@@ -1590,9 +1598,7 @@ function stopPanelChargeLoop() {
 function panelChargeTick() {
   petChargeFrame = 0;
   if (!petCharging) return;
-  const charge = captureCharge(performance.now() - petPressStart, CAPTURE_CHARGE_SECONDS);
-  panelChargeUi(charge);
-  if (charge >= 1) return;
+  panelChargeUi(sweepProgress(performance.now() - petPressStart));
   petChargeFrame = requestAnimationFrame(panelChargeTick);
 }
 
@@ -1611,12 +1617,13 @@ function beginPanelPetPress() {
   const avatar = document.getElementById("pet-avatar");
   if (avatar) avatar.classList.add("charge");
   if (petViewer) petViewer.setCharging(true);
-  panelChargeUi(0);
+  panelChargeUi({ position: 0, speed: CAPTURE_SWEEP.baseSpeed });
   petChargeFrame = requestAnimationFrame(panelChargeTick);
 }
 
 function endPanelPetPress(cancelled) {
   const held = petPressStart ? performance.now() - petPressStart : 0;
+  const sweep = sweepProgress(held);
   stopPanelChargeLoop();
   petCharging = false;
   petPressStart = 0;
@@ -1625,17 +1632,18 @@ function endPanelPetPress(cancelled) {
   const avatar = document.getElementById("pet-avatar");
   if (avatar) avatar.classList.remove("charge");
   if (petViewer) petViewer.setCharging(false);
+  panelChargeUi({ position: 0, speed: CAPTURE_SWEEP.baseSpeed });
   if (cancelled || !petViewer || petSuppressThrow) {
     petSuppressThrow = false;
     return;
   }
-  throwPanelBall(captureCharge(held, CAPTURE_CHARGE_SECONDS));
+  throwPanelBall(timingAccuracy(sweep.position));
 }
 
-function throwPanelBall(charge) {
+function throwPanelBall(accuracy) {
   if (!petViewer || petViewer.isCapturing() || panelPetIsCaught()) return;
   const pet = currentPet();
-  const outcome = captureOutcome({ charge: charge, tier: currentSkillTier() });
+  const outcome = captureOutcome({ accuracy: accuracy, tier: currentSkillTier() });
   const bubble = document.getElementById("pet-bubble");
   if (bubble) {
     bubble.textContent = outcome.rating === "perfect"
@@ -1656,20 +1664,20 @@ function throwPanelBall(charge) {
       } else if (bubble) {
         bubble.textContent = result.dodged
           ? "它躲开了！再来一球"
-          : "球晃了两下弹开了…蓄到甜点区更稳";
+          : "球晃了两下弹开了…卡准 PERFECT 更稳";
       }
       schedulePanelAutoSkill();
     },
   });
 }
 
-// panelPetAction 供面板顶部的按钮使用：已捕获就放出，否则按甜点区投一球。
+// panelPetAction 供面板顶部的按钮使用：已捕获就放出，否则按完美判定投一球。
 function panelPetAction() {
   if (panelPetIsCaught()) {
     releasePanelPetBall();
     return;
   }
-  throwPanelBall(CAPTURE_SWEET_SPOT);
+  throwPanelBall(1);
 }
 
 function releasePanelPetBall() {

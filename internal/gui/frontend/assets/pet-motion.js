@@ -176,35 +176,64 @@ export function skillTimeline(progress) {
 // CAPTURE_SWEET_SPOT 附近——到点就松手命中率最高，蓄过头和没蓄够都会下滑。
 // 概率与躲避都在这里算完，3D 层只负责把结果演出来；这样概率可单测、
 // 也可以在 UI 上展示「完美 / 偏了」。
-export const CAPTURE_CHARGE_SECONDS = 1.6;
-export const CAPTURE_SWEET_SPOT = 0.72;
-export const CAPTURE_SWEET_HALF_WIDTH = 0.08;
+// ---- 音游式蓄力扫动 ----
+//
+// 不再用「按住多久 = 蓄力多少」，而是让指针沿刻度条来回扫：
+// 一开始慢，按住越久加速度越大，进入 PERFECT 区（窄带）的窗口越来越短。
+// 松手时看指针离 PERFECT 中心多近决定命中质量——这才是「最佳蓄力点」。
+export const CAPTURE_SWEEP = {
+  baseSpeed: 0.55,   // 单程速度（单位/秒），首圈约 1.8s 扫完一趟
+  accel: 0.36,       // 每秒增加的速度，按越久越快
+  maxSpeed: 2.2,     // 速度上限：满速时 PERFECT 窗口只有约 40ms
+  perfectCenter: 0.72,
+  perfectHalfWidth: 0.045,
+};
 
-// captureCharge 把按住时长换算成 0..1 的蓄力值；超过满蓄力后停住不再增长。
-export function captureCharge(heldMs, seconds) {
-  const span = Math.max(0.2, Number(seconds) || CAPTURE_CHARGE_SECONDS) * 1000;
-  return clamp(Number(heldMs) / span, 0, 1);
+function triangleWave(distance) {
+  const phase = distance % 2;
+  return phase <= 1 ? phase : 2 - phase;
 }
 
-// captureAccuracy 把蓄力值映射成 0..1 的命中质量：
-// 甜点区给满分，偏离越远越低，0 与 1 两端都只有 35%。
-export function captureAccuracy(charge) {
-  const value = clamp(charge, 0, 1);
-  const distance = Math.abs(value - CAPTURE_SWEET_SPOT);
-  if (distance <= CAPTURE_SWEET_HALF_WIDTH) {
-    // 区间内保留一点坡度：正中心 1.0，区间边缘 0.92，手感有「更准」的差别。
-    return 1 - (distance / CAPTURE_SWEET_HALF_WIDTH) * 0.08;
-  }
-  const falloff = (distance - CAPTURE_SWEET_HALF_WIDTH) /
-    Math.max(0.001, 1 - CAPTURE_SWEET_HALF_WIDTH);
-  return Math.max(0.35, 0.92 - Math.pow(falloff, 0.85) * 0.57);
+// sweepProgress 返回指针位置（0..1，来回摆动）、当前速度与已扫圈数。
+// 速度对时间做线性加速并封顶，位置用分段积分保证连续、不跳变。
+export function sweepProgress(heldMs, options) {
+  const opts = Object.assign({}, CAPTURE_SWEEP, options || {});
+  const seconds = Math.max(0, Number(heldMs) || 0) / 1000;
+  const accelTime = Math.max(0,
+    (opts.maxSpeed - opts.baseSpeed) / Math.max(0.001, opts.accel));
+  const ramp = Math.min(seconds, accelTime);
+  const distance = opts.baseSpeed * ramp + 0.5 * opts.accel * ramp * ramp +
+    Math.max(0, seconds - accelTime) * opts.maxSpeed;
+  return {
+    position: triangleWave(distance),
+    speed: opts.baseSpeed + opts.accel * ramp,
+    cycles: Math.floor(distance / 2),
+    accelTime: accelTime,
+  };
+}
+
+// timingAccuracy 把「指针离 PERFECT 中心多远」换成命中质量：
+// 窄带内接近 1，出了带子快速衰减（音游式判定）。
+export function timingAccuracy(position, center, halfWidth) {
+  const pos = clamp(position, 0, 1);
+  const mid = clamp(Number.isFinite(Number(center)) ? Number(center) : CAPTURE_SWEEP.perfectCenter,
+    0, 1);
+  const half = Math.max(0.001,
+    Number.isFinite(Number(halfWidth)) ? Number(halfWidth) : CAPTURE_SWEEP.perfectHalfWidth);
+  const distance = Math.abs(pos - mid);
+  if (distance <= half) return 1 - (distance / half) * 0.08;
+  // 出带后指数衰减：隔开一个窄带的距离就只剩四成命中，逼玩家卡点松手。
+  return Math.max(0.15, 0.9 * Math.exp(-(distance - half) / (half * 2.2)));
 }
 
 // captureOutcome 用两个随机数决定「躲没躲开」与「抓没抓到」。
 // 返回的 catchChance/dodgeChance 供 UI 显示概率，caught 是最终结果。
 export function captureOutcome(options) {
   const opts = options || {};
-  const accuracy = captureAccuracy(opts.charge);
+  // 判定由音游式指针给出；缺省时按「中等」处理（主要服务单测与兜底）。
+  const accuracy = Number.isFinite(Number(opts.accuracy))
+    ? clamp(Number(opts.accuracy), 0, 1)
+    : 0.5;
   const tier = clamp(Math.round(Number(opts.tier) || 1), 1, 5);
   // 技能等级越高，宠物越警觉：躲避概率小幅上升（更强的伙伴更难抓）。
   const dodgeChance = Math.min(0.75,
@@ -221,7 +250,7 @@ export function captureOutcome(options) {
     dodged,
     caught,
     // 供文案使用的粗略评级。
-    rating: accuracy >= 0.92 ? "perfect" : accuracy >= 0.7 ? "good" : "wild",
+    rating: accuracy >= 0.95 ? "perfect" : accuracy >= 0.65 ? "good" : "wild",
   };
 }
 

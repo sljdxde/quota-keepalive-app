@@ -18,8 +18,8 @@ const EVOLUTION_FADE_MS = 1500;
 // 这里的 lambda 只负责「多快到位」。
 const LOOK_SMOOTH_TIME_X = 0.085;
 const LOOK_SMOOTH_TIME_Y = 0.1;
-// 长按蓄力用于「投精灵球」：按住 CHARGE_FULL_SECONDS 秒到满，甜点区在
-// pet-motion.CAPTURE_SWEET_SPOT 附近；这里只负责把蓄力状态画成下蹲与发光。
+// 长按蓄力用于「投精灵球」：指针扫动判定在 pet-motion.CAPTURE_SWEEP 里，
+// 这里只负责把蓄力状态画成下蹲与发光。
 const CHARGE_FULL_SECONDS = 1.6;
 const BODY_FOLLOW_LAMBDA = 7.2;
 const HEAD_FOLLOW_LAMBDA = 22;
@@ -27,7 +27,7 @@ const NECK_FOLLOW_LAMBDA = 15;
 // 捕获动画各段时长（毫秒）：投球 → 命中/躲避 → 吸入 → 落地 → 晃动 → 结算。
 const CAPTURE_THROW_MS = 620;
 const CAPTURE_DODGE_MS = 620;
-const CAPTURE_SUCK_MS = 340;
+const CAPTURE_SUCK_MS = 640;
 const CAPTURE_DROP_MS = 320;
 const CAPTURE_WOBBLE_MS = 1350;
 const CAPTURE_RELEASE_MS = 520;
@@ -111,6 +111,75 @@ function createPokeBall() {
   // 打开时上半球绕后缘翻起，像真的球壳掀开。
   top.userData.openPivot = true;
   return { group, top, bottom, button, band, radius };
+}
+
+// createToonGradient 生成三档色阶（暗/中/亮）。MeshToonMaterial 用它把连续的
+// PBR 光照压成 2-3 段平涂，观感更接近动画赛璐璐。
+function createToonGradient() {
+  const data = new Uint8Array([48, 255]);
+  const texture = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// toonifyMaterials 把模型自带的 PBR 材质换成 MeshToonMaterial：保留贴图/固有色，
+// 丢掉金属度与高光，颜色轻微提饱和提亮，让低模宝可梦看起来更像 2D 动画。
+function toonifyMaterials(root, gradientMap) {
+  root.traverse(function (object) {
+    if (!object.isMesh) return;
+    const source = object.material;
+    if (!source) return;
+    const convert = function (material) {
+      if (!material || material.isMeshToonMaterial) return material;
+      const toon = new THREE.MeshToonMaterial({
+        color: material.color ? material.color.clone() : new THREE.Color(0xffffff),
+        map: material.map || null,
+        gradientMap: gradientMap,
+        transparent: !!material.transparent,
+        opacity: Number.isFinite(material.opacity) ? material.opacity : 1,
+        side: material.side,
+        alphaTest: Number(material.alphaTest) || 0,
+        vertexColors: !!material.vertexColors,
+      });
+      toon.color.offsetHSL(0, 0.1, 0.02);
+      toon.userData.qkaToon = true;
+      toon.userData.qkaBaseColor = toon.color.clone();
+      toon.name = material.name ? material.name + "-toon" : "toon";
+      return toon;
+    };
+    object.material = Array.isArray(source) ? source.map(convert) : convert(source);
+  });
+}
+
+// addToonOutlines 用「反向壳」给模型加一圈深色描边：复制一份网格、BackSide 黑
+// 材质、稍微放大，渲染时只留下外轮廓。蒙皮网格共享同一套骨骼，动画不会错位。
+function addToonOutlines(root) {
+  const outlineMaterial = new THREE.MeshBasicMaterial({
+    color: 0x0a0a0e,
+    side: THREE.BackSide,
+  });
+  outlineMaterial.userData.qkaOutline = true;
+  const targets = [];
+  root.traverse(function (object) {
+    if (object.isMesh && !object.userData.qkaOutline) targets.push(object);
+  });
+  targets.forEach(function (object) {
+    const outline = object.isSkinnedMesh
+      ? new THREE.SkinnedMesh(object.geometry, outlineMaterial)
+      : new THREE.Mesh(object.geometry, outlineMaterial);
+    if (object.isSkinnedMesh) outline.bind(object.skeleton, object.bindMatrix);
+    outline.scale.copy(object.scale).multiplyScalar(1.09);
+    outline.position.copy(object.position);
+    outline.quaternion.copy(object.quaternion);
+    outline.frustumCulled = false;
+    outline.renderOrder = -1;
+    outline.userData.qkaOutline = true;
+    object.parent.add(outline);
+  });
+  return outlineMaterial;
 }
 
 function materialList(root) {
@@ -614,6 +683,19 @@ function createSkillEffects(scene, camera, options) {
         ringActive: rings.filter(function (ring) { return ring.active; }).length,
       };
     },
+    // trail 只吐尾迹粒子：投球过程中沿路径撒一点星光，强调「从远处飞来」。
+    trail: function (origin, count) {
+      emitParticles({
+        particles: Math.max(1, Math.round(count || 2)),
+        colors: [0xffe9a8, 0xffffff],
+        speed: 0.35,
+        spread: 0.22,
+        forward: 0.05,
+        yAccel: 0.6,
+        size: [0.035, 0.075],
+        life: [0.16, 0.3],
+      }, origin, 0, 0, 1);
+    },
     // sparkle 用同一套池子做「捕获成功/放出」的星点爆发：不需要技能参数。
     sparkle: function (origin, colorHex, power) {
       const level = Math.max(1, Math.min(5, Number(power) || 2));
@@ -722,14 +804,20 @@ function createStageViewer(canvas, options) {
   effects.setViewport(canvas.clientWidth || 310, canvas.clientHeight || 310,
     renderer.getPixelRatio());
 
-  scene.add(new THREE.HemisphereLight(0xfffaf0, 0x263140, 2.7));
-  const key = new THREE.DirectionalLight(0xffe4bb, 3.8);
+  // 赛璐璐材质对光照总量敏感：几盏灯一叠就会把平涂色冲成白。卡通模式下
+  // 只保留一盏主光 + 柔和环境光，色阶由 toon gradient 负责。
+  const toonLighting = settings.toon !== false;
+  const lightScale = toonLighting ? 0.42 : 1;
+  scene.add(new THREE.HemisphereLight(
+    0xfffaf0, 0x263140, 2.7 * (toonLighting ? 0.24 : 1)
+  ));
+  const key = new THREE.DirectionalLight(0xffe4bb, 3.8 * (toonLighting ? 0.36 : 1));
   key.position.set(-3.5, 5.2, 4.6);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xbed8ff, 2.4);
+  const fill = new THREE.DirectionalLight(0xbed8ff, 2.4 * (toonLighting ? 0.12 : 1));
   fill.position.set(4, 2.2, 3.4);
   scene.add(fill);
-  const rim = new THREE.DirectionalLight(0xffc06a, 2.25);
+  const rim = new THREE.DirectionalLight(0xffc06a, 2.25 * (toonLighting ? 0.18 : 1));
   rim.position.set(-2.6, 2.1, -3.5);
   scene.add(rim);
 
@@ -756,6 +844,9 @@ function createStageViewer(canvas, options) {
   //   { phase: "throw"|"dodge"|"suck"|"drop"|"wobble"|"release", start, plan, ... }
   let capture = null;
 
+  // 所有阶段共用一张色阶贴图；Dispose 时统一释放。
+  const characterGradient = createToonGradient();
+
   const draco = new DRACOLoader();
   draco.setDecoderPath(new URL("./assets/vendor/draco/", document.baseURI).href);
   const loader = new GLTFLoader();
@@ -767,6 +858,23 @@ function createStageViewer(canvas, options) {
 
   function renderOnce() {
     if (!closed) renderer.render(scene, camera);
+  }
+
+  function sceneStats() {
+    let outlines = 0;
+    let toonMaterials = 0;
+    scene.traverse(function (object) {
+      if (object.userData && object.userData.qkaOutline) outlines += 1;
+      const material = object.material;
+      if (Array.isArray(material)) {
+        material.forEach(function (entry) {
+          if (entry && entry.isMeshToonMaterial) toonMaterials += 1;
+        });
+      } else if (material && material.isMeshToonMaterial) {
+        toonMaterials += 1;
+      }
+    });
+    return { outlines, toonMaterials };
   }
 
   function resize() {
@@ -793,7 +901,19 @@ function createStageViewer(canvas, options) {
     }
     applyBoneAdjust(root, settings.boneAdjust);
     prepareModel(root);
+    // 2D 卡通观感：赛璐璐平涂 + 描边。低配模式省掉描边（每帧多一倍 draw call）。
+    if (settings.toon !== false) {
+      toonifyMaterials(root, characterGradient);
+      if (!performanceLow()) addToonOutlines(root);
+    }
     const rig = findRigBones(root);
+    // 轻微放大头部骨骼：模型本身是标准比例，放大 5%-8% 后头身比更接近
+    // 动画/手办的「可爱」比例，又不会把颈部接缝拉断。
+    const headBoost = Number.isFinite(Number(settings.headBoost))
+      ? Number(settings.headBoost) : 1.06;
+    if (rig.head && headBoost > 0 && headBoost !== 1) {
+      rig.head.scale.multiplyScalar(headBoost);
+    }
     const holder = new THREE.Group();
     holder.add(root);
     holder.position.y = -1.1;
@@ -802,18 +922,11 @@ function createStageViewer(canvas, options) {
     scene.add(holder);
     const materials = materialList(root);
     materials.forEach(function (material) {
-      // 低模导出常带着 material metallic=0.4 的默认值，又没有任何金属度贴图。
-      // 场景里没有环境贴图时，这部分金属度只会把固有色压暗发灰，所以统一
-      // 压成哑光、抬高粗糙度，让宝可梦回到平涂卡通的观感。
-      if (material.metalness !== undefined && !material.metalnessMap) {
-        material.metalness = 0;
-      }
-      if (material.roughness !== undefined &&
-          !material.roughnessMap && material.roughness < 0.78) {
-        material.roughness = 0.78;
-      }
-      if (material.envMapIntensity !== undefined) {
-        material.envMapIntensity = 0.65;
+      if (material.userData.qkaOutline) {
+        material.userData.qkaOpacity = 1;
+        material.userData.qkaTransparent = false;
+        material.userData.qkaDepthWrite = material.depthWrite !== false;
+        return;
       }
       material.userData.qkaOpacity = Number.isFinite(material.opacity) ? material.opacity : 1;
       material.userData.qkaTransparent = !!material.transparent;
@@ -960,6 +1073,26 @@ function skillOrigin() {
     }
   }
 
+  // setPetFlash 把宠物材质整体拉向某个色调：捕获动画用它做「闪两下白光、
+  // 再化成红色能量被吸走」的效果；只动颜色，不碰贴图与几何。
+  function setPetFlash(amount, toneHex) {
+    if (!current) return;
+    const value = Math.max(0, Math.min(1, Number(amount) || 0));
+    const tone = new THREE.Color(toneHex === undefined ? 0xffffff : toneHex);
+    current.materials.forEach(function (material) {
+      if (material.userData.qkaOutline || !material.userData.qkaBaseColor) return;
+      material.color.copy(material.userData.qkaBaseColor).lerp(tone, value);
+    });
+  }
+
+  function restorePetColors() {
+    if (!current) return;
+    current.materials.forEach(function (material) {
+      if (material.userData.qkaOutline || !material.userData.qkaBaseColor) return;
+      material.color.copy(material.userData.qkaBaseColor);
+    });
+  }
+
   // applyCharge 在蓄力期间接管姿态：下蹲、轻微抖动、自发光渐强。
   // 长按越久 glow 越足，玩家能看出「再按住就要放大招了」。
   function applyCharge(time) {
@@ -974,32 +1107,44 @@ function skillOrigin() {
     holder.rotation.x = 0;
     const squash = 1 + chargeGlow * 0.04;
     holder.scale.set(squash, 1 - chargeGlow * 0.06, squash);
-    // 自发光只做「边缘发亮」的提示，不能把固有色冲掉：颜色降低饱和度、
-    // 强度控制在基础值的 +0.65 以内，蓄满时仍看得清五官和花纹。
-    const glow = chargeGlow * 0.22;
+    // 蓄力发光：MeshToonMaterial 没有 emissive，用固有色向暖色插值来提亮；
+    // 亮不过分，五官与花纹仍然清晰。
+    const accent = new THREE.Color(settings.chargeColor || 0xffc46b);
+    accent.lerp(new THREE.Color(0x2a1a08), 0.55);
     current.materials.forEach(function (material) {
-      if (!material.emissive) return;
-      if (material.userData.qkaBaseEmissive === undefined) {
-        material.userData.qkaBaseEmissive = material.emissive.getHex();
-        material.userData.qkaBaseEmissiveIntensity =
-          Number.isFinite(material.emissiveIntensity) ? material.emissiveIntensity : 1;
+      if (material.userData.qkaOutline) return;
+      if (material.emissive) {
+        if (material.userData.qkaBaseEmissive === undefined) {
+          material.userData.qkaBaseEmissive = material.emissive.getHex();
+          material.userData.qkaBaseEmissiveIntensity =
+            Number.isFinite(material.emissiveIntensity) ? material.emissiveIntensity : 1;
+        }
+        material.emissive.copy(accent);
+        material.emissiveIntensity =
+          material.userData.qkaBaseEmissiveIntensity + chargeGlow * 0.22 * 0.45;
+        material.needsUpdate = true;
+        return;
       }
-      const accent = new THREE.Color(settings.chargeColor || 0xffc46b);
-      accent.lerp(new THREE.Color(0x2a1a08), 0.55);
-      material.emissive.copy(accent);
-      material.emissiveIntensity =
-        material.userData.qkaBaseEmissiveIntensity + glow * 0.45;
-      material.needsUpdate = true;
+      if (material.userData.qkaBaseColor) {
+        material.color.copy(material.userData.qkaBaseColor)
+          .lerp(accent, chargeGlow * 0.28);
+      }
     });
   }
 
   function clearChargeGlow() {
     if (!current) return;
     current.materials.forEach(function (material) {
-      if (!material.emissive || material.userData.qkaBaseEmissive === undefined) return;
-      material.emissive.setHex(material.userData.qkaBaseEmissive);
-      material.emissiveIntensity = material.userData.qkaBaseEmissiveIntensity;
-      material.needsUpdate = true;
+      if (material.userData.qkaOutline) return;
+      if (material.emissive && material.userData.qkaBaseEmissive !== undefined) {
+        material.emissive.setHex(material.userData.qkaBaseEmissive);
+        material.emissiveIntensity = material.userData.qkaBaseEmissiveIntensity;
+        material.needsUpdate = true;
+        return;
+      }
+      if (material.userData.qkaBaseColor) {
+        material.color.copy(material.userData.qkaBaseColor);
+      }
     });
     chargeGlow = 0;
   }
@@ -1035,7 +1180,11 @@ function skillOrigin() {
       phase: "throw",
       start: performance.now(),
       plan: plan || {},
-      startPos: new THREE.Vector3(-1.5, -1.15, 1.05),
+      // 由远到近：起点在宠物身后的深处（z 负值），飞向镜头方向，透视会让球
+      // 从小变大，配合放大曲线就是「精灵球从远处抛过来」的观感。
+      // 从画面右上方远处飞来：初段留在宠物轮廓之外，观众能看清「由小到大
+      // 冲过来」，最后才落向头顶。
+      startPos: new THREE.Vector3(2.2, 1.7, -4.0),
       target: captureTarget(),
       dodgeDir: 1,
       impact: new THREE.Vector3(),
@@ -1073,12 +1222,15 @@ function skillOrigin() {
       const to = capture.target;
       ball.group.position.set(
         from.x + (to.x - from.x) * eased,
-        from.y + (to.y - from.y) * eased + Math.sin(t * Math.PI) * 1.45,
+        from.y + (to.y - from.y) * eased + Math.sin(t * Math.PI) * 0.8,
         from.z + (to.z - from.z) * eased
       );
-      ball.group.scale.setScalar(0.55 + eased * 0.45);
-      ball.group.rotation.z = t * 11;
-      ball.group.rotation.x = t * 7;
+      // 起点缩到 0.22，命中时 1.18：透视 + 缩放叠加，球会明显「冲脸」。
+      ball.group.scale.setScalar(0.22 + eased * 0.96);
+      ball.group.rotation.z = t * 13;
+      ball.group.rotation.x = t * 8;
+      // 每帧撒两粒尾迹，低配只撒一粒。
+      effects.trail(ball.group.position, performanceLow() ? 1 : 2);
       if (t >= 1) {
         capture.impact.copy(ball.group.position);
         effects.sparkle(capture.impact.clone(), 0xffffff, 2);
@@ -1112,14 +1264,35 @@ function skillOrigin() {
     }
     if (capture.phase === "suck") {
       const t = Math.min(1, (time - capture.start) / CAPTURE_SUCK_MS);
-      const eased = t * t * (3 - 2 * t);
+      const flashWindow = 0.42;
+      const ballPos = ball.group.position;
       if (current) {
-        current.holder.scale.setScalar(Math.max(0.02, 1 - eased));
-        current.holder.rotation.y += t * 5;
-        current.holder.visible = t < 0.99;
+        if (t < flashWindow) {
+          // 动画式「一闪」：原地白闪三下，身体微抖，红白交替。
+          const local = t / flashWindow;
+          const blink = Math.abs(Math.sin(local * Math.PI * 3));
+          setPetFlash(blink * 0.85, 0xffffff);
+          current.holder.scale.setScalar(1 + blink * 0.06);
+          current.holder.rotation.z = (blink - 0.5) * 0.05;
+          current.holder.rotation.y += 0.06;
+          effects.trail(new THREE.Vector3(0, 0.2, 0.45), 1);
+        } else {
+          // 化成红色能量，急速缩进精灵球；位置也向球心收拢。
+          const shrink = (t - flashWindow) / (1 - flashWindow);
+          const eased = shrink * shrink;
+          setPetFlash(0.55 + shrink * 0.4, 0xff4a3d);
+          current.holder.scale.setScalar(Math.max(0.02, 1 - eased));
+          current.holder.position.x += (ballPos.x - current.holder.position.x) * eased;
+          current.holder.position.y += (ballPos.y - current.holder.position.y) * eased;
+          current.holder.rotation.y += 0.18 + eased * 0.5;
+          effects.trail(ballPos, performanceLow() ? 1 : 2);
+          current.holder.visible = shrink < 0.98;
+        }
       }
       ball.group.scale.setScalar(1 + t * 0.12);
       if (t >= 1) {
+        restorePetColors();
+        if (current) current.holder.visible = false;
         capture.phase = "drop";
         capture.start = time;
         capture.ballFrom = ball.group.position.clone();
@@ -1178,6 +1351,7 @@ function skillOrigin() {
         ball.group.visible = false;
         ball.group.scale.setScalar(1);
         ball.top.rotation.x = 0;
+        restorePetColors();
         if (current) {
           current.holder.scale.setScalar(1);
           current.holder.visible = true;
@@ -1193,6 +1367,7 @@ function skillOrigin() {
       if (caught && !capture) return;
       caught = true;
       capture = null;
+      restorePetColors();
       if (current) {
         current.holder.visible = false;
         current.holder.scale.setScalar(1);
@@ -1209,6 +1384,7 @@ function skillOrigin() {
     if (!caught) return;
     caught = false;
     capture = null;
+    restorePetColors();
     ball.group.visible = false;
     ball.top.rotation.x = 0;
     if (current) {
@@ -1438,6 +1614,7 @@ function skillOrigin() {
       }
     });
     draco.dispose();
+    characterGradient.dispose();
     renderer.dispose();
   }
 
@@ -1492,6 +1669,25 @@ function skillOrigin() {
         caught,
         capturePhase: capture ? capture.phase : "",
         effects: effects.stats(),
+        sceneStats: sceneStats(),
+        ball: {
+          visible: ball.group.visible,
+          position: ball.group.position.toArray().map(function (n) {
+            return Math.round(n * 100) / 100;
+          }),
+          scale: Math.round(ball.group.scale.x * 100) / 100,
+        },
+        headBasis: (function () {
+          if (!currentRig || !currentRig.head) return null;
+          const matrix = new THREE.Matrix4().copy(currentRig.head.bone.matrixWorld);
+          const x = new THREE.Vector3().setFromMatrixColumn(matrix, 0).normalize();
+          const y = new THREE.Vector3().setFromMatrixColumn(matrix, 1).normalize();
+          const z = new THREE.Vector3().setFromMatrixColumn(matrix, 2).normalize();
+          const round = function (v) {
+            return v.toArray().map(function (n) { return Math.round(n * 100) / 100; });
+          };
+          return { x: round(x), y: round(y), z: round(z) };
+        })(),
       };
     },
     get stage() {

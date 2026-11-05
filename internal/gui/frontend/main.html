@@ -1272,7 +1272,8 @@
     color: var(--muted);
     font-size: var(--fs-2xs);
   }
-  /* 捕获蓄力条：甜点区固定在 64%-80%，对应 pet-motion 的 0.72±0.08。 */
+  /* 捕获蓄力条：拳皇式斜切分段能量槽。指针来回扫、越按越快；金色窄带
+     是 PERFECT 区（67.5%-76.5%，对应 CAPTURE_SWEEP 的 0.72±0.045）。 */
   .main-pet-charge {
     position: absolute;
     z-index: 4;
@@ -1289,40 +1290,125 @@
     transition: opacity .18s ease;
   }
   .main-pet-stage.is-charging .main-pet-charge { opacity: 1; }
-  .main-pet-charge-track {
+  .charge-gauge {
     position: relative;
     width: 100%;
-    height: 8px;
-    border-radius: 999px;
+    height: 20px;
+    transform: skewX(-14deg);
+    border-radius: 4px;
     overflow: hidden;
-    background: color-mix(in srgb, var(--fg) 12%, transparent);
-    box-shadow: inset 0 0 0 .5px var(--line);
+    background:
+      linear-gradient(180deg, #06070a 0%, #161a22 45%, #0b0d12 100%);
+    box-shadow:
+      inset 0 0 0 1.5px rgba(255,255,255,.16),
+      inset 0 0 0 3px rgba(0,0,0,.55),
+      0 0 16px rgba(120, 200, 255, .10);
   }
-  .main-pet-charge-track i {
+  .charge-fill {
     position: absolute;
-    inset: 0 auto 0 0;
+    inset: 3px auto 3px 3px;
     width: 0%;
-    border-radius: 999px;
+    border-radius: 2px;
     background: linear-gradient(90deg,
-      color-mix(in srgb, var(--pet-accent, var(--accent)) 55%, transparent),
-      var(--pet-accent, var(--accent)));
-    transition: width .06s linear;
+      #1f6fff 0%, #37e6ff 45%, #ffe066 78%, #ff9f1a 100%);
+    box-shadow: 0 0 14px rgba(90, 220, 255, .55);
+    transition: width .05s linear;
   }
-  .main-pet-charge-track b {
+  .charge-sweet {
     position: absolute;
-    top: -2px;
-    bottom: -2px;
-    left: 64%;
-    width: 16%;
-    border-radius: 3px;
-    background: color-mix(in srgb, #fff 62%, transparent);
-    mix-blend-mode: screen;
+    top: 0;
+    bottom: 0;
+    left: 67.5%;
+    width: 9%;
+    background:
+      repeating-linear-gradient(135deg,
+        rgba(255,255,255,.55) 0 3px,
+        rgba(255, 200, 60, .18) 3px 6px),
+      linear-gradient(180deg, #ffe27a, #ffb020);
+    border-left: 1.5px solid #fff2c0;
+    border-right: 1.5px solid #fff2c0;
+    box-shadow:
+      0 0 10px rgba(255, 210, 70, .8),
+      0 0 22px rgba(255, 170, 30, .45);
+    animation: charge-sweet-pulse .62s ease-in-out infinite;
+  }
+  .charge-seg {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background:
+      repeating-linear-gradient(90deg,
+        transparent 0 12px,
+        rgba(0,0,0,.62) 12px 15px);
+    pointer-events: none;
+  }
+  .charge-max {
+    position: absolute;
+    z-index: 4;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%) skewX(14deg) scaleX(1.08);
+    color: #ffe28a;
+    font: 800 9px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    letter-spacing: .1em;
+    text-shadow: 0 0 6px #ff9f1a, 0 0 14px rgba(255, 159, 26, .7);
+    opacity: .5;
+    transition: opacity .1s ease;
+  }
+  .charge-gauge.is-perfect {
+    box-shadow:
+      inset 0 0 0 1.5px rgba(255, 230, 120, .7),
+      inset 0 0 0 3px rgba(0,0,0,.55),
+      0 0 22px rgba(255, 200, 80, .45);
+  }
+  .charge-gauge.is-perfect .charge-max {
+    opacity: 1;
+    animation: charge-max-flash .34s steps(2, end) infinite;
+  }
+  .charge-needle {
+    position: absolute;
+    z-index: 5;
+    top: -5px;
+    bottom: -5px;
+    left: 0%;
+    width: 4px;
+    margin-left: -2px;
+    border-radius: 2px;
+    background: #ffffff;
+    box-shadow:
+      0 0 6px #ffffff,
+      0 0 14px rgba(120, 230, 255, .9);
+    transition: left .016s linear;
+  }
+  .charge-gauge.is-perfect .charge-needle {
+    background: #fff6c2;
+    box-shadow:
+      0 0 8px #fff2a1,
+      0 0 20px rgba(255, 200, 60, 1);
+  }
+  .charge-seg {
+    animation: charge-roll .45s linear infinite;
+  }
+  @keyframes charge-roll {
+    to { background-position-x: -34px; }
+  }
+  @keyframes charge-sweet-pulse {
+    0%, 100% { filter: brightness(.85); }
+    50% { filter: brightness(1.25); }
+  }
+  @keyframes charge-max-flash {
+    50% { opacity: .25; }
   }
   .main-pet-charge-label {
     color: var(--muted);
     font-size: var(--fs-3xs);
     font-weight: 650;
-    letter-spacing: .02em;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .main-pet-charge-label.perfect {
+    color: #ffe066;
+    text-shadow: 0 0 10px rgba(255, 200, 60, .55);
   }
   .main-pet-stage.is-caught { cursor: pointer; }
   .main-pet-stage.is-caught .main-pet-hint { color: var(--accent); }
@@ -2658,13 +2744,16 @@
               <div class="main-pet-viewer" id="main-pet-viewer"></div>
               <div class="main-pet-bubble" id="main-pet-bubble">移动鼠标，它会转头看你</div>
               <div class="main-pet-charge" id="main-pet-charge" aria-hidden="true">
-                <span class="main-pet-charge-track">
-                  <i id="main-pet-charge-fill"></i>
-                  <b class="main-pet-charge-sweet"></b>
-                </span>
-                <span class="main-pet-charge-label" id="main-pet-charge-label">按住蓄力 · 甜点区松手</span>
+                <div class="charge-gauge" id="main-pet-gauge">
+                  <i class="charge-fill" id="main-pet-charge-fill"></i>
+                  <b class="charge-sweet"></b>
+                  <span class="charge-seg"></span>
+                  <i class="charge-needle" id="main-pet-charge-needle"></i>
+                  <span class="charge-max">PERFECT</span>
+                </div>
+                <span class="main-pet-charge-label" id="main-pet-charge-label">按住蓄力 · 指针进 PERFECT 再松手</span>
               </div>
-              <span class="main-pet-hint">点击投球 · 按住蓄力，甜点区松手更稳</span>
+              <span class="main-pet-hint">点击投球 · 按住蓄力，指针进 PERFECT 再松手</span>
             </div>
             <div class="main-pet-metrics">
               <div class="main-pet-metric">
@@ -2961,12 +3050,11 @@
   } from "./assets/pokemon-art.js";
   import { petAimPoint } from "./assets/pet-gaze.js";
   import {
-    CAPTURE_CHARGE_SECONDS,
-    CAPTURE_SWEET_HALF_WIDTH,
-    CAPTURE_SWEET_SPOT,
+    CAPTURE_SWEEP,
     autoSkillDelay,
-    captureCharge,
     captureOutcome,
+    sweepProgress,
+    timingAccuracy,
   } from "./assets/pet-motion.js";
   import { resolveAccountProviderView } from "./assets/account-view.js";
   import { createPokemon3D } from "./assets/pokemon-3d.js";
@@ -4200,7 +4288,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (hintNode) {
       hintNode.textContent = caught
         ? "点击精灵球放出伙伴"
-        : "点击投球 · 按住蓄力，甜点区松手更稳";
+        : "点击投球 · 按住蓄力，指针进 PERFECT 再松手";
     }
     if (caught && !wasCaught) {
       const bubbleNode = mainPetBubbleNode();
@@ -4344,20 +4432,29 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
   }
 
-  function mainPetChargeUi(charge) {
+  function mainPetChargeUi(sweep) {
     const stage = document.getElementById("main-pet-stage");
+    const gauge = document.getElementById("main-pet-gauge");
     const fill = document.getElementById("main-pet-charge-fill");
+    const needle = document.getElementById("main-pet-charge-needle");
     const label = document.getElementById("main-pet-charge-label");
-    const value = Math.max(0, Math.min(1, Number(charge) || 0));
-    if (stage) stage.style.setProperty("--pet-charge", String(value));
-    if (fill) fill.style.width = Math.round(value * 100) + "%";
+    const position = Math.max(0, Math.min(1, Number(sweep.position) || 0));
+    const perfect = Math.abs(position - CAPTURE_SWEEP.perfectCenter) <=
+      CAPTURE_SWEEP.perfectHalfWidth;
+    const percent = position * 100;
+    if (stage) stage.style.setProperty("--pet-charge", String(position));
+    if (fill) fill.style.width = percent.toFixed(1) + "%";
+    if (needle) needle.style.left = percent.toFixed(1) + "%";
+    if (gauge) gauge.classList.toggle("is-perfect", perfect);
     if (!label) return;
-    if (Math.abs(value - CAPTURE_SWEET_SPOT) <= CAPTURE_SWEET_HALF_WIDTH) {
-      label.textContent = "完美区间！松手";
-    } else if (value > CAPTURE_SWEET_SPOT + CAPTURE_SWEET_HALF_WIDTH) {
-      label.textContent = "蓄力过头了，会飘";
+    label.classList.toggle("perfect", perfect);
+    if (perfect) {
+      label.textContent = "PERFECT！松手";
     } else {
-      label.textContent = "按住蓄力 · 瞄准甜点区";
+      // 速度倍率让玩家感知「越来越难」。
+      const speed = Number(sweep.speed) || CAPTURE_SWEEP.baseSpeed;
+      label.textContent = "按住蓄力 · 指针进 PERFECT 再松手（速度 ×" +
+        (speed / CAPTURE_SWEEP.baseSpeed).toFixed(1) + "）";
     }
   }
 
@@ -4370,9 +4467,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   function petChargeTick() {
     petChargeFrame = 0;
     if (!petCharging) return;
-    const charge = captureCharge(performance.now() - petPressStart, CAPTURE_CHARGE_SECONDS);
-    mainPetChargeUi(charge);
-    if (charge >= 1) return;
+    mainPetChargeUi(sweepProgress(performance.now() - petPressStart));
     petChargeFrame = requestAnimationFrame(petChargeTick);
   }
 
@@ -4391,14 +4486,15 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const viewerNode = mainPetViewerNode();
     if (viewerNode) viewerNode.classList.add("is-charging");
     if (mainPetViewer) mainPetViewer.setCharging(true);
-    mainPetChargeUi(0);
+    mainPetChargeUi({ position: 0, speed: CAPTURE_SWEEP.baseSpeed });
     petChargeFrame = requestAnimationFrame(petChargeTick);
     const bubble = mainPetBubbleNode();
-    if (bubble) bubble.textContent = "按住蓄力，甜点区松手命中率最高";
+    if (bubble) bubble.textContent = "按住蓄力，指针进 PERFECT 再松手";
   }
 
   function endMainPetPress(cancelled) {
     const held = petPressStart ? performance.now() - petPressStart : 0;
+    const sweep = sweepProgress(held);
     stopPetChargeLoop();
     petCharging = false;
     petPressStart = 0;
@@ -4407,23 +4503,25 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const viewerNode = mainPetViewerNode();
     if (viewerNode) viewerNode.classList.remove("is-charging");
     if (mainPetViewer) mainPetViewer.setCharging(false);
-    mainPetChargeUi(0);
+    mainPetChargeUi({ position: 0, speed: CAPTURE_SWEEP.baseSpeed });
     if (cancelled || !mainPetViewer || petSuppressThrow) {
       petSuppressThrow = false;
       return;
     }
-    throwMainPetBall(captureCharge(held, CAPTURE_CHARGE_SECONDS));
+    // 音游判定：指针离 PERFECT 中心越近，命中质量越高。
+    const accuracy = timingAccuracy(sweep.position);
+    throwMainPetBall(accuracy);
   }
 
-  function throwMainPetBall(charge) {
+  function throwMainPetBall(accuracy) {
     if (!mainPetViewer || mainPetViewer.isCapturing() || mainPetIsCaught()) return;
     const pet = currentMainPet();
-    const outcome = captureOutcome({ charge: charge, tier: mainPetStageForToday() });
+    const outcome = captureOutcome({ accuracy: accuracy, tier: mainPetStageForToday() });
     const bubble = mainPetBubbleNode();
     if (bubble) {
       bubble.textContent = outcome.rating === "perfect"
-        ? "完美投球！"
-        : outcome.rating === "good" ? "投得不错…" : "这一球有点飘。";
+        ? "PERFECT！完美投球"
+        : outcome.rating === "good" ? "投得不错…" : "时机没对上，球有点飘。";
     }
     if (outcome.rating === "perfect") spawnMainPetShockwave(1);
     mainPetViewer.throwBall({
@@ -4439,7 +4537,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         } else if (bubble) {
           bubble.textContent = result.dodged
             ? "它躲开了！再来一球"
-            : "球晃了两下弹开了…蓄到甜点区更稳";
+            : "球晃了两下弹开了…卡准 PERFECT 更稳";
         }
         scheduleMainPetAutoSkill();
       },
