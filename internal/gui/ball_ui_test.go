@@ -389,6 +389,8 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`dockSideForWindow`,
 		`dockContentShift`,
 		`window.innerWidth < 60`,
+		`width: window.innerWidth,`,
+		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
 		`ball.style.setProperty("--dock-y"`,
 	} {

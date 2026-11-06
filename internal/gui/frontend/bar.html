@@ -323,8 +323,10 @@
     const side = docked ? dockSideForWindow({
       screenX: window.screenX,
       screenY: window.screenY,
-      width: window.outerWidth || window.innerWidth,
-      height: window.outerHeight || window.innerHeight,
+      // 用视口尺寸而不是 outerWidth：无边框窗口两者相等，但外层尺寸会
+      // 带上边框/阴影（某些环境还会被放大），用它判断贴边会误判方向。
+      width: window.innerWidth,
+      height: window.innerHeight,
       availLeft: screen.availLeft,
       availTop: screen.availTop,
       availWidth: screen.availWidth,
