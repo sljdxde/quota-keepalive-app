@@ -49,11 +49,12 @@ type Deps struct {
 	// QuitApp exits QKA after the update helper can safely replace the bundle.
 	QuitApp func()
 	// PanelToggle 切换 392px 吸附面板的显示状态。macOS 菜单栏点击走这里；
-	// Windows 悬浮球左键已改走迷你宠物（BarToggle）。
+	// Windows 悬浮球左键在球内与宠物交互，不再开面板。
 	PanelToggle func()
 	// PanelToggleAt 在指定屏幕坐标（悬浮球所在位置）下方切换 392px 面板。
 	PanelToggleAt func(x, y int)
-	// BarToggle 是 Windows 悬浮球左键点击：普通态切换迷你宠物，贴边态先弹回。
+	// BarToggle 是 Windows 悬浮球左键的旧入口：页面已改为球内宠物交互，
+	// 不再调用；保留给贴边弹回与未来入口使用。
 	BarToggle func()
 	// BarMenu 是 Windows 悬浮球右键点击：在球左侧弹出自绘菜单（含「退出」）。
 	BarMenu func()

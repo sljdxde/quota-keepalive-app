@@ -112,6 +112,99 @@ html, body {
 .ball.docked .ring { opacity: .8; }
 .ball.docked .ring .bar { opacity: .9; }
 
+/* ============================================================ 球内迷你宠物舞台 */
+.pet-stage {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.pet-avatar {
+  position: absolute;
+  left: 50%; top: 56%;
+  width: 52px; height: 52px;
+  transform: translate(-50%, -50%);
+  transition: opacity .18s ease;
+}
+.pet-avatar .pokemon-3d-canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  opacity: 0;
+}
+.pet-avatar.is-3d .pokemon-3d-canvas { opacity: 1; }
+.pet-avatar.model-fallback .pokemon-3d-canvas { display: none; }
+.pet-avatar .pokemon-sprites {
+  position: absolute; inset: 0; display: block;
+}
+.pet-avatar .pokemon-stage-image {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  opacity: 0;
+}
+.pet-avatar .pokemon-stage-image[data-stage="1"] { opacity: 1; }
+.pet-avatar.is-3d .pokemon-sprites { visibility: hidden; opacity: 0; }
+.pet-avatar.is-loading { opacity: .55; }
+/* 有宠物在场时，Q 水印与数字让位：数字沉到底部小字，Q 藏起。 */
+.ball.has-pet .core .q { opacity: 0; }
+.ball.has-pet .core b { position: absolute; left: 0; right: 0; bottom: 8px; font-size: 11px; }
+.ball.has-pet .core > small { position: absolute; left: 0; right: 0; bottom: 0; font-size: 6.5px; }
+
+/* ============================================================ 美漫风结果横幅 */
+/* 斜切速度线底 + 描边大字：只有结果瞬间出现，不做持续动画。 */
+.ball .popup {
+  position: absolute;
+  left: -14px; right: -14px; top: 50%;
+  transform: translateY(-50%) rotate(-6deg);
+  z-index: 5;
+  padding: 5px 0;
+  background: #fff;
+  border-top: 2.5px solid #17191e;
+  border-bottom: 2.5px solid #17191e;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, .45);
+  text-align: center;
+  pointer-events: none;
+  animation: popup-slam .32s cubic-bezier(.18, 1.4, .4, 1);
+}
+.ball .popup.ok { background: #ffd54a; }
+.ball .popup.miss { background: #f3f4f6; }
+.ball .popup-text {
+  display: inline-block;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 12px; font-weight: 800;
+  font-style: italic;
+  letter-spacing: .14em;
+  color: #17191e;
+  text-shadow: 1.5px 1.5px 0 #fff, 2.5px 2.5px 0 rgba(23, 25, 30, .25);
+  white-space: nowrap;
+}
+@keyframes popup-slam {
+  0% { transform: translateY(-50%) rotate(-6deg) scale(1.6); opacity: 0; }
+  60% { transform: translateY(-50%) rotate(-6deg) scale(.94); opacity: 1; }
+  100% { transform: translateY(-50%) rotate(-6deg) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ball .popup { animation: none; }
+}
+
+/* 长按蓄力弧：沿环内侧的白色细线，长度只随按住时长变化。 */
+.ball .charge {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+  z-index: 2;
+}
+.ball .charge circle {
+  fill: none;
+  stroke: rgba(255, 255, 255, .85);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset .05s linear;
+}
+
 /* ============================================================ 数字滚动 */
 .roll {
   display: inline-flex; align-items: flex-start; overflow: hidden;

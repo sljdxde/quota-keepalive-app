@@ -7,7 +7,7 @@ import (
 )
 
 // 悬浮球替换掉旧的深色渐变胶囊：圆形卡、称号色进度环、滚动数字、可拖动、
-// 左键开迷你宠物 / 右键出自绘菜单。中央固定为 Q 水印，不随宠物切换。
+// 球内迷你宠物（短按放技能 / 长按抛精灵球）、右键出自绘菜单。
 func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/bar.html")
 	if err != nil {
@@ -20,29 +20,48 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`r="30.5"`,
 		`stroke-dasharray="191.6"`,
 		`id="speed-value"`,
+		`id="ball-avatar"`,
+		`stage.className = "pet-stage"`,
+		`id="ball-popup"`,
+		`捕获成功！`,
+		`捕获失败`,
+		`躲开了！`,
+		`createPokemon3D`,
+		`viewer.throwBall`,
+		`viewer.playSkill`,
+		`captureOutcome`,
+		`sweepProgress`,
+		`qka.pet.selected`,
+		`qka.pet.caught.v1`,
 		`assets/qka-ui.css`,
 		`assets/ball.css`,
 		`assets/odometer.js`,
 		`assets/title-system.js`,
+		`assets/pet-motion.js`,
+		`assets/pokemon-3d.js`,
 		`ringProgress`,
 		`titleThresholds`,
 		`titleThemeHues`,
-		`Bound.BarToggle`,
 		`Bound.BarMenu`,
 		`Events.On("tokenspeed-changed"`,
+		`Events.On("pet-selected"`,
+		`Events.On("pet-caught"`,
 		`--wails-draggable: drag`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("悬浮球页面缺少 %q", want)
 		}
 	}
+	// 旧的「点球开迷你宠物」入口已移除：左键现在只服务球内宠物交互。
 	for _, forbidden := range []string{
 		`linear-gradient(150deg`,
 		`--notch-bg`,
 		`box-shadow: inset 0 .5px 0`,
+		`Bound.BarToggle`,
+		`assets/tray/`,
 	} {
 		if strings.Contains(page, forbidden) {
-			t.Errorf("悬浮球页面仍残留旧胶囊样式 %q", forbidden)
+			t.Errorf("悬浮球页面仍残留旧样式或旧入口 %q", forbidden)
 		}
 	}
 }
