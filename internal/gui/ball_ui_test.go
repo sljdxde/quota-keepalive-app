@@ -43,6 +43,8 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`titleThresholds`,
 		`titleThemeHues`,
 		`Bound.BarMenu`,
+		`Bound.BarStartDrag`,
+		`DRAG_START_PX`,
 		`Events.On("tokenspeed-changed"`,
 		`Events.On("pet-selected"`,
 		`Events.On("pet-caught"`,

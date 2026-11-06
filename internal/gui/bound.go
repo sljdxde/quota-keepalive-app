@@ -56,6 +56,9 @@ type Deps struct {
 	// BarToggle 是 Windows 悬浮球左键的旧入口：页面已改为球内宠物交互，
 	// 不再调用；保留给贴边弹回与未来入口使用。
 	BarToggle func()
+	// BarStartDrag 让悬浮球进入系统原生移动循环：页面在「按住且移动超过
+	// 阈值」时调用，实现「移动前不吞点击、移动后才拖动」的手势。
+	BarStartDrag func()
 	// BarMenu 是 Windows 悬浮球右键点击：在球左侧弹出自绘菜单（含「退出」）。
 	BarMenu func()
 	// BallVisible 应用「显示悬浮球」设置：true 显示（尊重贴边状态），false 隐藏。
@@ -296,6 +299,13 @@ func (s *BoundService) BarToggle() {
 		return
 	}
 	s.PanelToggle()
+}
+
+// BarStartDrag 让悬浮球进入系统原生移动循环（见 Deps.BarStartDrag）。
+func (s *BoundService) BarStartDrag() {
+	if s.deps.BarStartDrag != nil {
+		s.deps.BarStartDrag()
+	}
 }
 
 // BarMenu 是 Windows 悬浮球右键点击的入口：弹出含「退出」的菜单。

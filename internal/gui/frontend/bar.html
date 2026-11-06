@@ -61,7 +61,7 @@
   </div>
 
 <script type="module">
-  import { Events } from "/wails/runtime.js";
+  import { Events, Window } from "/wails/runtime.js";
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
   import { setRoll } from "./assets/odometer.js";
   import {
@@ -130,6 +130,8 @@
   let chargeFrame = 0;
   let chargeStartMS = 0;
   let pressStartMS = 0;
+  let pressX = 0;
+  let pressY = 0;
   let pressed = false;
   let throwing = false;
 
@@ -376,20 +378,56 @@
     });
   }
 
+  // 关键：Wails 的 --wails-draggable 让「按下后只要鼠标移动 1px」就进入
+  // 原生拖动循环，随后的 pointerup/click 会被 runtime 吞掉——左键就再也不
+  // 能触发任何交互，而且用户只是想点一下、手稍有抖动就把球拖走。这里把
+  // 拖动降级为「按住且移动超过 6px」才交给系统拖动：短按/长按的手势先在
+  // 页面内完成；超阈值时记录 pressStartMS=0，弹起不再误触发技能。
+  const DRAG_START_PX = 6;
+
   ball.addEventListener("pointerdown", function (event) {
     if (event.button !== 0) return;
     event.stopPropagation();
     pressed = true;
     pressStartMS = performance.now();
+    pressX = event.clientX;
+    pressY = event.clientY;
     chargeStartMS = pressStartMS;
     chargeFrame = requestAnimationFrame(chargeTick);
   });
-  ball.addEventListener("pointerup", function (event) {
-    if (event.button !== 0 || !pressed) return;
+  // 按住期间移动超过阈值才升级为窗口拖动：把球心挪到指针下并用系统拖动。
+  // 先取消页面手势，避免松手时又触发技能/抛球；SetPosition 把窗口对中后，
+  // 立即调用 Bound.BarStartDrag 让 Go 侧进入原生移动循环（HTCAPTION），
+  // 球就跟着指针走；期间 runtime 会吞掉后续鼠标事件，不会误触发手势。
+  function startNativeDrag(event) {
+    pressed = false;
+    stopChargeUi();
+    if (viewer) viewer.setCharging(false);
+    const dx = window.innerWidth / 2 - event.clientX;
+    const dy = window.innerHeight / 2 - event.clientY;
+    Window.SetPosition(window.screenX + dx, window.screenY + dy)
+      .then(function () {
+        try {
+          const pending = Bound.BarStartDrag();
+          if (pending && typeof pending.catch === "function") pending.catch(function () {});
+        } catch (_) {}
+      })
+      .catch(function () {});
+  }
+  ball.addEventListener("pointermove", function (event) {
+    if (!pressed || event.buttons !== 1) return;
+    if (Math.abs(event.clientX - pressX) < DRAG_START_PX &&
+        Math.abs(event.clientY - pressY) < DRAG_START_PX) return;
+    startNativeDrag(event);
+  });
+
+  function finishPress(event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (!pressed) return;
     event.stopPropagation();
     pressed = false;
     const held = performance.now() - pressStartMS;
-    const longPress = chargeStartMS !== 0 && held >= CHARGE_THROW_MS;
+    const longPress = held >= CHARGE_THROW_MS;
     stopChargeUi();
     if (longPress) {
       throwNow();
@@ -403,12 +441,12 @@
     if (viewer && pet && !viewer.isCapturing()) {
       viewer.playSkill(pet.effect, effectIntensity());
     }
-  });
+  }
+  ball.addEventListener("pointerup", finishPress);
   ball.addEventListener("pointercancel", function () {
     pressed = false;
     stopChargeUi();
   });
-  // 长按出发的拖动不该把球拖到屏幕边上：抛球判定后即结束手势。
 
   // 贴边态：Go 把窗口缩到 44px，这里是纯 CSS 依据视口宽度切换内容。
   function syncDocked() {

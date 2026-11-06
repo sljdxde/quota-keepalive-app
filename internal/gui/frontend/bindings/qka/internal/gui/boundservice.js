@@ -143,6 +143,7 @@ export function AppsList() {
 }
 
 /**
+ * BarMenu 是 Windows 悬浮球右键点击的入口：弹出含「退出」的菜单。
  * @returns {$CancellablePromise<void>}
  */
 export function BarMenu() {
@@ -150,11 +151,11 @@ export function BarMenu() {
 }
 
 /**
- * BarState 返回悬浮球中央应显示的图标状态（宠物 / 精灵球）。
- * @returns {$CancellablePromise<json$0.RawMessage>}
+ * BarStartDrag 让悬浮球进入系统原生移动循环（见 Deps.BarStartDrag）。
+ * @returns {$CancellablePromise<void>}
  */
-export function BarState() {
-    return $Call.ByID(2470353683);
+export function BarStartDrag() {
+    return $Call.ByID(4136495672);
 }
 
 /**

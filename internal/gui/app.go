@@ -593,6 +593,23 @@ func (a *App) BarToggle() {
 	a.togglePetMini()
 }
 
+// BarStartDrag 让悬浮球进入系统原生移动循环（页面在「按住并移动超过
+// 阈值」时调用，把窗口对中到指针下之后）。等价于 Wails 内置的
+// "wails:drag" 消息：ReleaseCapture + WM_NCLBUTTONDOWN(HTCAPTION)，
+// 拖动期间 runtime 会吞掉后续鼠标事件，不会误触发球上的手势。
+func (a *App) BarStartDrag() {
+	if goos != "windows" {
+		return
+	}
+	a.windowMu.Lock()
+	bar := a.bar
+	a.windowMu.Unlock()
+	if bar == nil {
+		return
+	}
+	bar.HandleMessage("wails:drag")
+}
+
 // BarMenu 实现悬浮球右键点击：收起其它浮层，切换自绘菜单（打开主界面 /
 // 设置 / 退出）。菜单是一个独立小窗，样式按 magpie 的 .row-menu 做。
 func (a *App) BarMenu() {
