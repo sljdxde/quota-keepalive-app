@@ -44,6 +44,12 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`titleThemeHues`,
 		`Bound.BarMenu`,
 		`Bound.BarStartDrag`,
+		`Bound.BarToggle`,
+		`resolveGesture`,
+		`shouldStartDrag`,
+		`dragTargetOrigin`,
+		`chargeProgress`,
+		`assets/bar-gesture.js`,
 		`DRAG_START_PX`,
 		`Events.On("tokenspeed-changed"`,
 		`Events.On("pet-selected"`,
@@ -54,12 +60,11 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 			t.Errorf("悬浮球页面缺少 %q", want)
 		}
 	}
-	// 旧的「点球开迷你宠物」入口已移除：左键现在只服务球内宠物交互。
+	// 贴边弹回是 BarToggle 的唯一正当调用点；BarStartDrag 只在拖动升级里用。
 	for _, forbidden := range []string{
 		`linear-gradient(150deg`,
 		`--notch-bg`,
 		`box-shadow: inset 0 .5px 0`,
-		`Bound.BarToggle`,
 		`assets/tray/`,
 	} {
 		if strings.Contains(page, forbidden) {

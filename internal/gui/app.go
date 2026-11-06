@@ -274,6 +274,11 @@ func (a *App) ensureBar() *application.WebviewWindow {
 	if goos != "windows" {
 		return nil
 	}
+	if a.wails == nil {
+		// 测试与零值 App：窗口系统未装配，返回 nil 让调用方安全跳过
+		// （showBar/hideBar 都对 nil 容忍）。
+		return nil
+	}
 	a.windowMu.Lock()
 	if a.bar != nil {
 		bar := a.bar
@@ -376,6 +381,13 @@ func screenWorkArea(screen *application.Screen) application.Rect {
 	return screen.Bounds
 }
 
+// ballShouldShow 决定悬浮球此刻是否应该可见：
+// 设置关掉 → 不显示；主窗口可见 → 让位（主窗口自己有顶栏与速度页）；否则显示。
+// 纯函数，便于表驱动单测覆盖全部组合。
+func ballShouldShow(enabled bool, mainVisible bool) bool {
+	return enabled && !mainVisible
+}
+
 // showBar 确保悬浮球可见（主窗口关闭等场景后仍要常驻）。
 // 「显示悬浮球」设置关闭时不显示；托盘仍承担状态项职责。
 func (a *App) showBar() {
@@ -424,7 +436,8 @@ func (a *App) setBallPreference(visible bool) {
 	a.windowMu.Lock()
 	main := a.main
 	a.windowMu.Unlock()
-	if main == nil || !main.IsVisible() {
+	mainVisible := main != nil && main.IsVisible()
+	if ballShouldShow(true, mainVisible) {
 		a.showBar()
 	}
 }
@@ -507,56 +520,25 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 		return
 	}
 	docked, restoreX, restoreY := a.barDockState()
+	// 落点判定在 resolveBarDrop（纯函数、表驱动单测覆盖），这里只把结果
+	// 落到窗口上并记忆。
+	drop := resolveBarDrop(area, x, y, width, docked, restoreX, restoreY)
 
-	if docked != "" {
-		// 贴边态被拖走：要么换边继续贴，要么恢复浮动态大小落在新位置。
-		if side := ballDockSideFor(area, x, y, ballDockSize); side != "" {
-			nx, ny := ballDockedPosition(area, side, x, y)
-			bar.SetPosition(nx, ny)
-			a.rememberBarState(barWindowState{
-				X: nx, Y: ny, Docked: side,
-				RestoreX: restoreX, RestoreY: restoreY,
-			})
-			a.shapeBall(bar)
-			return
-		}
-		// 窗口是 44px，放大到 64px 时把多出来的一圈平均分到两侧，让球心保持
-		// 在用户松手的位置。
-		delta := (ballSize - ballDockSize) / 2
-		nx, ny := clampBallPosition(area, x-delta, y-delta, ballSize)
-		if width != ballSize || height != ballSize {
-			bar.SetSize(ballSize, ballSize)
-		}
-		bar.SetPosition(nx, ny)
-		a.rememberBarState(barWindowState{X: nx, Y: ny})
-		a.shapeBall(bar)
-		a.hideBallPanel()
-		a.hidePetMini()
-		a.hideBallMenu()
-		return
-	}
-
-	if side := ballDockSideFor(area, x, y, width); side != "" {
-		a.hideBallPanel()
-		a.hidePetMini()
-		a.hideBallMenu()
-		nx, ny := ballDockedPosition(area, side, x, y)
-		bar.SetSize(ballDockSize, ballDockSize)
-		bar.SetPosition(nx, ny)
-		a.rememberBarState(barWindowState{
-			X: nx, Y: ny, Docked: side,
-			RestoreX: x, RestoreY: y,
-		})
-		a.shapeBall(bar)
-		return
-	}
-
-	nx, ny := clampBallPosition(area, x, y, width)
-	if nx != x || ny != y {
-		bar.SetPosition(nx, ny)
-	}
-	a.rememberBarState(barWindowState{X: nx, Y: ny})
 	a.hideBallPanel()
+	if drop.Action == "dock" {
+		// 吸附成半圆：宠物舞台与速度数字都放不下了，浮层一并收起。
+		a.hidePetMini()
+		a.hideBallMenu()
+	}
+	if drop.Size != width {
+		bar.SetSize(drop.Size, drop.Size)
+	}
+	bar.SetPosition(drop.X, drop.Y)
+	a.rememberBarState(barWindowState{
+		X: drop.X, Y: drop.Y, Docked: drop.Docked,
+		RestoreX: drop.RestoreX, RestoreY: drop.RestoreY,
+	})
+	a.shapeBall(bar)
 }
 
 // undockBar 把贴边态弹回浮动态：恢复 64px 与贴边前的位置（再钳进工作区）。
@@ -649,6 +631,10 @@ func (a *App) ensureBallPanel() *application.WebviewWindow {
 	if goos != "windows" {
 		return nil
 	}
+	if a.wails == nil {
+		// 窗口系统未装配（零值 App / 单测）：返回 nil 让调用方安全跳过。
+		return nil
+	}
 	a.windowMu.Lock()
 	if a.ballPanel != nil {
 		panel := a.ballPanel
@@ -716,6 +702,10 @@ func (a *App) ensurePetMini() *application.WebviewWindow {
 	if goos != "windows" {
 		return nil
 	}
+	if a.wails == nil {
+		// 窗口系统未装配（零值 App / 单测）：返回 nil 让调用方安全跳过。
+		return nil
+	}
 	a.windowMu.Lock()
 	if a.petMini != nil {
 		win := a.petMini
@@ -781,6 +771,10 @@ func (a *App) petMiniPosition() (int, int) {
 // ensureBallMenu 创建自绘右键菜单窗口（首次使用时惰性创建）。
 func (a *App) ensureBallMenu() *application.WebviewWindow {
 	if goos != "windows" {
+		return nil
+	}
+	if a.wails == nil {
+		// 窗口系统未装配（零值 App / 单测）：返回 nil 让调用方安全跳过。
 		return nil
 	}
 	a.windowMu.Lock()

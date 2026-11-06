@@ -81,6 +81,14 @@
     timingAccuracy,
     captureOutcome,
   } from "./assets/pet-motion.js";
+  import {
+    CHARGE_THROW_MS,
+    DRAG_START_PX,
+    resolveGesture,
+    shouldStartDrag,
+    dragTargetOrigin,
+    chargeProgress,
+  } from "./assets/bar-gesture.js";
 
   function asJSON(value) {
     return typeof value === "string" ? JSON.parse(value) : value;
@@ -118,7 +126,6 @@
   const popup = document.getElementById("ball-popup");
   const popupText = document.getElementById("ball-popup-text");
   const CHARGE_LENGTH = 163.4;
-  const CHARGE_THROW_MS = 620; // 长按超过此时长即判定为抛球
   const RING_LENGTH = 191.6;
   const SPARK_RADIUS = 28.6;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -316,8 +323,7 @@
 
   function chargeTick() {
     if (!pressed || !chargeStartMS) return;
-    const held = performance.now() - chargeStartMS;
-    const progress = Math.min(1, held / CHARGE_THROW_MS);
+    const progress = chargeProgress(performance.now() - chargeStartMS);
     chargeArc.setAttribute("stroke-dashoffset",
       String(CHARGE_LENGTH * (1 - progress)));
     if (viewer) viewer.setCharging(progress >= 0.12);
@@ -381,9 +387,8 @@
   // 关键：Wails 的 --wails-draggable 让「按下后只要鼠标移动 1px」就进入
   // 原生拖动循环，随后的 pointerup/click 会被 runtime 吞掉——左键就再也不
   // 能触发任何交互，而且用户只是想点一下、手稍有抖动就把球拖走。这里把
-  // 拖动降级为「按住且移动超过 6px」才交给系统拖动：短按/长按的手势先在
-  // 页面内完成；超阈值时记录 pressStartMS=0，弹起不再误触发技能。
-  const DRAG_START_PX = 6;
+  // 拖动降级为「按住且移动超过阈值」才交给系统拖动：短按/长按的手势先在
+  // 页面内完成（判定逻辑在 assets/bar-gesture.js，纯函数、可真实单测）。
 
   ball.addEventListener("pointerdown", function (event) {
     if (event.button !== 0) return;
@@ -403,9 +408,15 @@
     pressed = false;
     stopChargeUi();
     if (viewer) viewer.setCharging(false);
-    const dx = window.innerWidth / 2 - event.clientX;
-    const dy = window.innerHeight / 2 - event.clientY;
-    Window.SetPosition(window.screenX + dx, window.screenY + dy)
+    const target = dragTargetOrigin({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      windowW: window.innerWidth,
+      windowH: window.innerHeight,
+      screenX: window.screenX,
+      screenY: window.screenY,
+    });
+    Window.SetPosition(target.x, target.y)
       .then(function () {
         try {
           const pending = Bound.BarStartDrag();
@@ -415,9 +426,12 @@
       .catch(function () {});
   }
   ball.addEventListener("pointermove", function (event) {
-    if (!pressed || event.buttons !== 1) return;
-    if (Math.abs(event.clientX - pressX) < DRAG_START_PX &&
-        Math.abs(event.clientY - pressY) < DRAG_START_PX) return;
+    if (!shouldStartDrag({
+      pressed: pressed,
+      buttons: event.buttons,
+      dx: event.clientX - pressX,
+      dy: event.clientY - pressY,
+    })) return;
     startNativeDrag(event);
   });
 
@@ -426,21 +440,35 @@
     if (!pressed) return;
     event.stopPropagation();
     pressed = false;
-    const held = performance.now() - pressStartMS;
-    const longPress = held >= CHARGE_THROW_MS;
+    const gesture = resolveGesture({
+      heldMs: performance.now() - pressStartMS,
+      docked: window.innerWidth < 60,
+      caught: !!(viewer && viewer.isCaught()),
+      capturing: !!(viewer && viewer.isCapturing()),
+      moved: false,
+      hasPet: !!pet,
+    });
     stopChargeUi();
-    if (longPress) {
-      throwNow();
-      return;
+    switch (gesture.action) {
+      case "dock-toggle":
+        // 贴边态（44px 半圆）短按：弹回浮动态并打开迷你宠物（窗口很小，
+        // 容不下宠物交互；弹回由 Go 侧 BarToggle 完成）。
+        try {
+          const pending = Bound.BarToggle();
+          if (pending && typeof pending.catch === "function") pending.catch(function () {});
+        } catch (_) {}
+        return;
+      case "throw":
+        throwNow();
+        return;
+      case "release":
+        releasePetBall();
+        return;
+      case "skill":
+        viewer.playSkill(pet.effect, effectIntensity());
+        return;
     }
-    if (viewer && viewer.isCaught()) {
-      releasePetBall();
-      return;
-    }
-    // 短按：随机放一个技能（强度按当日 Token 档位）。
-    if (viewer && pet && !viewer.isCapturing()) {
-      viewer.playSkill(pet.effect, effectIntensity());
-    }
+    // "none"：拖动中弹起或无宠物，静默。
   }
   ball.addEventListener("pointerup", finishPress);
   ball.addEventListener("pointercancel", function () {

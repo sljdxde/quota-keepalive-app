@@ -70,6 +70,22 @@ jobs:
         shell: pwsh
         run: go vet ./...
 
+      # GUI 包的单元测试在 Windows 上是绿的（其余包的 POSIX 语义用例不在
+      # 这里跑，见文件头说明）。每次改动都必须通过它。
+      - name: Unit tests (GUI package)
+        shell: pwsh
+        run: go test ./internal/gui/...
+
+      # 前端 JS 单测（纯函数模块：手势判定、宠物动作、账号折叠…）。
+      - name: Setup Node for JS tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Frontend JS unit tests
+        shell: bash
+        run: node --test internal/gui/frontend-js-tests/*.test.mjs
+
       - name: Build CLI
         shell: pwsh
         env:

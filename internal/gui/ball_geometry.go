@@ -150,6 +150,51 @@ func ballDockedPosition(area application.Rect, side string, x, y int) (int, int)
 	}
 }
 
+// ballDrop 描述一次拖放结束后悬浮球该落到哪：Action 为 "dock"（贴边）或
+// "float"（浮动态），Size 是落位后的窗口边长。
+type ballDrop struct {
+	Action    string
+	X         int
+	Y         int
+	Size      int
+	Docked    string
+	RestoreX  int
+	RestoreY  int
+}
+
+// resolveBarDrop 计算拖放结束后的落点：
+//   - 已在贴边态：拖到另一条边 → 换边继续贴；拖离边缘 → 恢复浮动态大小；
+//   - 未贴边：拖到任一边缘 → 吸附成半圆；否则按工作区钳制。
+// 纯函数：真实拖放坐标进、真实落点出，便于表驱动单测覆盖全部分支。
+func resolveBarDrop(
+	area application.Rect, x, y, size int,
+	docked string, restoreX, restoreY int,
+) ballDrop {
+	if docked != "" {
+		if side := ballDockSideFor(area, x, y, ballDockSize); side != "" {
+			nx, ny := ballDockedPosition(area, side, x, y)
+			return ballDrop{
+				Action: "dock", X: nx, Y: ny, Size: ballDockSize,
+				Docked: side, RestoreX: restoreX, RestoreY: restoreY,
+			}
+		}
+		// 窗口是 44px，放大到 64px 时把多出来的一圈平均分到两侧，让球心保持
+		// 在用户松手的位置。
+		delta := (ballSize - ballDockSize) / 2
+		nx, ny := clampBallPosition(area, x-delta, y-delta, ballSize)
+		return ballDrop{Action: "float", X: nx, Y: ny, Size: ballSize}
+	}
+	if side := ballDockSideFor(area, x, y, size); side != "" {
+		nx, ny := ballDockedPosition(area, side, x, y)
+		return ballDrop{
+			Action: "dock", X: nx, Y: ny, Size: ballDockSize,
+			Docked: side, RestoreX: x, RestoreY: y,
+		}
+	}
+	nx, ny := clampBallPosition(area, x, y, size)
+	return ballDrop{Action: "float", X: nx, Y: ny, Size: size}
+}
+
 // ballPanelOrigin 把精简面板摆在球旁边：优先右侧，右侧放不下放左侧；
 // 两侧都不够时钳进工作区。垂直方向与球顶对齐（略高于球 8px），并限制在
 // 工作区内。
