@@ -32,7 +32,7 @@ const rgnAnd = 1
 //
 // Min==Max 让用户拖边也改不了大小；DisableResize 必须为 false，否则
 // --wails-draggable 依赖的 WS_THICKFRAME 会消失、窗口拖不动。贴边收起时
-// 用 SetSize(44,44) 临时放宽这一约束（Wails 会同步调小 Min/Max）。
+// 用 SetSize(ballDockSize, ballDockSize) 临时放宽这一约束（Wails 会同步调小 Min/Max）。
 func barWindowOptions(theme string) application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
 		Name:           "bar",

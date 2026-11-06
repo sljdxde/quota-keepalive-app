@@ -15,10 +15,11 @@ import (
 // 这些函数只算数、不碰窗口，便于单测；真正 SetPosition/SetSize 在
 // bar_windows.go / app.go 里。
 const (
-	// ballSize 是浮动态直径，与原型 .ball 一致。
-	ballSize = 64
-	// ballDockSize 是贴边收起后的直径：一半在屏幕外，只露出 22px。
-	ballDockSize = 44
+	// ballSize 是浮动态直径。真机反馈 64px 太大，收到 52px：仍是完整圆，
+	// 但不抢桌面。CSS/HTML 的 SVG viewBox 保持 64 坐标系，由 100% 宽高缩放。
+	ballSize = 52
+	// ballDockSize 是贴边收起后的直径：一半在屏幕外，只露出 18px。
+	ballDockSize = 36
 	// ballDockThreshold 是拖放结束时离屏幕左右边缘多近就吸附。
 	ballDockThreshold = 12
 	// ballEdgeMargin 是位置钳制/面板选址时与工作区边界保留的间距。
@@ -192,8 +193,8 @@ func resolveBarDrop(
 				Docked: side, RestoreX: restoreX, RestoreY: restoreY,
 			}
 		}
-		// 窗口是 44px，放大到 64px 时把多出来的一圈平均分到两侧，让球心保持
-		// 在用户松手的位置。
+		// 贴边窗口较小，放大回浮动态时把多出来的一圈平均分到两侧，让球心
+		// 保持在用户松手的位置。
 		delta := (ballSize - ballDockSize) / 2
 		nx, ny := clampBallPosition(area, x-delta, y-delta, ballSize)
 		return ballDrop{Action: "float", X: nx, Y: ny, Size: ballSize}

@@ -22,10 +22,10 @@
 </head>
 <body>
   <!-- 常驻悬浮球：Windows 上等价于 macOS 菜单栏上的 QKA 状态项。
-       球面 = 24px 小宠物（有速度时跑动，越快越快）+ 纯数字速度（无单位）；
-       伙伴被收进精灵球时换成精灵球（速度越快晃得越快，>1000 自动放出）。
+       球面 = 26px 小宠物（有速度时跑动，越快越快、幅度越大）+ 纯数字速度（无单位）；
+       伙伴被收进精灵球时换成精灵球（速度越快晃得越快，达到 400 满环速度自动放出）。
        按住可拖动；左键单击打开迷你宠物窗口；右键出菜单。
-       拖到屏幕边缘会收成 44px 半圆（Go 侧 SetSize），此时只显示宠物/精灵球。 -->
+       拖到屏幕边缘会收成 36px 半圆（Go 侧 SetSize），此时只显示宠物/精灵球。 -->
   <div id="ball" class="ball idle" role="button" title="Quota Keepalive">
     <svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
       <defs>
@@ -246,8 +246,14 @@
     ball.classList.toggle("shaking", face.shaking);
     if (face.running) {
       petNode.style.setProperty("--run-duration", face.runSeconds + "s");
+      petNode.style.setProperty("--run-bob", face.amplitude.bob + "px");
+      petNode.style.setProperty("--run-tilt", face.amplitude.tilt + "deg");
+      petNode.style.setProperty("--run-stride", face.amplitude.stride + "px");
     } else {
       petNode.style.removeProperty("--run-duration");
+      petNode.style.removeProperty("--run-bob");
+      petNode.style.removeProperty("--run-tilt");
+      petNode.style.removeProperty("--run-stride");
     }
     if (face.shaking) {
       ball.style.setProperty("--shake-duration", face.shakeSeconds + "s");
@@ -292,7 +298,7 @@
     ball.style.setProperty("--ball-hue", String(titleThemeHues[themeId] ?? 193));
 
     const face = paintFace();
-    // 超过 1000 tok/s：精灵球被挣开，自动放出伙伴。
+    // 达到 400 tok/s（称号环满环）：精灵球被挣开，自动放出伙伴。
     if (face.autoRelease) setCaught(false);
   }
 
@@ -311,13 +317,13 @@
   });
   renderBallState();
 
-  // 贴边态：Go 把窗口缩到 44px 并有一半放到屏幕外，页面依据视口宽度切换内容；
+  // 贴边态：Go 把窗口缩到 36px 并有一半放到屏幕外，页面依据视口宽度切换内容；
   // 再用「窗口矩形 vs 工作区」推断贴的是哪条边，把宠物/精灵球往屏幕内移半宽，
-  // 否则 18px 内容正好被窗口边界切成一半。
+  // 否则内容正好被窗口边界切成一半。
   let dockTimer = 0;
   let dockPoll = 0;
   function syncDocked() {
-    const docked = window.innerWidth < 60;
+    const docked = window.innerWidth < 44;
     ball.classList.toggle("docked", docked);
     const screen = window.screen || {};
     const side = docked ? dockSideForWindow({

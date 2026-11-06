@@ -65,7 +65,7 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		// 球面精简：不再展示 tok/s 单位，也不承载投球/技能演出。
 		`>tok/s<`,
 		`viewer.throwBall`,
-		// 球面不依赖 WebGL：64px 窗口里 3D 加载慢/失败会让宠物整块空白。
+		// 球面不依赖 WebGL：小球里 3D 加载慢/失败会让宠物整块空白。
 		`createPokemon3D`,
 		`pokemon-3d-canvas`,
 		`modelYaw`,
@@ -314,10 +314,16 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	if ballDockSize >= ballSize || ballDockSize%2 != 0 {
 		t.Errorf("贴边尺寸 %d 应小于浮动态且能被 2 整除（一半露出）", ballDockSize)
 	}
+	// 真机反馈 64px 球太大：浮动态收到 52px、贴边收到 36px。
+	// 这里锁定具体数值，避免以后被无意识改回去。
+	if ballSize != 52 || ballDockSize != 36 {
+		t.Errorf("球尺寸应为 52px / 贴边 36px，实际 %d / %d", ballSize, ballDockSize)
+	}
 }
 
-// 球面尺寸：宠物 24px、数字 16px 基准、无单位；跑动/晃动动画按速度节奏。
-// 宠物用 2D 立绘，不依赖 WebGL 就绪——这是「宠物根本显示不出来」的回归保护。
+// 球面比例：球缩到 52px 后，宠物反而稍大（26px）、数字更小（13px），
+// 跑动幅度用 CSS 变量按速度放大。宠物用 2D 立绘，不依赖 WebGL 就绪——
+// 这是「宠物根本显示不出来」的回归保护。
 func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/assets/ball.css")
 	if err != nil {
@@ -326,12 +332,15 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	css := string(data)
 	for _, want := range []string{
 		`.ball .core .pet-icon`,
-		`width: 24px; height: 24px`,
-		`.ball.has-pet .core b { font-size: 16px; }`,
+		`width: 26px; height: 26px`,
+		`.ball.has-pet .core b { font-size: 13px; }`,
 		`.ball .core .pet-icon.running`,
 		`@keyframes pet-run`,
 		`@keyframes ball-shake`,
 		`--run-duration`,
+		`--run-bob`,
+		`--run-tilt`,
+		`--run-stride`,
 		`--shake-duration`,
 		// hidden 必须真正不占位：作者样式的 display 会压过 UA 规则。
 		`.ball [hidden] { display: none !important; }`,
@@ -366,6 +375,7 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 		`shaking: !reducedMotion && shakeSeconds > 0`,
 		`autoRelease: caught && shouldAutoRelease(speed)`,
 		`speedFontPx: ballSpeedFontPx(source.speedText)`,
+		`amplitude: runAmplitude(speed)`,
 		`runDuration`,
 		`shakeDuration`,
 		`shouldAutoRelease`,
@@ -376,7 +386,7 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	}
 }
 
-// 贴边态：44px 窗口有一半在屏幕外，18px 宠物/精灵球必须向屏幕内移半宽，
+// 贴边态：36px 窗口有一半在屏幕外，16px 宠物/精灵球必须向屏幕内移半宽，
 // 否则正好被窗口边界切一半。贴边侧由窗口矩形与工作区推断（纯函数可单测）。
 func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/bar.html")
@@ -388,7 +398,7 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`assets/ball-dock.js`,
 		`dockSideForWindow`,
 		`dockContentShift`,
-		`window.innerWidth < 60`,
+		`window.innerWidth < 44`,
 		`width: window.innerWidth,`,
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
@@ -418,7 +428,7 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 	}
 	dock := string(dockData)
 	for _, want := range []string{
-		`export const DOCK_CONTENT_SHIFT = 9`,
+		`export const DOCK_CONTENT_SHIFT = 8`,
 		`export function dockSideForWindow`,
 		`export function dockContentShift`,
 	} {

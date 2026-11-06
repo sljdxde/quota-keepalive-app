@@ -7,7 +7,8 @@ export const CHARGE_THROW_MS = 620;
 // DRAG_START_PX 与页面保持一致：按住移动超过该距离升级为窗口拖动。
 export const DRAG_START_PX = 6;
 // AUTO_RELEASE_SPEED 是「精灵球被挣扎开」的阈值：超过它自动放出伙伴。
-export const AUTO_RELEASE_SPEED = 1000;
+// 取 400 tok/s = titleThresholds 的最高档，正好是称号环画满一圈的速度。
+export const AUTO_RELEASE_SPEED = 400;
 
 /**
  * 判定一次「按下→弹起」的结果（用于宠物窗口）。
@@ -76,35 +77,58 @@ export function chargeProgress(heldMs) {
 
 /**
  * 宠物奔跑动画的一步时长（秒）：速度越快越短（跑得越快）。
- * 0 速度返回 0（不跑）；1..400 tok/s 从 0.90s 收敛到 0.22s。
+ * 0 速度返回 0（不跑）；1..400 tok/s 从 1.00s 收敛到 0.20s。
+ * 用 sqrt 曲线而不是线性：常见速度（10~120）能拉开更明显的节奏差，
+ * 不再是「18 和 120 几乎一样快」。
  * @param {number} speed
  * @returns {number} 秒；0 表示不播放
  */
 export function runDuration(speed) {
   const value = Math.max(0, Number(speed) || 0);
   if (value <= 0) return 0;
-  const t = Math.min(1, value / 400);
-  return Math.round((0.9 - 0.68 * t) * 1000) / 1000;
+  const t = Math.min(1, Math.sqrt(value / 400));
+  return Math.round((1 - 0.8 * t) * 1000) / 1000;
+}
+
+/**
+ * 宠物奔跑的幅度：速度越快，抬腿、前倾、摆幅越大。只靠周期长短，
+ * 在 64px 以下的小球里肉眼很难分辨；幅度是第二个、更直观的速度信号。
+ * 页面把这三个值写成 CSS 变量给 @keyframes pet-run 用。
+ * @param {number} speed tok/s
+ * @returns {{bob: number, tilt: number, stride: number}} px / deg / px
+ */
+export function runAmplitude(speed) {
+  const value = Math.max(0, Number(speed) || 0);
+  if (value <= 0) return { bob: 0, tilt: 0, stride: 0 };
+  const t = Math.min(1, Math.sqrt(value / 400));
+  const round = function (n) { return Math.round(n * 10) / 10; };
+  return {
+    bob: round(1.5 + 3.5 * t),
+    tilt: round(3 + 9 * t),
+    stride: round(0.5 + 2 * t),
+  };
 }
 
 /**
  * 精灵球晃动动画的一步时长（秒）：速度越快晃得越快。
- * 0 速度返回 0（静止）；1..1000 tok/s 从 0.80s 收敛到 0.25s。
+ * 0 速度返回 0（静止）；1..400 tok/s 从 0.80s 收敛到 0.22s。
+ * 400 既是满环速度也是自动放出阈值，节奏与奔跑幅度共用同一归一化。
  * @param {number} speed
  * @returns {number} 秒；0 表示不播放
  */
 export function shakeDuration(speed) {
   const value = Math.max(0, Number(speed) || 0);
   if (value <= 0) return 0;
-  const t = Math.min(1, value / AUTO_RELEASE_SPEED);
-  return Math.round((0.8 - 0.55 * t) * 1000) / 1000;
+  const t = Math.min(1, Math.sqrt(value / AUTO_RELEASE_SPEED));
+  return Math.round((0.8 - 0.58 * t) * 1000) / 1000;
 }
 
 /**
- * 速度超过阈值时，精灵球里的伙伴会自己挣出来。
+ * 速度达到阈值时，精灵球里的伙伴会自己挣出来。
+ * 用「>=」而不是「>」：400 正好是称号环满环，达到那一刻就放出。
  * @param {number} speed tok/s
  * @returns {boolean}
  */
 export function shouldAutoRelease(speed) {
-  return (Number(speed) || 0) > AUTO_RELEASE_SPEED;
+  return (Number(speed) || 0) >= AUTO_RELEASE_SPEED;
 }

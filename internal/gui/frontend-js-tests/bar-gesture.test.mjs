@@ -8,6 +8,7 @@ import {
   chargeProgress,
   dragTargetOrigin,
   resolvePetGesture,
+  runAmplitude,
   runDuration,
   shakeDuration,
   shouldAutoRelease,
@@ -119,6 +120,7 @@ test("chargeProgress: clamps between 0 and 1 and tracks time linearly", function
 });
 
 // runDuration / shakeDuration：速度越快，动画一步越短（跑得/晃得越快）。
+// 用 sqrt 曲线：常见速度（10~120）能拉开更明显的节奏差，而不是只看周期。
 test("runDuration: idle means no animation, faster speed means shorter cycle", function () {
   assert.equal(runDuration(0), 0);
   assert.equal(runDuration(-5), 0);
@@ -127,26 +129,46 @@ test("runDuration: idle means no animation, faster speed means shorter cycle", f
   const mid = runDuration(120);
   const fast = runDuration(400);
   assert.ok(slow > mid && mid > fast, `应随速度单调变快: ${slow}/${mid}/${fast}`);
-  assert.ok(slow > 0 && slow <= 0.9);
-  assert.ok(fast >= 0.22);
+  assert.equal(slow, 0.874);
+  assert.equal(mid, 0.562);
+  assert.equal(fast, 0.2);
   // 封顶后不再变快。
-  assert.equal(runDuration(5000), runDuration(400));
+  assert.equal(runDuration(5000), 0.2);
+});
+
+test("runAmplitude: 慢速轻颠，越接近满环速度幅度越大", function () {
+  assert.deepEqual(runAmplitude(0), { bob: 0, tilt: 0, stride: 0 });
+  assert.deepEqual(runAmplitude(-5), { bob: 0, tilt: 0, stride: 0 });
+  assert.deepEqual(runAmplitude(NaN), { bob: 0, tilt: 0, stride: 0 });
+  const slow = runAmplitude(10);
+  const mid = runAmplitude(120);
+  const fast = runAmplitude(400);
+  assert.deepEqual(slow, { bob: 2.1, tilt: 4.4, stride: 0.8 });
+  assert.deepEqual(mid, { bob: 3.4, tilt: 7.9, stride: 1.6 });
+  assert.deepEqual(fast, { bob: 5, tilt: 12, stride: 2.5 });
+  assert.ok(fast.bob > mid.bob && mid.bob > slow.bob);
+  assert.ok(fast.tilt > mid.tilt && mid.tilt > slow.tilt);
+  assert.ok(fast.stride > mid.stride && mid.stride > slow.stride);
+  // 满环速度封顶后幅度不再变大。
+  assert.deepEqual(runAmplitude(5000), fast);
 });
 
 test("shakeDuration: idle means still, faster speed shakes faster and is capped", function () {
   assert.equal(shakeDuration(0), 0);
   const slow = shakeDuration(50);
-  const fast = shakeDuration(900);
+  const fast = shakeDuration(400);
+  assert.equal(slow, 0.595);
+  assert.equal(fast, 0.22);
   assert.ok(slow > fast);
-  assert.ok(fast >= 0.25);
-  assert.equal(shakeDuration(AUTO_RELEASE_SPEED * 3), shakeDuration(AUTO_RELEASE_SPEED));
+  assert.equal(shakeDuration(AUTO_RELEASE_SPEED * 3), fast);
 });
 
-test("shouldAutoRelease: only above 1000 tok/s", function () {
+test("shouldAutoRelease: 达到 400 tok/s（称号环满环）就放出", function () {
+  assert.equal(AUTO_RELEASE_SPEED, 400);
   assert.equal(shouldAutoRelease(0), false);
-  assert.equal(shouldAutoRelease(999.9), false);
-  assert.equal(shouldAutoRelease(1000), false);
-  assert.equal(shouldAutoRelease(1000.1), true);
+  assert.equal(shouldAutoRelease(399.9), false);
+  assert.equal(shouldAutoRelease(400), true);
+  assert.equal(shouldAutoRelease(400.1), true);
   assert.equal(shouldAutoRelease(2000), true);
   assert.equal(shouldAutoRelease(NaN), false);
 });

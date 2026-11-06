@@ -318,7 +318,7 @@ func (a *App) ensureBar() *application.WebviewWindow {
 }
 
 // restoreBarPosition 在创建窗口后恢复持久化的位置：普通态直接落位，贴边态
-// 恢复成 44px 半圆；没有状态文件（首启、配置目录未知）时落在主屏顶部居中。
+// 恢复成 36px 半圆；没有状态文件（首启、配置目录未知）时落在主屏顶部居中。
 func (a *App) restoreBarPosition(bar *application.WebviewWindow) {
 	if bar == nil {
 		return
@@ -504,7 +504,7 @@ func (a *App) rememberBarState(state barWindowState) {
 	}
 }
 
-// onBarMoveEnd 处理用户拖动结束：贴近任一边缘就吸附成 44px 半圆，否则钳进
+// onBarMoveEnd 处理用户拖动结束：贴近任一边缘就吸附成 36px 半圆，否则钳进
 // 工作区并记忆位置。
 func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 	if bar == nil {
@@ -541,7 +541,7 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 	a.shapeBall(bar)
 }
 
-// undockBar 把贴边态弹回浮动态：恢复 64px 与贴边前的位置（再钳进工作区）。
+// undockBar 把贴边态弹回浮动态：恢复 52px 与贴边前的位置（再钳进工作区）。
 func (a *App) undockBar(restoreX, restoreY int) {
 	a.windowMu.Lock()
 	bar := a.bar

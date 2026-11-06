@@ -90,23 +90,24 @@ html, body {
   text-align: center; line-height: 1;
   pointer-events: none;
 }
-/* Q 标记在浮动态是球心的一枚极淡水印（不抢数字），贴边态才作为主体显示。 */
+/* Q 标记在浮动态是球心的一枚极淡水印（不抢数字），贴边态才作为主体显示。
+   球缩到 52px 后水印也跟着收，避免占满球面。 */
 .ball .core .q {
   position: absolute;
   left: 50%; top: 50%;
-  width: 38px; height: 38px;
+  width: 30px; height: 30px;
   transform: translate(-50%, -50%);
   display: block;
   color: #fff;
   opacity: .1;
 }
 /* ============================================================ 球面小宠物 / 精灵球
-   球面只用 2D 立绘：64px 窗口里 3D 全身只占十几像素，看不出形状，且
-   模型加载失败时 WebGL 舞台会留白。3D 舞台只留在迷你宠物窗口里。
-   宠物 24px + 速度数字 16px，一起塞进 64px 圆的环内。 */
+   球面只用 2D 立绘：小球里 3D 全身只占十几像素，看不出形状，且模型
+   加载失败时 WebGL 舞台会留白。3D 舞台只留在迷你宠物窗口里。
+   球缩到 52px 后：宠物 26px（稍大、动作看得清）+ 速度数字 13px（更小）。 */
 .ball .core .pet-icon {
   position: relative;
-  width: 24px; height: 24px;
+  width: 26px; height: 26px;
   display: none;
   flex: none;
 }
@@ -123,14 +124,22 @@ html, body {
   animation: pet-run var(--run-duration, .6s) ease-in-out infinite;
   transform-origin: 50% 88%;
 }
+/* 幅度由页面按速度写进 --run-bob/--run-tilt/--run-stride：
+   慢速轻轻颠，越接近满环速度越明显地抬腿、前倾、跨步。 */
 @keyframes pet-run {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  25% { transform: translateY(-1.5px) rotate(-2.5deg); }
-  75% { transform: translateY(-.5px) rotate(2deg); }
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% {
+    transform: translate(calc(var(--run-stride, 1px) * -1), calc(var(--run-bob, 2px) * -1))
+      rotate(calc(var(--run-tilt, 4deg) * -1));
+  }
+  75% {
+    transform: translate(var(--run-stride, 1px), calc(var(--run-bob, 2px) * -0.4))
+      rotate(var(--run-tilt, 4deg));
+  }
 }
 /* 精灵球：被捕获时占宠物位置；速度越快晃得越快（晃幅很小，不抢数字）。 */
 .ball .core .ball-icon {
-  width: 24px; height: 24px;
+  width: 26px; height: 26px;
   display: none;
   color: #fff;
   flex: none;
@@ -145,22 +154,22 @@ html, body {
   25% { transform: rotate(-11deg); }
   75% { transform: rotate(11deg); }
 }
-/* 有宠物：Q 水印退场；速度数字用 16px 基准（页面按位数再收到 14/12px），
+/* 有宠物：Q 水印退场；速度数字用 13px 基准（页面按位数再收到 12/10px），
    不再显示单位，避免拥挤。 */
 .ball.has-pet .core .q { display: none; }
-.ball.has-pet .core b { font-size: 16px; }
-/* 贴边态：窗口 44px、一半在屏幕外，只留 18px 宠物/精灵球。
+.ball.has-pet .core b { font-size: 13px; }
+/* 贴边态：窗口 36px、一半在屏幕外，只留 16px 宠物/精灵球。
    主体往屏幕内偏移半宽（--dock-x/--dock-y 由 bar.html 依窗口与工作区推断），
-   否则 18px 内容正好被窗口边界切成一半。 */
+   否则内容正好被窗口边界切成一半。 */
 .ball.docked .core {
   transform: translate(var(--dock-x, 0px), var(--dock-y, 0px));
 }
 .ball.docked .core b { display: none; }
 .ball.docked .core .pet-icon,
-.ball.docked .core .ball-icon { width: 18px; height: 18px; }
+.ball.docked .core .ball-icon { width: 16px; height: 16px; }
 .ball.docked .core .q {
   position: static;
-  width: 18px; height: 18px;
+  width: 16px; height: 16px;
   transform: none;
   color: #fff;
   opacity: .9;

@@ -55,7 +55,9 @@ test("ballFaceState: 宠物模式有速度才跑，速度越快周期越短", fu
   assert.equal(fast.running, true);
   assert.ok(slow.runSeconds > mid.runSeconds);
   assert.ok(mid.runSeconds > fast.runSeconds);
-  assert.equal(fast.runSeconds, 0.22);
+  assert.deepEqual(slow.amplitude, { bob: 2.1, tilt: 4.4, stride: 0.8 });
+  assert.deepEqual(fast.amplitude, { bob: 5, tilt: 12, stride: 2.5 });
+  assert.equal(fast.runSeconds, 0.2);
   // 封顶后不再变快。
   const capped = ballFaceState({ speed: 5000, speedText: "5.0k", caught: false });
   assert.equal(capped.runSeconds, fast.runSeconds);
@@ -71,8 +73,8 @@ test("ballFaceState: 精灵球模式有速度才晃，速度越快周期越短",
   assert.equal(slow.shaking, true);
   assert.equal(fast.shaking, true);
   assert.ok(slow.shakeSeconds > fast.shakeSeconds);
-  assert.ok(fast.shakeSeconds >= 0.25);
-  assert.equal(ballFaceState({ speed: 1000, speedText: "1.0k", caught: true }).shakeSeconds, 0.25);
+  assert.ok(fast.shakeSeconds >= 0.22);
+  assert.equal(ballFaceState({ speed: 400, speedText: "400", caught: true }).shakeSeconds, 0.22);
 });
 
 test("ballFaceState: 捕获态与运动互不串台", function () {
@@ -93,8 +95,8 @@ test("ballFaceState: reduced-motion 只停动画，不隐藏主体、不改速�
   });
   assert.equal(pet.petVisible, true);
   assert.equal(pet.running, false);
-  assert.equal(pet.runSeconds, 0.696);
-  assert.equal(pet.speedFontPx, 16);
+  assert.equal(pet.runSeconds, 0.562);
+  assert.equal(pet.speedFontPx, 13);
 
   const ball = ballFaceState({
     speed: 800, speedText: "800", caught: true, reducedMotion: true,
@@ -104,13 +106,13 @@ test("ballFaceState: reduced-motion 只停动画，不隐藏主体、不改速�
   assert.ok(ball.shakeSeconds > 0);
 });
 
-test("ballFaceState: 只有精灵球模式超过 1000 才自动放出", function () {
+test("ballFaceState: 只有精灵球模式达到 400（满环）才自动放出", function () {
   assert.equal(
-    ballFaceState({ speed: 1000, speedText: "1.0k", caught: true }).autoRelease,
+    ballFaceState({ speed: 399.9, speedText: "400", caught: true }).autoRelease,
     false
   );
   assert.equal(
-    ballFaceState({ speed: 1000.1, speedText: "1.0k", caught: true }).autoRelease,
+    ballFaceState({ speed: 400, speedText: "400", caught: true }).autoRelease,
     true
   );
   // 宠物没被捕获：没有「放出」这回事，页面不应写状态或广播事件。
@@ -123,6 +125,7 @@ test("ballFaceState: 只有精灵球模式超过 1000 才自动放出", function
 test("ballFaceState: 非法输入退回安全默认值", function () {
   for (const input of [undefined, null, {}]) {
     const face = ballFaceState(input);
+    assert.deepEqual(face.amplitude, { bob: 0, tilt: 0, stride: 0 });
     assert.equal(face.petVisible, true);
     assert.equal(face.ballVisible, false);
     assert.equal(face.running, false);
@@ -137,14 +140,14 @@ test("ballFaceState: 非法输入退回安全默认值", function () {
   assert.equal(textual.running, true);
 });
 
-test("ballSpeedFontPx: 3 位以内 16、4 位 14、5 位以上 12", function () {
-  assert.equal(ballSpeedFontPx("0"), 16);
-  assert.equal(ballSpeedFontPx("18"), 16);
-  assert.equal(ballSpeedFontPx("999"), 16);
-  assert.equal(ballSpeedFontPx("1.2k"), 14);
-  assert.equal(ballSpeedFontPx("18.3k"), 12);
-  assert.equal(ballSpeedFontPx("123M"), 14);
-  assert.equal(ballSpeedFontPx(undefined), 16);
-  assert.equal(BALL_SPEED_FONT_PX, 16);
-  assert.equal(BALL_PET_SIZE, 24);
+test("ballSpeedFontPx: 3 位以内 13、4 位 12、5 位以上 10", function () {
+  assert.equal(ballSpeedFontPx("0"), 13);
+  assert.equal(ballSpeedFontPx("18"), 13);
+  assert.equal(ballSpeedFontPx("999"), 13);
+  assert.equal(ballSpeedFontPx("1.2k"), 12);
+  assert.equal(ballSpeedFontPx("18.3k"), 10);
+  assert.equal(ballSpeedFontPx("123M"), 12);
+  assert.equal(ballSpeedFontPx(undefined), 13);
+  assert.equal(BALL_SPEED_FONT_PX, 13);
+  assert.equal(BALL_PET_SIZE, 26);
 });

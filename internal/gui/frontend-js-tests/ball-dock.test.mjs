@@ -71,11 +71,11 @@ test("dockSideForWindow: 非法/缺失尺寸回退为不贴边", function () {
 });
 
 test("dockContentShift: 往屏幕内移半宽，浮动态不偏移", function () {
-  assert.equal(DOCK_CONTENT_SHIFT, 9);
-  assert.deepEqual(dockContentShift("left"), { x: 9, y: 0 });
-  assert.deepEqual(dockContentShift("right"), { x: -9, y: 0 });
-  assert.deepEqual(dockContentShift("top"), { x: 0, y: 9 });
-  assert.deepEqual(dockContentShift("bottom"), { x: 0, y: -9 });
+  assert.equal(DOCK_CONTENT_SHIFT, 8);
+  assert.deepEqual(dockContentShift("left"), { x: 8, y: 0 });
+  assert.deepEqual(dockContentShift("right"), { x: -8, y: 0 });
+  assert.deepEqual(dockContentShift("top"), { x: 0, y: 8 });
+  assert.deepEqual(dockContentShift("bottom"), { x: 0, y: -8 });
   assert.deepEqual(dockContentShift(""), { x: 0, y: 0 });
   assert.deepEqual(dockContentShift("nonsense"), { x: 0, y: 0 });
 });
