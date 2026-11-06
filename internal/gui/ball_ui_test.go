@@ -28,6 +28,12 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`titleThemeHues`,
 		`Bound.BarToggle`,
 		`Bound.BarMenu`,
+		`Bound.BarState`,
+		`id="ball-pet"`,
+		`assets/tray/`,
+		`pokeball.png`,
+		`Events.On("pet-selected"`,
+		`Events.On("pet-caught"`,
 		`Events.On("tokenspeed-changed"`,
 		`--wails-draggable: drag`,
 	} {

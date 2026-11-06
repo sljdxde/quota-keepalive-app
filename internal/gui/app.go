@@ -320,7 +320,7 @@ func (a *App) restoreBarPosition(bar *application.WebviewWindow) {
 	}
 	if state.Docked != "" {
 		area := a.workAreaForPoint(state.RestoreX, state.RestoreY)
-		x, y := ballDockedPosition(area, state.Docked, state.RestoreY)
+		x, y := ballDockedPosition(area, state.Docked, state.RestoreX, state.RestoreY)
 		bar.SetSize(ballDockSize, ballDockSize)
 		bar.SetPosition(x, y)
 		a.rememberBarState(barWindowState{
@@ -461,7 +461,8 @@ func (a *App) rememberBarState(state barWindowState) {
 	}
 }
 
-// onBarMoveEnd 处理用户拖动结束：贴边吸附成 44px 半圆，否则钳进工作区并记忆位置。
+// onBarMoveEnd 处理用户拖动结束：贴近任一边缘就吸附成 44px 半圆，否则钳进
+// 工作区并记忆位置。
 func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 	if bar == nil {
 		return
@@ -480,7 +481,7 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 	if docked != "" {
 		// 贴边态被拖走：要么换边继续贴，要么恢复浮动态大小落在新位置。
 		if side := ballDockSideFor(area, x, y, ballDockSize); side != "" {
-			nx, ny := ballDockedPosition(area, side, y)
+			nx, ny := ballDockedPosition(area, side, x, y)
 			bar.SetPosition(nx, ny)
 			a.rememberBarState(barWindowState{
 				X: nx, Y: ny, Docked: side,
@@ -500,12 +501,16 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 		a.rememberBarState(barWindowState{X: nx, Y: ny})
 		a.shapeBall(bar)
 		a.hideBallPanel()
+		a.hidePetMini()
+		a.hideBallMenu()
 		return
 	}
 
 	if side := ballDockSideFor(area, x, y, width); side != "" {
 		a.hideBallPanel()
-		nx, ny := ballDockedPosition(area, side, y)
+		a.hidePetMini()
+		a.hideBallMenu()
+		nx, ny := ballDockedPosition(area, side, x, y)
 		bar.SetSize(ballDockSize, ballDockSize)
 		bar.SetPosition(nx, ny)
 		a.rememberBarState(barWindowState{
@@ -853,6 +858,19 @@ func (a *App) setTrayCaught(caught bool) {
 	petID := a.trayPet
 	a.trayStateMu.Unlock()
 	a.applyTrayState(petID, caught)
+}
+
+// BarStateView 返回悬浮球中央图标状态（导出给 Bound.BarState 用）：
+// 当前宠物与是否精灵球模式。与 macOS 菜单栏图标共用同一份状态。
+func (a *App) BarStateView() BarStateView {
+	return a.barStateView()
+}
+
+// barStateView 是 BarStateView 的实现。
+func (a *App) barStateView() BarStateView {
+	a.trayStateMu.Lock()
+	defer a.trayStateMu.Unlock()
+	return BarStateView{PetID: a.trayPet, Caught: a.trayCaught}
 }
 
 func (a *App) applyTrayState(petID string, caught bool) {

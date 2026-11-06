@@ -143,7 +143,30 @@ export function AppsList() {
 }
 
 /**
- * DiagnosticsGet 返回设置页「诊断」区块的后端元数据（版本/平台/路径/慢轮询）。
+ * @returns {$CancellablePromise<void>}
+ */
+export function BarMenu() {
+    return $Call.ByID(2122654081);
+}
+
+/**
+ * BarState 返回悬浮球中央应显示的图标状态（宠物 / 精灵球）。
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function BarState() {
+    return $Call.ByID(2470353683);
+}
+
+/**
+ * BarToggle 是 Windows 悬浮球左键点击的入口。
+ * @returns {$CancellablePromise<void>}
+ */
+export function BarToggle() {
+    return $Call.ByID(3209248438);
+}
+
+/**
+ * DiagnosticsGet 返回诊断区块所需的后端元数据（不含前端渲染器检测）。
  * @returns {$CancellablePromise<json$0.RawMessage>}
  */
 export function DiagnosticsGet() {
@@ -151,24 +174,13 @@ export function DiagnosticsGet() {
 }
 
 /**
- * DiagnosticsOpenLogDir 用系统文件管理器打开日志目录。
+ * DiagnosticsOpenLogDir 用系统文件管理器打开日志目录。路径来自 applog 自己
+ * 解析的目录（配置目录/logs，或 QKA_LOG_DIR 覆盖值），以独立 argv 交给
+ * explorer/open/xdg-open，全程不做 shell 字符串拼接。
  * @returns {$CancellablePromise<void>}
  */
 export function DiagnosticsOpenLogDir() {
     return $Call.ByID(290522766);
-}
-
-/**
- * ReportViewport 由页面在加载完成时调用，记录真实 CSS 视口、devicePixelRatio 与
- * 实际界面缩放，用于排查「界面被裁掉/字体过大」是窗口尺寸、系统 DPI 还是缩放策略。
- * @param {number} width
- * @param {number} height
- * @param {number} dpr
- * @param {number} scale
- * @returns {$CancellablePromise<void>}
- */
-export function ReportViewport(width, height, dpr, scale) {
-    return $Call.ByID(4185818293, width, height, dpr, scale);
 }
 
 /**
@@ -186,7 +198,8 @@ export function LogsTail(target, accountID, operation, state, limit, cursor) {
 }
 
 /**
- * PanelToggle 切换吸附面板：Windows 顶栏刘海（菜单栏状态项）被点击时调用。
+ * PanelToggle 切换吸附面板：macOS 菜单栏图标点击时调用，面板内容即
+ * panel.html。Windows 悬浮球不使用这条路径（见 BarToggle）。
  * @returns {$CancellablePromise<void>}
  */
 export function PanelToggle() {
@@ -194,7 +207,8 @@ export function PanelToggle() {
 }
 
 /**
- * PanelToggleAt 在刘海所在屏幕坐标下方切换面板。
+ * PanelToggleAt 在悬浮球所在的屏幕坐标下方切换 392px 面板。x/y 是点击位置
+ * 的 CSS 像素坐标（DIP）；没有该能力时退回普通 PanelToggle。
  * @param {number} x
  * @param {number} y
  * @returns {$CancellablePromise<void>}
@@ -220,22 +234,24 @@ export function PluginsList() {
 }
 
 /**
- * ProvidersList returns the bundled provider plugins and their accounts.
- * @returns {$CancellablePromise<json$0.RawMessage>}
- */
-export function ProvidersList() {
-    return $Call.ByID(740407853);
-}
-
-/**
  * ProvidersBeginLogin starts or advances a provider sign-in.
  * @param {string} provider
  * @param {number} method
- * @param {Record<string, string>} inputs
+ * @param {{ [_ in string]?: string }} inputs
  * @returns {$CancellablePromise<json$0.RawMessage>}
  */
 export function ProvidersBeginLogin(provider, method, inputs) {
     return $Call.ByID(1547176159, provider, method, inputs);
+}
+
+/**
+ * ProvidersDeleteAccount removes QKA's provider account and credentials.
+ * @param {string} provider
+ * @param {string} account
+ * @returns {$CancellablePromise<void>}
+ */
+export function ProvidersDeleteAccount(provider, account) {
+    return $Call.ByID(850109385, provider, account);
 }
 
 /**
@@ -249,10 +265,29 @@ export function ProvidersFinishLogin(session, code) {
 }
 
 /**
+ * ProvidersHistory returns recent runs and quota observations.
+ * @param {string} provider
+ * @param {string} account
+ * @param {number} limit
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function ProvidersHistory(provider, account, limit) {
+    return $Call.ByID(1011114083, provider, account, limit);
+}
+
+/**
+ * ProvidersList returns the bundled provider plugins and their accounts.
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function ProvidersList() {
+    return $Call.ByID(740407853);
+}
+
+/**
  * ProvidersLoginAPIKey stores an API-key sign-in.
  * @param {string} provider
  * @param {number} method
- * @param {Record<string, string>} inputs
+ * @param {{ [_ in string]?: string }} inputs
  * @param {string} key
  * @returns {$CancellablePromise<json$0.RawMessage>}
  */
@@ -261,13 +296,14 @@ export function ProvidersLoginAPIKey(provider, method, inputs, key) {
 }
 
 /**
- * ProvidersSetEnabled toggles one provider.
+ * ProvidersRun executes one provider account action.
  * @param {string} provider
- * @param {boolean} enabled
+ * @param {string} account
+ * @param {string} operation
  * @returns {$CancellablePromise<void>}
  */
-export function ProvidersSetEnabled(provider, enabled) {
-    return $Call.ByID(217437436, provider, enabled);
+export function ProvidersRun(provider, account, operation) {
+    return $Call.ByID(181441518, provider, account, operation);
 }
 
 /**
@@ -279,6 +315,16 @@ export function ProvidersSetEnabled(provider, enabled) {
  */
 export function ProvidersSetAccountEnabled(provider, account, enabled) {
     return $Call.ByID(2126562383, provider, account, enabled);
+}
+
+/**
+ * ProvidersSetEnabled toggles one provider.
+ * @param {string} provider
+ * @param {boolean} enabled
+ * @returns {$CancellablePromise<void>}
+ */
+export function ProvidersSetEnabled(provider, enabled) {
+    return $Call.ByID(217437436, provider, enabled);
 }
 
 /**
@@ -294,17 +340,6 @@ export function ProvidersSetTaskEnabled(provider, account, operation, enabled) {
 }
 
 /**
- * ProvidersRun executes one provider account action.
- * @param {string} provider
- * @param {string} account
- * @param {string} operation
- * @returns {$CancellablePromise<void>}
- */
-export function ProvidersRun(provider, account, operation) {
-    return $Call.ByID(181441518, provider, account, operation);
-}
-
-/**
  * ProvidersTestModel checks one provider model through its signed-in account.
  * @param {string} provider
  * @param {string} account
@@ -316,40 +351,16 @@ export function ProvidersTestModel(provider, account, model) {
 }
 
 /**
- * ProvidersDeleteAccount removes QKA's provider account and credentials.
- * @param {string} provider
- * @param {string} account
+ * ReportViewport 由页面在加载完成时调用（见 main.html），记录真实 CSS 视口、
+ * 设备像素比与界面缩放。只写一行 info 日志（首次），用于排查「界面展示不全」。
+ * @param {number} width
+ * @param {number} height
+ * @param {number} dpr
+ * @param {number} scale
  * @returns {$CancellablePromise<void>}
  */
-export function ProvidersDeleteAccount(provider, account) {
-    return $Call.ByID(850109385, provider, account);
-}
-
-/**
- * ProvidersHistory returns recent runs and quota observations.
- * @param {string} provider
- * @param {string} account
- * @param {number} limit
- * @returns {$CancellablePromise<json$0.RawMessage>}
- */
-export function ProvidersHistory(provider, account, limit) {
-    return $Call.ByID(1011114083, provider, account, limit);
-}
-
-/**
- * BarMenu 常驻刘海右键点击：弹出含「退出」的菜单。
- * @returns {$CancellablePromise<void>}
- */
-export function BarMenu() {
-    return $Call.ByID(2122654081);
-}
-
-/**
- * BarToggle 常驻刘海左键点击：在刘海下方切换吸附面板。
- * @returns {$CancellablePromise<void>}
- */
-export function BarToggle() {
-    return $Call.ByID(3209248438);
+export function ReportViewport(width, height, dpr, scale) {
+    return $Call.ByID(4185818293, width, height, dpr, scale);
 }
 
 /**
@@ -369,22 +380,23 @@ export function ScheduleGet() {
 }
 
 /**
- * ScheduleSetEnabled 同步安装或删除系统调度，并返回最新状态。
- * @param {boolean} enabled
- * @returns {$CancellablePromise<json$0.RawMessage>}
- */
-export function ScheduleSetEnabled(enabled) {
-    return $Call.ByID(1084834561, enabled);
-}
-
-/**
- * ScheduleSetConfig updates the interval and action.
+ * ScheduleSetConfig updates the interval and action and reinstalls the native
+ * task when auto-run is enabled.
  * @param {number} intervalMinutes
  * @param {string} action
  * @returns {$CancellablePromise<json$0.RawMessage>}
  */
 export function ScheduleSetConfig(intervalMinutes, action) {
     return $Call.ByID(1058116718, intervalMinutes, action);
+}
+
+/**
+ * ScheduleSetEnabled 同步安装或删除系统调度，并返回最新状态。
+ * @param {boolean} enabled
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function ScheduleSetEnabled(enabled) {
+    return $Call.ByID(1084834561, enabled);
 }
 
 /**

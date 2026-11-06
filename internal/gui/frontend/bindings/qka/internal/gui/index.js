@@ -8,3 +8,7 @@ export {
     BoundService,
     InstallerService
 };
+
+export {
+    InstallerStatus
+} from "./models.js";

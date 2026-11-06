@@ -149,7 +149,7 @@ func (a *App) guiDeps() gui.Deps {
 				app.PanelToggleAt(x, y)
 			}
 		},
-		// Windows 悬浮球（菜单栏状态项）：左键弹精简面板、右键出菜单（含退出）。
+		// Windows 悬浮球（菜单栏状态项）：左键弹迷你宠物、右键出菜单（含退出）。
 		BarToggle: func() {
 			if app := guiCurrentApp(); app != nil {
 				app.BarToggle()
@@ -159,6 +159,12 @@ func (a *App) guiDeps() gui.Deps {
 			if app := guiCurrentApp(); app != nil {
 				app.BarMenu()
 			}
+		},
+		BarState: func() gui.BarStateView {
+			if app := guiCurrentApp(); app != nil {
+				return app.BarStateView()
+			}
+			return gui.BarStateView{}
 		},
 		TokenSpeedGet: func(context.Context) (tokenspeed.Snapshot, error) {
 			return tokenSpeed.Snapshot(), nil

@@ -102,15 +102,21 @@ func shapeBarWindowSide(window *application.WebviewWindow, dockedSide string) bo
 		return false
 	}
 	if dockedSide != "" {
-		// 左贴边露出窗口的右半，右贴边露出左半。先算出半矩形，再把圆形与它
-		// 求交到新的目标区域（不依赖 CombineRgn 的源/目标别名行为）。
-		half := pxWidth / 2
-		left, right := 0, half+1
-		if dockedSide == ballDockLeft {
-			left, right = half, pxWidth+1
+		// 贴边态只保留朝向屏幕内的半圆：先算出半矩形，再把圆形与它求交到
+		// 新的目标区域（不依赖 CombineRgn 的源/目标别名行为）。
+		left, top, right, bottom := 0, 0, pxWidth+1, pxHeight+1
+		switch dockedSide {
+		case ballDockLeft:
+			left = pxWidth / 2
+		case ballDockRight:
+			right = pxWidth/2 + 1
+		case ballDockTop:
+			top = pxHeight / 2
+		case ballDockBottom:
+			bottom = pxHeight/2 + 1
 		}
 		halfRgn, _, _ := procCreateRectRgn.Call(
-			uintptr(left), 0, uintptr(right), uintptr(pxHeight+1),
+			uintptr(left), uintptr(top), uintptr(right), uintptr(bottom),
 		)
 		if halfRgn == 0 {
 			applog.Warnf("gui", "创建悬浮球贴边区域失败")

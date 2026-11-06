@@ -42,11 +42,22 @@ const (
 	ballTopGap = 16
 )
 
-// 贴边方向。
+// 贴边方向：四边都可吸附。
 const (
-	ballDockLeft  = "left"
-	ballDockRight = "right"
+	ballDockLeft   = "left"
+	ballDockRight  = "right"
+	ballDockTop    = "top"
+	ballDockBottom = "bottom"
 )
+
+// ballDockValid 报告 side 是否是合法贴边方向。
+func ballDockValid(side string) bool {
+	switch side {
+	case ballDockLeft, ballDockRight, ballDockTop, ballDockBottom:
+		return true
+	}
+	return false
+}
 
 // ballDefaultOrigin 返回悬浮球的默认位置：主屏工作区顶部居中。
 func ballDefaultOrigin(area application.Rect) (int, int) {
@@ -86,11 +97,32 @@ func clampBallY(area application.Rect, y, size int) int {
 	return y
 }
 
-// ballDockSideFor 判断拖放结束的位置是否贴边：离左右边缘 ballDockThreshold
-// 以内返回 left/right，否则返回空串。上下边不吸附。
+// clampBallX 只钳制横向，上下贴边时使用（此时 Y 允许半出屏）。
+func clampBallX(area application.Rect, x, size int) int {
+	maxX := area.X + area.Width - size
+	if maxX < area.X {
+		maxX = area.X
+	}
+	if x < area.X {
+		return area.X
+	}
+	if x > maxX {
+		return maxX
+	}
+	return x
+}
+
+// ballDockSideFor 判断拖放结束的位置是否贴边：离任一边缘 ballDockThreshold
+// 以内就吸附到那一边（角落时按先命中的边返回）。否则返回空串。
 func ballDockSideFor(area application.Rect, x, y, size int) string {
 	if area.Width <= 0 || area.Height <= 0 {
 		return ""
+	}
+	if y-area.Y <= ballDockThreshold {
+		return ballDockTop
+	}
+	if area.Y+area.Height-(y+size) <= ballDockThreshold {
+		return ballDockBottom
 	}
 	if x-area.X <= ballDockThreshold {
 		return ballDockLeft
@@ -101,17 +133,20 @@ func ballDockSideFor(area application.Rect, x, y, size int) string {
 	return ""
 }
 
-// ballDockedPosition 返回贴边态窗口的位置：窗口一半探出工作区，只露 22px。
-// side 非法时把球钳回工作区左上角。
-func ballDockedPosition(area application.Rect, side string, y int) (int, int) {
-	y = clampBallY(area, y, ballDockSize)
+// ballDockedPosition 返回贴边态窗口的位置：窗口沿贴边方向一半探出工作区，
+// 只露一半；另一个方向钳进工作区。side 非法时钳回工作区左上角。
+func ballDockedPosition(area application.Rect, side string, x, y int) (int, int) {
 	switch side {
 	case ballDockLeft:
-		return area.X - ballDockSize/2, y
+		return area.X - ballDockSize/2, clampBallY(area, y, ballDockSize)
 	case ballDockRight:
-		return area.X + area.Width - ballDockSize/2, y
+		return area.X + area.Width - ballDockSize/2, clampBallY(area, y, ballDockSize)
+	case ballDockTop:
+		return clampBallX(area, x, ballDockSize), area.Y - ballDockSize/2
+	case ballDockBottom:
+		return clampBallX(area, x, ballDockSize), area.Y + area.Height - ballDockSize/2
 	default:
-		return area.X, y
+		return clampBallPosition(area, x, y, ballDockSize)
 	}
 }
 
@@ -220,7 +255,7 @@ func loadBarState(path string) (barWindowState, bool) {
 	if state.Version != barStateVersion {
 		return barWindowState{}, false
 	}
-	if state.Docked != "" && state.Docked != ballDockLeft && state.Docked != ballDockRight {
+	if !ballDockValid(state.Docked) {
 		state.Docked = ""
 	}
 	return state, true

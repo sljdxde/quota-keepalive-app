@@ -39,7 +39,8 @@
       <circle class="spark" id="ball-spark" cx="32" cy="3.4" r="2.2"></circle>
     </svg>
     <div class="core">
-      <svg class="q" viewBox="0 0 64 64" aria-hidden="true">
+      <img class="pet" id="ball-pet" alt="" draggable="false" hidden>
+      <svg class="q" id="ball-q" viewBox="0 0 64 64" aria-hidden="true">
         <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="8"
                 stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
         <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none" stroke="currentColor"
@@ -93,6 +94,8 @@
   const valueNode = document.getElementById("speed-value");
   const ringBar = ball.querySelector(".ring .bar");
   const spark = document.getElementById("ball-spark");
+  const petIcon = document.getElementById("ball-pet");
+  const qMark = document.getElementById("ball-q");
   const RING_LENGTH = 191.6;
   const SPARK_RADIUS = 28.6;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -100,6 +103,31 @@
   let themeId = "vehicles";
   let sparkProgress = 0;
   let sparkFrame = 0;
+  // 当前中央图标："" = Q 标记，否则是宠物/精灵球图标 URL。
+  let iconKey = "";
+
+  // 悬浮球中央图标跟 macOS 菜单栏同一套状态：精灵球模式显示精灵球，
+  // 否则显示当前伙伴剪影；都没有就退回 Q 标记。
+  function applyBallState(state) {
+    if (!state || !petIcon || !qMark) return;
+    let next = "";
+    if (state.caught) {
+      next = "./assets/tray/pokeball.png";
+    } else if (state.pet_id && /^[a-z-]+$/.test(state.pet_id)) {
+      next = "./assets/tray/" + state.pet_id + ".png";
+    }
+    if (next === iconKey) return;
+    iconKey = next;
+    if (iconKey) {
+      petIcon.src = iconKey;
+      petIcon.hidden = false;
+      qMark.style.display = "none";
+    } else {
+      petIcon.removeAttribute("src");
+      petIcon.hidden = true;
+      qMark.style.display = "";
+    }
+  }
 
   // 光点按进度直接落位到圆环上（SVG 坐标从 3 点方向起算，.ring 自身再 -90°）。
   function placeSpark(progress) {
@@ -194,6 +222,19 @@
   Events.On("theme-changed", function (event) {
     applyTheme(event && event.data);
   });
+  // 伙伴切换 / 精灵球状态与主窗口共享 localStorage：轮询变化比订阅事件
+  // 更稳（事件只在主窗口发，球页错过的状态要靠拉取兜底）。
+  function refreshBallState() {
+    Bound.BarState()
+      .then(function (view) {
+        applyBallState(asJSON(view));
+      })
+      .catch(function () {});
+  }
+  Events.On("pet-selected", refreshBallState);
+  Events.On("pet-caught", refreshBallState);
+  refreshBallState();
+  setInterval(refreshBallState, 5000);
 
   Bound.TokenSpeedGet()
     .then(function (view) {

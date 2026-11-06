@@ -81,21 +81,56 @@ func TestBallDockSideForDetectsScreenEdges(t *testing.T) {
 
 func TestBallDockedPositionHidesHalfOutside(t *testing.T) {
 	area := primaryArea()
-	x, y := ballDockedPosition(area, ballDockLeft, 300)
+	x, y := ballDockedPosition(area, ballDockLeft, 40, 300)
 	if x != -ballDockSize/2 {
 		t.Fatalf("左贴边 X 应为 %d，实际 %d", -ballDockSize/2, x)
 	}
 	if y != 300 {
 		t.Fatalf("Y 应保持 300，实际 %d", y)
 	}
-	x, _ = ballDockedPosition(area, ballDockRight, 300)
+	x, _ = ballDockedPosition(area, ballDockRight, 40, 300)
 	if want := area.Width - ballDockSize/2; x != want {
 		t.Fatalf("右贴边 X 应为 %d，实际 %d", want, x)
 	}
 	// 纵向越界仍要钳进工作区。
-	_, y = ballDockedPosition(area, ballDockLeft, area.Height+100)
+	_, y = ballDockedPosition(area, ballDockLeft, 40, area.Height+100)
 	if want := area.Height - ballDockSize; y != want {
 		t.Fatalf("贴边 Y 应钳到 %d，实际 %d", want, y)
+	}
+	// 上贴边：Y 半出屏，X 钳进工作区。
+	x, y = ballDockedPosition(area, ballDockTop, 5000, 40)
+	if want := area.Width - ballDockSize; x != want {
+		t.Fatalf("上贴边 X 应钳到 %d，实际 %d", want, x)
+	}
+	if y != -ballDockSize/2 {
+		t.Fatalf("上贴边 Y 应为 %d，实际 %d", -ballDockSize/2, y)
+	}
+	// 下贴边。
+	x, y = ballDockedPosition(area, ballDockBottom, 100, 40)
+	if x != 100 {
+		t.Fatalf("下贴边 X 应保持 100，实际 %d", x)
+	}
+	if want := area.Height - ballDockSize/2; y != want {
+		t.Fatalf("下贴边 Y 应为 %d，实际 %d", want, y)
+	}
+}
+
+func TestBallDockSideForDetectsAllEdges(t *testing.T) {
+	area := primaryArea()
+	cases := []struct {
+		x, y int
+		want string
+	}{
+		{600, area.Y, ballDockTop},
+		{600, area.Height - ballSize, ballDockBottom},
+		{area.X, 300, ballDockLeft},
+		{area.Width - ballSize, 300, ballDockRight},
+		{600, 300, ""},
+	}
+	for _, test := range cases {
+		if got := ballDockSideFor(area, test.x, test.y, ballSize); got != test.want {
+			t.Errorf("(%d,%d) 贴边侧应为 %q，实际 %q", test.x, test.y, test.want, got)
+		}
 	}
 }
 
@@ -186,9 +221,9 @@ func TestLoadBarStateRejectsBadFiles(t *testing.T) {
 	if _, ok := loadBarState(""); ok {
 		t.Error("空路径不应被当作有效状态")
 	}
-	// 非法贴边侧被清空，但坐标仍然可用。
+	// 非法贴边侧被清空，但坐标仍然可用（top 现在是合法方向）。
 	path := filepath.Join(dir, "dock.json")
-	if err := os.WriteFile(path, []byte(`{"version":1,"x":10,"y":20,"docked":"top"}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"version":1,"x":10,"y":20,"docked":"sideways"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	state, ok := loadBarState(path)

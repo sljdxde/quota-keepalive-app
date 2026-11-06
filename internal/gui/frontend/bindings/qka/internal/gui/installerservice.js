@@ -11,21 +11,9 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "/wails/runtime.js";
 
-/**
- * Status 返回向导模式与升级展示需要的旧版本/路径；页面加载后先调用它。
- * @returns {$CancellablePromise<any>}
- */
-export function Status() {
-    return $Call.ByID(2308983491);
-}
-
-/**
- * DefaultDir 返回默认安装位置（Windows: %LOCALAPPDATA%\\Programs\\Quota Keepalive）。
- * @returns {$CancellablePromise<string>}
- */
-export function DefaultDir() {
-    return $Call.ByID(1960631321);
-}
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
 
 /**
  * BrowseDir 弹出原生目录选择框；用户取消时返回空串，页面保持原输入。
@@ -37,12 +25,19 @@ export function BrowseDir(current) {
 }
 
 /**
- * StartInstall 在后台开始安装并立即返回；进度通过 installer-progress 事件推给页面。
- * @param {string} dir
+ * DefaultDir 返回默认安装位置（Windows: %LOCALAPPDATA%\Programs\Quota Keepalive）。
+ * @returns {$CancellablePromise<string>}
+ */
+export function DefaultDir() {
+    return $Call.ByID(1960631321);
+}
+
+/**
+ * LaunchInstalled 启动已安装的 QKA，然后退出安装向导。
  * @returns {$CancellablePromise<void>}
  */
-export function StartInstall(dir) {
-    return $Call.ByID(1112505570, dir);
+export function LaunchInstalled() {
+    return $Call.ByID(1571838496);
 }
 
 /**
@@ -54,9 +49,25 @@ export function QuitInstaller() {
 }
 
 /**
- * LaunchInstalled 启动已安装的 QKA，然后退出安装向导。
+ * StartInstall 在后台开始安装或升级并立即返回；进度通过 installer-progress
+ * 事件推给页面，页面据此点亮步骤。升级模式下 dir 被忽略（目录锁定在安装记录
+ * 里，不允许用户改）。
+ * @param {string} dir
  * @returns {$CancellablePromise<void>}
  */
-export function LaunchInstalled() {
-    return $Call.ByID(1571838496);
+export function StartInstall(dir) {
+    return $Call.ByID(1112505570, dir);
 }
+
+/**
+ * Status 返回向导模式与升级展示需要的旧版本/路径；页面加载后先调用它。
+ * @returns {$CancellablePromise<$models.InstallerStatus>}
+ */
+export function Status() {
+    return $Call.ByID(2308983491).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType0($result);
+    }));
+}
+
+// Private type creation functions
+const $$createType0 = $models.InstallerStatus.createFrom;

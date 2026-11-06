@@ -57,6 +57,9 @@ type Deps struct {
 	BarToggle func()
 	// BarMenu 是 Windows 悬浮球右键点击：在球左侧弹出自绘菜单（含「退出」）。
 	BarMenu func()
+	// BarState 返回悬浮球的展示状态：当前宠物 id 与是否处于精灵球（已捕获）
+	// 模式；悬浮球据此切换中央图标。为空时页面保持 Q 标记。
+	BarState func() BarStateView
 	// TokenSpeedGet 返回本机 Agent 日志的实时 token 吞吐快照。
 	TokenSpeedGet func(ctx context.Context) (tokenspeed.Snapshot, error)
 	// TokenSpeed 是本机 Agent 日志速度服务；为空时不启动菜单栏实时标签。
@@ -292,10 +295,26 @@ func (s *BoundService) BarToggle() {
 }
 
 // BarMenu 是 Windows 悬浮球右键点击的入口：弹出含「退出」的菜单。
+// BarStateView 是悬浮球中央图标的展示状态。
+type BarStateView struct {
+	// PetID 是当前选中的伙伴 id（bulbasaur/charmander/squirtle/pikachu）。
+	PetID string `json:"pet_id,omitempty"`
+	// Caught 为 true 表示伙伴已收进精灵球，球中央显示精灵球图标。
+	Caught bool `json:"caught,omitempty"`
+}
+
 func (s *BoundService) BarMenu() {
 	if s.deps.BarMenu != nil {
 		s.deps.BarMenu()
 	}
+}
+
+// BarState 返回悬浮球中央应显示的图标状态（宠物 / 精灵球）。
+func (s *BoundService) BarState() (json.RawMessage, error) {
+	if s.deps.BarState == nil {
+		return json.Marshal(BarStateView{})
+	}
+	return json.Marshal(s.deps.BarState())
 }
 
 // PanelToggleAt 在悬浮球所在的屏幕坐标下方切换 392px 面板。x/y 是点击位置
