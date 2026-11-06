@@ -20,24 +20,22 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`r="30.5"`,
 		`stroke-dasharray="191.6"`,
 		`id="speed-value"`,
-		`id="ball-avatar"`,
-		`stage.className = "pet-stage"`,
-		`id="ball-popup"`,
-		`捕获成功！`,
-		`捕获失败`,
-		`躲开了！`,
+		`id="ball-pet"`,
+		`id="ball-pet-canvas"`,
+		`id="ball-pet-img"`,
+		`id="ball-ball"`,
 		`createPokemon3D`,
-		`viewer.throwBall`,
-		`viewer.playSkill`,
-		`captureOutcome`,
-		`sweepProgress`,
+		`modelYaw: Math.PI / 2`,
+		`runDuration`,
+		`shakeDuration`,
+		`shouldAutoRelease`,
 		`qka.pet.selected`,
 		`qka.pet.caught.v1`,
 		`assets/qka-ui.css`,
 		`assets/ball.css`,
 		`assets/odometer.js`,
 		`assets/title-system.js`,
-		`assets/pet-motion.js`,
+		`assets/bar-gesture.js`,
 		`assets/pokemon-3d.js`,
 		`ringProgress`,
 		`titleThresholds`,
@@ -45,12 +43,8 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`Bound.BarMenu`,
 		`Bound.BarStartDrag`,
 		`Bound.BarToggle`,
-		`resolveGesture`,
 		`shouldStartDrag`,
 		`dragTargetOrigin`,
-		`chargeProgress`,
-		`assets/bar-gesture.js`,
-		`DRAG_START_PX`,
 		`Events.On("tokenspeed-changed"`,
 		`Events.On("pet-selected"`,
 		`Events.On("pet-caught"`,
@@ -66,6 +60,9 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`--notch-bg`,
 		`box-shadow: inset 0 .5px 0`,
 		`assets/tray/`,
+		// 球面精简：不再展示 tok/s 单位，也不承载投球/技能演出。
+		`>tok/s<`,
+		`viewer.throwBall`,
 	} {
 		if strings.Contains(page, forbidden) {
 			t.Errorf("悬浮球页面仍残留旧样式或旧入口 %q", forbidden)
@@ -154,6 +151,15 @@ func TestPetMiniRendersSelectedCompanionOnly(t *testing.T) {
 		`collapse-petmini`,
 		`pet-selected`,
 		`pet-caught`,
+		// 短按放技能 / 长按投球：手势与结果横幅。
+		`resolvePetGesture`,
+		`sweepProgress`,
+		`captureOutcome`,
+		`id="pm-charge"`,
+		`id="pm-popup"`,
+		`捕获成功！`,
+		`捕获失败`,
+		`躲开了！`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("迷你宠物缺少 %q", want)
@@ -294,5 +300,28 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	}
 	if ballDockSize >= ballSize || ballDockSize%2 != 0 {
 		t.Errorf("贴边尺寸 %d 应小于浮动态且能被 2 整除（一半露出）", ballDockSize)
+	}
+}
+
+// 球面尺寸：宠物 26px、数字 20px、无单位；跑动/晃动动画按速度节奏。
+func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
+	data, err := frontendFS.ReadFile("frontend/assets/ball.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(data)
+	for _, want := range []string{
+		`.ball .core .pet-icon`,
+		`width: 28px; height: 28px`,
+		`.ball.has-pet .core b { font-size: 20px; }`,
+		`.ball .core .pet-icon.running`,
+		`@keyframes pet-run`,
+		`@keyframes ball-shake`,
+		`--run-duration`,
+		`--shake-duration`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("球面宠物/速度样式缺少 %q", want)
+		}
 	}
 }

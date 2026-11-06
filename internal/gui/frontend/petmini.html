@@ -122,6 +122,49 @@
     0%, 100% { transform: translate(-50%, -54%); }
     45% { transform: translate(-50%, -62%) scale(1.03); }
   }
+  /* 长按蓄力：细条只随按住时长变长（无持续动画）。 */
+  .pm-charge {
+    position: absolute; left: 14px; right: 14px; bottom: 12px;
+    height: 4px; border-radius: 999px;
+    background: rgba(255, 255, 255, .16);
+    overflow: hidden; z-index: 3; pointer-events: none;
+  }
+  .pm-charge i {
+    display: block; height: 100%; width: 0;
+    border-radius: 999px;
+    background: var(--pet-accent);
+  }
+  /* 捕获结果：美漫风斜切大字横幅，只在结果瞬间出现。 */
+  .pm-popup {
+    position: absolute; left: -10px; right: -10px; top: 46%;
+    transform: translateY(-50%) rotate(-5deg);
+    z-index: 6;
+    padding: 6px 0;
+    text-align: center;
+    background: #ffd54a;
+    border-top: 2.5px solid #17191e;
+    border-bottom: 2.5px solid #17191e;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .45);
+    pointer-events: none;
+    animation: pm-popup-slam .3s cubic-bezier(.18, 1.4, .4, 1);
+  }
+  .pm-popup.miss { background: #f3f4f6; }
+  .pm-popup span {
+    display: inline-block;
+    font-size: 13px; font-weight: 800; font-style: italic;
+    letter-spacing: .12em;
+    color: #17191e;
+    text-shadow: 1.5px 1.5px 0 #fff, 2.5px 2.5px 0 rgba(23, 25, 30, .25);
+    white-space: nowrap;
+  }
+  @keyframes pm-popup-slam {
+    0% { transform: translateY(-50%) rotate(-5deg) scale(1.5); opacity: 0; }
+    60% { transform: translateY(-50%) rotate(-5deg) scale(.95); opacity: 1; }
+    100% { transform: translateY(-50%) rotate(-5deg) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pm-popup { animation: none; }
+  }
   .pm-foot {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px;
@@ -139,14 +182,16 @@
       <span class="pm-name" id="pm-name">伙伴</span>
       <span class="pm-level" id="pm-level">I</span>
     </div>
-    <div class="pm-stage" id="pm-stage" role="button" tabindex="0" aria-label="逗一下伙伴">
+    <div class="pm-stage" id="pm-stage" role="button" tabindex="0" aria-label="短按放技能，长按投出精灵球">
       <span class="pm-glow" aria-hidden="true"></span>
       <span class="pm-ground" aria-hidden="true"></span>
       <div class="pm-avatar is-loading" id="pm-avatar"></div>
+      <span class="pm-charge" id="pm-charge" hidden><i id="pm-charge-fill"></i></span>
+      <span class="pm-popup" id="pm-popup" hidden><span id="pm-popup-text">捕获成功！</span></span>
     </div>
     <div class="pm-foot">
       <span id="pm-today">今日 0 tokens</span>
-      <span id="pm-speed">0 tok/s</span>
+      <span id="pm-speed">0</span>
     </div>
   </div>
 
@@ -163,6 +208,12 @@
   import { createPokemon3D } from "./assets/pokemon-3d.js";
   import { petAimPoint } from "./assets/pet-gaze.js";
   import { initPerformanceMode } from "./assets/perf-mode.js";
+  import {
+    sweepProgress,
+    timingAccuracy,
+    captureOutcome,
+  } from "./assets/pet-motion.js";
+  import { resolvePetGesture, chargeProgress } from "./assets/bar-gesture.js";
 
   const SELECTED_KEY = "qka.pet.selected";
   const CAUGHT_KEY = "qka.pet.caught.v1";
@@ -174,10 +225,59 @@
   const levelNode = document.getElementById("pm-level");
   const todayNode = document.getElementById("pm-today");
   const speedNode = document.getElementById("pm-speed");
+  const chargeNode = document.getElementById("pm-charge");
+  const chargeFill = document.getElementById("pm-charge-fill");
+  const popupNode = document.getElementById("pm-popup");
+  const popupText = document.getElementById("pm-popup-text");
 
   let pet = null;
   let viewer = null;
   let viewerPetId = "";
+  let pressed = false;
+  let pressStartMS = 0;
+  let chargeFrame = 0;
+  let throwing = false;
+  let popupTimer = 0;
+
+  function showPopup(text, kind) {
+    if (!popupNode || !popupText) return;
+    popupText.textContent = text;
+    popupNode.className = "pm-popup " + (kind || "ok");
+    popupNode.hidden = false;
+    popupNode.style.animation = "none";
+    void popupNode.offsetWidth;
+    popupNode.style.animation = "";
+    if (popupTimer) clearTimeout(popupTimer);
+    popupTimer = setTimeout(function () {
+      popupNode.hidden = true;
+      popupTimer = 0;
+    }, 1600);
+  }
+
+  function placeCharge(progress) {
+    if (!chargeNode || !chargeFill) return;
+    chargeNode.hidden = progress <= 0;
+    chargeFill.style.width = (Math.min(1, Math.max(0, progress)) * 100).toFixed(1) + "%";
+  }
+
+  function chargeTick() {
+    if (!pressed) return;
+    const progress = chargeProgress(performance.now() - pressStartMS);
+    placeCharge(progress);
+    if (viewer) viewer.setCharging(progress >= 0.12);
+    if (progress >= 1) {
+      chargeFrame = 0;
+      return;
+    }
+    chargeFrame = requestAnimationFrame(chargeTick);
+  }
+
+  function stopCharge() {
+    if (chargeFrame) cancelAnimationFrame(chargeFrame);
+    chargeFrame = 0;
+    placeCharge(0);
+    if (viewer) viewer.setCharging(false);
+  }
   let todayTokens = 0;
   let latestPointer = { x: null, y: null };
 
@@ -347,7 +447,7 @@
     todayTokens = Math.max(0, Number(view.today_total_tokens) || 0);
     const speed = Number(view.output_tokens_per_second) || 0;
     todayNode.textContent = "今日 " + compactTokenCount(todayTokens) + " tokens";
-    speedNode.textContent = compactTokenRate(speed) + " tok/s";
+    speedNode.textContent = compactTokenRate(speed);
     updateLevel();
   }
 
@@ -359,27 +459,102 @@
     }
   }
 
-  function poke() {
+  function releaseCaughtPet() {
+    if (!pet || !viewer) return;
+    viewer.releaseBall();
+    writeCaught(pet.id, false);
+    try {
+      Events.Emit("pet-caught", { caught: false });
+    } catch (_) {}
+    showPopup("回来了！", "ok");
+  }
+
+  function skillNow() {
     if (!pet) return;
-    if (viewer && viewer.isCaught()) {
-      viewer.releaseBall();
-      writeCaught(pet.id, false);
-      try {
-        Events.Emit("pet-caught", { caught: false });
-      } catch (_) {}
-      return;
-    }
     stage.classList.remove("is-poked");
     void stage.offsetWidth;
     stage.classList.add("is-poked");
     if (viewer) viewer.playSkill(pet.effect, effectIntensity());
   }
-  stage.addEventListener("click", poke);
-  stage.addEventListener("keydown", function (event) {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      poke();
+
+  // 长按松手：按音游式指针判定抛球；结果用美漫风横幅给出。
+  function throwNow(heldMs) {
+    if (!pet || !viewer || viewer.isCaught() || throwing) return;
+    const sweep = sweepProgress(heldMs);
+    const accuracy = timingAccuracy(sweep.position);
+    const outcome = captureOutcome({
+      accuracy: accuracy,
+      tier: Math.max(1, Math.min(5, skillTier())),
+    });
+    throwing = true;
+    const started = viewer.throwBall({
+      willDodge: outcome.dodged,
+      willCatch: outcome.caught,
+      onResolved: function (result) {
+        throwing = false;
+        if (result && result.caught) {
+          writeCaught(pet.id, true);
+          try {
+            Events.Emit("pet-caught", { caught: true });
+          } catch (_) {}
+          showPopup("捕获成功！", "ok");
+        } else if (result && result.dodged) {
+          showPopup("躲开了！", "miss");
+        } else {
+          showPopup("捕获失败", "miss");
+        }
+      },
+    });
+    if (!started) {
+      throwing = false;
+      showPopup("现在还不能投球", "miss");
     }
+  }
+
+  function finishPetPress() {
+    if (!pressed) return;
+    pressed = false;
+    const held = performance.now() - pressStartMS;
+    stopCharge();
+    const gesture = resolvePetGesture({
+      heldMs: held,
+      caught: !!(viewer && viewer.isCaught()),
+      capturing: !!(viewer && viewer.isCapturing()),
+    });
+    switch (gesture.action) {
+      case "release":
+        releaseCaughtPet();
+        break;
+      case "throw":
+        throwNow(held);
+        break;
+      case "skill":
+        skillNow();
+        break;
+    }
+  }
+
+  stage.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0 || !pet) return;
+    event.preventDefault();
+    pressed = true;
+    pressStartMS = performance.now();
+    chargeFrame = requestAnimationFrame(chargeTick);
+  });
+  window.addEventListener("pointerup", function (event) {
+    if (event.button !== undefined && event.button !== 0) return;
+    finishPetPress();
+  });
+  window.addEventListener("pointercancel", function () {
+    pressed = false;
+    stopCharge();
+  });
+  // 键盘：Enter/Space 等同一次短按（有捕获就先放出）。
+  stage.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (viewer && viewer.isCaught()) releaseCaughtPet();
+    else skillNow();
   });
   avatar.addEventListener("animationend", function () {
     stage.classList.remove("is-poked");

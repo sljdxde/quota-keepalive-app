@@ -246,11 +246,11 @@ func New(deps Deps) *App {
 	applyTrayIcon(tray, goos)
 	tray.SetTooltip("Quota Keepalive")
 	tray.SetLabel("0 tok/s")
-	// 单击托盘：异步切换状态面板（原因同上，不能在托盘消息处理器里同步操作窗口）。
-	// Windows 上托盘仍开 244px 状态面板；悬浮球左键开迷你宠物，两者分工不同。
+	// 单击托盘：异步切换窗口（原因同上，不能在托盘消息处理器里同步操作窗口）。
+	// Windows 托盘左键直接进主界面；macOS 仍是菜单栏面板。
 	tray.OnClick(func() {
 		if goos == "windows" {
-			go result.toggleBallPanel()
+			go result.showMain()
 			return
 		}
 		go result.togglePanel()
@@ -566,8 +566,8 @@ func (a *App) BarToggle() {
 		return
 	}
 	if side, rx, ry := a.barDockState(); side != "" {
+		// 贴边态点击只把球弹回浮动态；再点一次才开宠物窗口。
 		a.undockBar(rx, ry)
-		a.showPetMini()
 		return
 	}
 	a.hideBallPanel()

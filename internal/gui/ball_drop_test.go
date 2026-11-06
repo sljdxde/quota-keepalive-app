@@ -55,14 +55,14 @@ func TestResolveBarDropStaysFloatingInTheMiddle(t *testing.T) {
 
 func TestResolveBarDropDocksWhenDraggedPastTheEdge(t *testing.T) {
 	area := application.Rect{X: 0, Y: 0, Width: 1000, Height: 800}
-	// 拖到右下角之外：仍然算“贴着某条边”，直接吸附成半圆（越界拖拽的常见预期）。
-	// 角落的归属按检测顺序：上 → 下 → 左 → 右，右下角归下边。
+	// 拖到右下角之外：按「最近的一条边」吸附，右下角归右边缘
+	// （平手时水平边优先，不会突然跑到上边）。
 	drop := resolveBarDrop(area, 990, 790, ballSize, "", 0, 0)
 	if drop.Action != "dock" {
 		t.Fatalf("拖出边界应吸附，实际 %q", drop.Action)
 	}
-	if drop.Docked != ballDockBottom {
-		t.Fatalf("右下角应按检测顺序贴到下边缘，实际 %q", drop.Docked)
+	if drop.Docked != ballDockRight {
+		t.Fatalf("右下角应贴到最近的右边缘，实际 %q", drop.Docked)
 	}
 	// 只越过右边（非角落）：贴右边。
 	drop = resolveBarDrop(area, 990, 400, ballSize, "", 0, 0)

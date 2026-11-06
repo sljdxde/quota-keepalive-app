@@ -112,25 +112,38 @@ func clampBallX(area application.Rect, x, size int) int {
 	return x
 }
 
-// ballDockSideFor 判断拖放结束的位置是否贴边：离任一边缘 ballDockThreshold
-// 以内就吸附到那一边（角落时按先命中的边返回）。否则返回空串。
+// ballDockSideFor 判断拖放结束的位置是否贴边：取四条边里距离最近的一条，
+// 且距离必须在阈值内。这样拖到哪条边就贴哪条边——不会因为先判断上下边而
+// 「跑到最上面」。按 left → right → bottom → top 的顺序比较，平手时水平边
+// 优先（贴顶必须是顶部真的最近）。
 func ballDockSideFor(area application.Rect, x, y, size int) string {
 	if area.Width <= 0 || area.Height <= 0 {
 		return ""
 	}
-	if y-area.Y <= ballDockThreshold {
-		return ballDockTop
+	dist := func(v int) int {
+		if v < 0 {
+			return 0 // 已经拖出边界，按「贴着这条边」算
+		}
+		return v
 	}
-	if area.Y+area.Height-(y+size) <= ballDockThreshold {
-		return ballDockBottom
+	candidates := []struct {
+		side string
+		dist int
+	}{
+		{ballDockLeft, dist(x - area.X)},
+		{ballDockRight, dist(area.X + area.Width - (x + size))},
+		{ballDockBottom, dist(area.Y + area.Height - (y + size))},
+		{ballDockTop, dist(y - area.Y)},
 	}
-	if x-area.X <= ballDockThreshold {
-		return ballDockLeft
+	best := ""
+	bestDist := ballDockThreshold + 1
+	for _, candidate := range candidates {
+		if candidate.dist <= ballDockThreshold && candidate.dist < bestDist {
+			best = candidate.side
+			bestDist = candidate.dist
+		}
 	}
-	if area.X+area.Width-(x+size) <= ballDockThreshold {
-		return ballDockRight
-	}
-	return ""
+	return best
 }
 
 // ballDockedPosition 返回贴边态窗口的位置：窗口沿贴边方向一半探出工作区，
@@ -153,18 +166,19 @@ func ballDockedPosition(area application.Rect, side string, x, y int) (int, int)
 // ballDrop 描述一次拖放结束后悬浮球该落到哪：Action 为 "dock"（贴边）或
 // "float"（浮动态），Size 是落位后的窗口边长。
 type ballDrop struct {
-	Action    string
-	X         int
-	Y         int
-	Size      int
-	Docked    string
-	RestoreX  int
-	RestoreY  int
+	Action   string
+	X        int
+	Y        int
+	Size     int
+	Docked   string
+	RestoreX int
+	RestoreY int
 }
 
 // resolveBarDrop 计算拖放结束后的落点：
 //   - 已在贴边态：拖到另一条边 → 换边继续贴；拖离边缘 → 恢复浮动态大小；
 //   - 未贴边：拖到任一边缘 → 吸附成半圆；否则按工作区钳制。
+//
 // 纯函数：真实拖放坐标进、真实落点出，便于表驱动单测覆盖全部分支。
 func resolveBarDrop(
 	area application.Rect, x, y, size int,

@@ -22,10 +22,10 @@
 </head>
 <body>
   <!-- 常驻悬浮球：Windows 上等价于 macOS 菜单栏上的 QKA 状态项。
-       窗口本身已被 shapeBarWindow 裁成正圆，这里铺满并画卡片底；
-       按住可拖动（--wails-draggable），短按放技能 / 长按抛精灵球，
-       右键出菜单。拖到屏幕边缘会收成 44px 半圆（Go 侧 SetSize），
-       此时只显示 Q。 -->
+       球面 = 侧视小宠物（有速度时跑动，越快越快）+ 纯数字 tok/s；
+       伙伴被收进精灵球时换成精灵球（速度越快晃得越快，>1000 自动放出）。
+       按住可拖动；左键单击打开迷你宠物窗口；右键出菜单。
+       拖到屏幕边缘会收成 44px 半圆（Go 侧 SetSize），此时只显示 Q/宠物。 -->
   <div id="ball" class="ball idle" role="button" title="Quota Keepalive">
     <svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
       <defs>
@@ -40,6 +40,17 @@
       <circle class="spark" id="ball-spark" cx="32" cy="3.4" r="2.2"></circle>
     </svg>
     <div class="core">
+      <!-- 侧视宠物（3D 旋转 90°；不可用时回退 2D 立绘） -->
+      <div class="pet-icon running" id="ball-pet">
+        <canvas class="pokemon-3d-canvas" id="ball-pet-canvas" aria-hidden="true"></canvas>
+        <img class="pet-fallback" id="ball-pet-img" alt="" draggable="false">
+      </div>
+      <!-- 精灵球（伙伴被收进球时） -->
+      <svg class="ball-icon" id="ball-ball" viewBox="0 0 24 24" aria-hidden="true" hidden>
+        <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M2.5 12h19" stroke="currentColor" stroke-width="1.8"/>
+        <circle cx="12" cy="12" r="3.2" fill="var(--card, #fff)" stroke="currentColor" stroke-width="1.6"/>
+      </svg>
       <svg class="q" viewBox="0 0 64 64" aria-hidden="true">
         <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="8"
                 stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
@@ -47,17 +58,7 @@
               stroke-width="6.6" stroke-linecap="round"/>
       </svg>
       <b class="roll" id="speed-value">0</b>
-      <small>tok/s</small>
     </div>
-    <!-- 捕获结果横幅：美漫风格（斜切描边大字 + 速度线），只在结果瞬间出现。 -->
-    <div class="popup" id="ball-popup" hidden>
-      <span class="popup-text" id="ball-popup-text">捕获成功！</span>
-    </div>
-    <!-- 长按蓄力进度：沿环内侧的细弧，不引入新的持续动画。 -->
-    <svg class="charge" viewBox="0 0 64 64" aria-hidden="true">
-      <circle id="ball-charge" cx="32" cy="32" r="26" stroke-dasharray="163.4"
-              stroke-dashoffset="163.4"></circle>
-    </svg>
   </div>
 
 <script type="module">
@@ -70,24 +71,14 @@
     titleThresholds,
     titleThemeHues,
   } from "./assets/title-system.js";
-  import {
-    POKEMON_CATALOG,
-    evolutionStageForDailyTokens,
-    pokemonById,
-  } from "./assets/pokemon-art.js";
+  import { POKEMON_CATALOG, pokemonById } from "./assets/pokemon-art.js";
   import { createPokemon3D } from "./assets/pokemon-3d.js";
   import {
-    sweepProgress,
-    timingAccuracy,
-    captureOutcome,
-  } from "./assets/pet-motion.js";
-  import {
-    CHARGE_THROW_MS,
-    DRAG_START_PX,
-    resolveGesture,
     shouldStartDrag,
     dragTargetOrigin,
-    chargeProgress,
+    runDuration,
+    shakeDuration,
+    shouldAutoRelease,
   } from "./assets/bar-gesture.js";
 
   function asJSON(value) {
@@ -122,84 +113,24 @@
   const valueNode = document.getElementById("speed-value");
   const ringBar = ball.querySelector(".ring .bar");
   const spark = document.getElementById("ball-spark");
-  const chargeArc = document.getElementById("ball-charge");
-  const popup = document.getElementById("ball-popup");
-  const popupText = document.getElementById("ball-popup-text");
-  const CHARGE_LENGTH = 163.4;
+  const petNode = document.getElementById("ball-pet");
+  const petCanvas = document.getElementById("ball-pet-canvas");
+  const petImg = document.getElementById("ball-pet-img");
+  const ballIcon = document.getElementById("ball-ball");
   const RING_LENGTH = 191.6;
   const SPARK_RADIUS = 28.6;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  const SELECTED_KEY = "qka.pet.selected";
+  const CAUGHT_KEY = "qka.pet.caught.v1";
+
   let themeId = "vehicles";
   let sparkProgress = 0;
   let sparkFrame = 0;
-  let todayTokens = 0;
-  let chargeFrame = 0;
-  let chargeStartMS = 0;
-  let pressStartMS = 0;
-  let pressX = 0;
-  let pressY = 0;
-  let pressed = false;
-  let throwing = false;
-
-  function applyTheme(theme) {
-    if (theme === "light" || theme === "dark") {
-      document.documentElement.dataset.theme = theme;
-    } else {
-      delete document.documentElement.dataset.theme;
-    }
-  }
-
-  // 环表示称号体系里的「总进度」：13 级把圆周等分，跨级时继续往前走，
-  // 不会在阈值处跳回起点（与原型 levelFor 的 frac 一致）。
-  function ringProgress(speed, active) {
-    const level = titleLevelForSpeed(speed, active);
-    if (level < 1) return 0;
-    const total = titleThresholds.length;
-    if (level >= total) return 100;
-    const lower = titleThresholds[level - 1];
-    const upper = titleThresholds[level];
-    const within = upper > lower
-      ? Math.min(1, Math.max(0, (speed - lower) / (upper - lower)))
-      : 1;
-    return ((level - 1 + within) / total) * 100;
-  }
-
-  function render(view) {
-    if (!view) return;
-    const speed = Number(view.output_tokens_per_second) || 0;
-    const active = Boolean(view.active);
-    themeId = normalizeTitleTheme(view.title_theme_id || themeId);
-    todayTokens = Math.max(0, Number(view.today_total_tokens) || 0);
-
-    const text = compactTokenRate(speed);
-    setRoll(valueNode, text);
-    ball.classList.toggle("n4", text.length === 4);
-    ball.classList.toggle("n5", text.length >= 5);
-    ball.classList.toggle("idle", !active);
-    ball.classList.toggle("live", active);
-
-    // 环长度 = 称号总进度；颜色跟称号主题色相。进度头部的光点只随数值变化，
-    // 不做连续旋转/扫描动画。
-    const progress = ringProgress(speed, active);
-    ringBar.setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - progress / 100)));
-    animateSpark(progress);
-    ball.style.setProperty("--ball-hue", String(titleThemeHues[themeId] ?? 193));
-  }
-
-  // ---------- 迷你宠物：球内 3D 舞台 ----------
-  const stage = document.createElement("div");
-  stage.className = "pet-stage";
-  stage.innerHTML = '<div class="pet-avatar is-loading" id="ball-avatar"></div>';
-  ball.appendChild(stage);
-  const avatar = document.getElementById("ball-avatar");
-
-  const SELECTED_KEY = "qka.pet.selected";
-  const CAUGHT_KEY = "qka.pet.caught.v1";
-  let pet = null;
+  let currentSpeed = 0;
+  let pet = POKEMON_CATALOG[0];
   let viewer = null;
   let viewerPetId = "";
-  let popupTimer = 0;
 
   function readStoredString(key, fallback) {
     try {
@@ -222,6 +153,10 @@
     }
   }
 
+  function isCaught(petId) {
+    return !!readCaughtMap()[petId];
+  }
+
   function writeCaught(petId, caught) {
     const map = readCaughtMap();
     if (caught) map[petId] = true;
@@ -231,183 +166,218 @@
     } catch (_) {}
   }
 
-  function isCaught(petId) {
-    return !!readCaughtMap()[petId];
+  function applyTheme(theme) {
+    if (theme === "light" || theme === "dark") {
+      document.documentElement.dataset.theme = theme;
+    } else {
+      delete document.documentElement.dataset.theme;
+    }
   }
 
-  function effectIntensity() {
-    return Math.max(1, Math.min(5, evolutionStageForDailyTokens(todayTokens)));
+  // 光点按进度直接落位到圆环上（SVG 坐标从 3 点方向起算，.ring 自身再 -90°）。
+  function placeSpark(progress) {
+    if (!spark) return;
+    const angle = (progress / 100) * Math.PI * 2;
+    spark.setAttribute("cx", String(32 + SPARK_RADIUS * Math.cos(angle)));
+    spark.setAttribute("cy", String(32 + SPARK_RADIUS * Math.sin(angle)));
+    spark.style.opacity = progress > 0 ? "" : "0";
   }
 
-  function ensureViewer(nextPet) {
-    if (viewer && viewerPetId === nextPet.id) {
-      viewer.setEffectIntensity(effectIntensity());
+  function animateSpark(progress) {
+    if (!spark) return;
+    if (sparkFrame) cancelAnimationFrame(sparkFrame);
+    if (reducedMotion) {
+      sparkProgress = progress;
+      placeSpark(progress);
       return;
     }
+    const from = sparkProgress;
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - start) / 420);
+      const eased = 1 - Math.pow(1 - t, 3);
+      sparkProgress = from + (progress - from) * eased;
+      placeSpark(sparkProgress);
+      if (t < 1) {
+        sparkFrame = requestAnimationFrame(step);
+      } else {
+        sparkFrame = 0;
+      }
+    }
+    sparkFrame = requestAnimationFrame(step);
+  }
+
+  function ringProgress(speed, active) {
+    const level = titleLevelForSpeed(speed, active);
+    if (level < 1) return 0;
+    const total = titleThresholds.length;
+    if (level >= total) return 100;
+    const lower = titleThresholds[level - 1];
+    const upper = titleThresholds[level];
+    const within = upper > lower
+      ? Math.min(1, Math.max(0, (speed - lower) / (upper - lower)))
+      : 1;
+    return ((level - 1 + within) / total) * 100;
+  }
+
+  // ---------- 球面宠物：侧视 3D（不可用回退 2D） ----------
+  function ensurePetViewer(nextPet) {
+    if (viewer && viewerPetId === nextPet.id) return;
     if (viewer) viewer.dispose();
     viewer = null;
     viewerPetId = nextPet.id;
-    avatar.innerHTML =
-      '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + nextPet.art;
-    avatar.className = "pet-avatar pet-" + nextPet.id + " is-loading";
-    const canvas = avatar.querySelector(".pokemon-3d-canvas");
-    viewer = createPokemon3D(canvas, {
+    petImg.src = "./assets/pokemon/" + nextPet.stages[0].sprite;
+    petImg.hidden = true;
+    petCanvas.style.display = "";
+    viewer = createPokemon3D(petCanvas, {
       models: [nextPet.stages[0].model],
       boneAdjust: nextPet.stages[0].pose || null,
       eyeMaterial: nextPet.eyeMaterial || null,
       eyeMesh: nextPet.eyeMesh || null,
       modelRotations: [nextPet.stages[0].rotation || null],
+      // 侧视图：把模型绕 Y 轴转 90°，正面朝向变成侧脸。
+      modelYaw: Math.PI / 2,
       stage: 1,
       enabled: true,
-      effectIntensity: effectIntensity(),
-      onLoading: function (loading) {
-        if (viewerPetId === nextPet.id) {
-          avatar.classList.toggle("is-loading", loading !== false);
-        }
-      },
       onReady: function () {
         if (viewerPetId !== nextPet.id) return;
-        avatar.classList.remove("is-loading", "model-fallback");
-        avatar.classList.add("is-3d");
+        petNode.classList.add("is-3d");
+        petNode.classList.remove("model-fallback");
+        petImg.hidden = true;
       },
       onUnavailable: function () {
-        if (viewerPetId !== nextPet.id) return;
-        avatar.classList.remove("is-3d", "is-loading");
-        avatar.classList.add("model-fallback");
+        petNode.classList.add("model-fallback");
+        petImg.hidden = false;
       },
       onError: function () {
-        if (viewerPetId !== nextPet.id) return;
-        avatar.classList.remove("is-3d", "is-loading");
-        avatar.classList.add("model-fallback");
+        petNode.classList.add("model-fallback");
+        petImg.hidden = false;
       },
     });
-    if (viewer && !viewer.isCapturing()) {
-      viewer.setCaught(isCaught(nextPet.id), false);
-    }
   }
 
-  function refreshPet() {
-    pet = selectedPet();
-    ensureViewer(pet);
-    ball.classList.toggle("has-pet", !!pet);
-  }
-  Events.On("pet-selected", refreshPet);
-  Events.On("pet-caught", function (event) {
-    const data = event && event.data;
-    const caught = data && typeof data === "object" ? !!data.caught : !!data;
-    if (viewer && !viewer.isCapturing()) viewer.setCaught(caught, false);
-  });
-  refreshPet();
-
-  // ---------- 美漫风格结果横幅 ----------
-  function showPopup(text, kind) {
-    if (!popup || !popupText) return;
-    popupText.textContent = text;
-    popup.className = "popup " + (kind || "ok");
-    popup.hidden = false;
-    // 重启弹跳动画。
-    popup.style.animation = "none";
-    void popup.offsetWidth;
-    popup.style.animation = "";
-    if (popupTimer) clearTimeout(popupTimer);
-    popupTimer = setTimeout(function () {
-      popup.hidden = true;
-      popupTimer = 0;
-    }, 1600);
-  }
-
-  // ---------- 单击放技能 / 长按抛精灵球 ----------
-  function currentSkillTier() {
-    return evolutionStageForDailyTokens(todayTokens);
-  }
-
-  function chargeTick() {
-    if (!pressed || !chargeStartMS) return;
-    const progress = chargeProgress(performance.now() - chargeStartMS);
-    chargeArc.setAttribute("stroke-dashoffset",
-      String(CHARGE_LENGTH * (1 - progress)));
-    if (viewer) viewer.setCharging(progress >= 0.12);
-    if (progress >= 1) {
-      // 长按到位：抛球（判定在松手时给出）。
-      chargeStartMS = 0;
-      chargeFrame = 0;
-      return;
-    }
-    chargeFrame = requestAnimationFrame(chargeTick);
-  }
-
-  function stopChargeUi() {
-    if (chargeFrame) cancelAnimationFrame(chargeFrame);
-    chargeFrame = 0;
-    chargeStartMS = 0;
-    chargeArc.setAttribute("stroke-dashoffset", String(CHARGE_LENGTH));
-    if (viewer) viewer.setCharging(false);
-  }
-
-  function releasePetBall() {
-    if (!pet || !viewer) return;
-    viewer.releaseBall();
+  function releaseCaught() {
+    if (!isCaught(pet.id)) return;
     writeCaught(pet.id, false);
     try {
       Events.Emit("pet-caught", { caught: false });
     } catch (_) {}
-    showPopup("回来了！", "ok");
+    renderBallState();
   }
 
-  function throwNow() {
-    if (!pet || !viewer || viewer.isCaught() || throwing) return;
-    const held = Math.max(0, performance.now() - pressStartMS);
-    const sweep = sweepProgress(held);
-    const accuracy = timingAccuracy(sweep.position);
-    const outcome = captureOutcome({
-      accuracy: accuracy,
-      tier: currentSkillTier(),
-    });
-    throwing = true;
-    viewer.throwBall({
-      willDodge: outcome.dodged,
-      willCatch: outcome.caught,
-      onResolved: function (result) {
-        throwing = false;
-        if (result && result.caught) {
-          writeCaught(pet.id, true);
-          try {
-            Events.Emit("pet-caught", { caught: true });
-          } catch (_) {}
-          showPopup("捕获成功！", "ok");
-        } else if (result && result.dodged) {
-          showPopup("躲开了！", "miss");
-        } else {
-          showPopup("捕获失败", "miss");
-        }
-      },
-    });
+  // 统一决定球面显示什么：精灵球（已捕获）/ 侧视宠物（未捕获）。
+  function renderBallState() {
+    pet = selectedPet();
+    const caught = isCaught(pet.id);
+    ball.classList.add("has-pet");
+    ball.classList.toggle("caught", caught);
+    if (caught) {
+      petNode.hidden = true;
+      ballIcon.hidden = false;
+    } else {
+      ballIcon.hidden = true;
+      petNode.hidden = false;
+      ensurePetViewer(pet);
+    }
+    applyMotion();
   }
 
-  // 关键：Wails 的 --wails-draggable 让「按下后只要鼠标移动 1px」就进入
-  // 原生拖动循环，随后的 pointerup/click 会被 runtime 吞掉——左键就再也不
-  // 能触发任何交互，而且用户只是想点一下、手稍有抖动就把球拖走。这里把
-  // 拖动降级为「按住且移动超过阈值」才交给系统拖动：短按/长按的手势先在
-  // 页面内完成（判定逻辑在 assets/bar-gesture.js，纯函数、可真实单测）。
+  // 奔跑 / 晃动的节奏只跟当前速度走：速度越快，动画一步越短。
+  function applyMotion() {
+    const running = !isCaught(pet.id) && runDuration(currentSpeed) > 0;
+    const shaking = isCaught(pet.id) && shakeDuration(currentSpeed) > 0;
+    petNode.classList.toggle("running", running && !reducedMotion);
+    ball.classList.toggle("shaking", shaking && !reducedMotion);
+    if (running) {
+      petNode.style.setProperty("--run-duration", runDuration(currentSpeed) + "s");
+    } else {
+      petNode.style.removeProperty("--run-duration");
+    }
+    if (shaking) {
+      ball.style.setProperty("--shake-duration", shakeDuration(currentSpeed) + "s");
+    } else {
+      ball.style.removeProperty("--shake-duration");
+    }
+  }
+
+  function render(view) {
+    if (!view) return;
+    const speed = Number(view.output_tokens_per_second) || 0;
+    const active = Boolean(view.active);
+    themeId = normalizeTitleTheme(view.title_theme_id || themeId);
+    currentSpeed = speed;
+
+    const text = compactTokenRate(speed);
+    setRoll(valueNode, text);
+    ball.classList.toggle("n4", text.length === 4);
+    ball.classList.toggle("n5", text.length >= 5);
+    ball.classList.toggle("idle", !active);
+    ball.classList.toggle("live", active);
+
+    const progress = ringProgress(speed, active);
+    ringBar.setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - progress / 100)));
+    animateSpark(progress);
+    ball.style.setProperty("--ball-hue", String(titleThemeHues[themeId] ?? 193));
+
+    // 超过 1000 tok/s：精灵球被挣开，自动放出伙伴。
+    if (shouldAutoRelease(speed)) releaseCaught();
+    applyMotion();
+  }
+
+  Events.On("pet-selected", renderBallState);
+  Events.On("pet-caught", renderBallState);
+  renderBallState();
+
+  // 贴边态：Go 把窗口缩到 44px，这里是纯 CSS 依据视口宽度切换内容。
+  function syncDocked() {
+    ball.classList.toggle("docked", window.innerWidth < 60);
+  }
+  window.addEventListener("resize", syncDocked);
+  syncDocked();
+
+  Events.On("tokenspeed-changed", function (event) {
+    if (!event || !event.data) return;
+    render(asJSON(event.data));
+  });
+  Events.On("theme-changed", function (event) {
+    applyTheme(event && event.data);
+  });
+  Events.On("common:WindowShow", function (event) {
+    if (event && event.sender && event.sender !== "bar") return;
+    renderBallState();
+    Bound.TokenSpeedGet()
+      .then(function (view) { render(asJSON(view)); })
+      .catch(function () {});
+  });
+  Bound.TokenSpeedGet()
+    .then(function (view) {
+      render(asJSON(view));
+    })
+    .catch(function () {});
+
+  // ---------- 左键：打开/切换迷你宠物；按住拖动超过阈值才移动窗口 ----------
+  // Wails 的 --wails-draggable 在 mousedown 就武装拖动，鼠标移动 1px 即进入
+  // 原生移动循环，之后的 pointerup/click 会被 runtime 吞掉——表现为「点了
+  // 没反应」。这里按下不武装拖动，位移超过 6px 才手动升级为原生拖动。
+  let pressed = false;
+  let pressStartMS = 0;
+  let pressX = 0;
+  let pressY = 0;
+  let dragArmed = false;
 
   ball.addEventListener("pointerdown", function (event) {
     if (event.button !== 0) return;
     event.stopPropagation();
     pressed = true;
+    dragArmed = false;
     pressStartMS = performance.now();
     pressX = event.clientX;
     pressY = event.clientY;
-    chargeStartMS = pressStartMS;
-    chargeFrame = requestAnimationFrame(chargeTick);
   });
-  // 按住期间移动超过阈值才升级为窗口拖动：把球心挪到指针下并用系统拖动。
-  // 先取消页面手势，避免松手时又触发技能/抛球；SetPosition 把窗口对中后，
-  // 立即调用 Bound.BarStartDrag 让 Go 侧进入原生移动循环（HTCAPTION），
-  // 球就跟着指针走；期间 runtime 会吞掉后续鼠标事件，不会误触发手势。
+
   function startNativeDrag(event) {
+    dragArmed = true;
     pressed = false;
-    stopChargeUi();
-    if (viewer) viewer.setCharging(false);
     const target = dragTargetOrigin({
       clientX: event.clientX,
       clientY: event.clientY,
@@ -425,7 +395,9 @@
       })
       .catch(function () {});
   }
+
   ball.addEventListener("pointermove", function (event) {
+    if (!pressed || dragArmed) return;
     if (!shouldStartDrag({
       pressed: pressed,
       buttons: event.buttons,
@@ -438,76 +410,21 @@
   function finishPress(event) {
     if (event.button !== undefined && event.button !== 0) return;
     if (!pressed) return;
-    event.stopPropagation();
     pressed = false;
-    const gesture = resolveGesture({
-      heldMs: performance.now() - pressStartMS,
-      docked: window.innerWidth < 60,
-      caught: !!(viewer && viewer.isCaught()),
-      capturing: !!(viewer && viewer.isCapturing()),
-      moved: false,
-      hasPet: !!pet,
-    });
-    stopChargeUi();
-    switch (gesture.action) {
-      case "dock-toggle":
-        // 贴边态（44px 半圆）短按：弹回浮动态并打开迷你宠物（窗口很小，
-        // 容不下宠物交互；弹回由 Go 侧 BarToggle 完成）。
-        try {
-          const pending = Bound.BarToggle();
-          if (pending && typeof pending.catch === "function") pending.catch(function () {});
-        } catch (_) {}
-        return;
-      case "throw":
-        throwNow();
-        return;
-      case "release":
-        releasePetBall();
-        return;
-      case "skill":
-        viewer.playSkill(pet.effect, effectIntensity());
-        return;
-    }
-    // "none"：拖动中弹起或无宠物，静默。
+    event.stopPropagation();
+    // 拖动升级后松手：手势已被拖动消费，不再触发点击。
+    if (dragArmed) return;
+    // 单击（贴边或浮动）：Go 侧 BarToggle —— 贴边时弹回，浮动时开关宠物窗口。
+    try {
+      const pending = Bound.BarToggle();
+      if (pending && typeof pending.catch === "function") pending.catch(function () {});
+    } catch (_) {}
   }
   ball.addEventListener("pointerup", finishPress);
   ball.addEventListener("pointercancel", function () {
     pressed = false;
-    stopChargeUi();
+    dragArmed = false;
   });
-
-  // 贴边态：Go 把窗口缩到 44px，这里是纯 CSS 依据视口宽度切换内容。
-  function syncDocked() {
-    const docked = window.innerWidth < 60;
-    ball.classList.toggle("docked", docked);
-    stage.style.display = docked ? "none" : "";
-    if (docked) {
-      pressed = false;
-      stopChargeUi();
-    }
-  }
-  window.addEventListener("resize", syncDocked);
-  syncDocked();
-
-  Events.On("tokenspeed-changed", function (event) {
-    if (!event || !event.data) return;
-    render(asJSON(event.data));
-  });
-  Events.On("theme-changed", function (event) {
-    applyTheme(event && event.data);
-  });
-  Events.On("common:WindowShow", function (event) {
-    if (event && event.sender && event.sender !== "bar") return;
-    refreshPet();
-    Bound.TokenSpeedGet()
-      .then(function (view) { render(asJSON(view)); })
-      .catch(function () {});
-  });
-  Bound.TokenSpeedGet()
-    .then(function (view) {
-      render(asJSON(view));
-    })
-    .catch(function () {});
 
   ball.addEventListener("contextmenu", function (event) {
     event.preventDefault();
