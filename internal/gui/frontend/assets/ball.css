@@ -97,38 +97,6 @@ html, body {
   color: #fff;
   opacity: .1;
 }
-/* 宠物/精灵球图标：与 macOS 菜单栏同一套 44px 单色模板（已转白），
-   放大一点当水印，不与数字抢焦点。 */
-.ball .core .pet {
-  position: absolute;
-  left: 50%; top: 50%;
-  width: 30px; height: 30px;
-  transform: translate(-50%, -50%);
-  display: block;
-  opacity: .8;
-  -webkit-user-drag: none;
-  pointer-events: none;
-}
-.ball .core b {
-  display: inline-flex; align-items: flex-start;
-  font-size: 22px; font-weight: 700; line-height: 1;
-  letter-spacing: -.02em;
-  color: #fff;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, .55);
-}
-.ball .core > small {
-  font-size: 8.5px; font-weight: 560; letter-spacing: .08em;
-  text-transform: uppercase; color: rgba(255, 255, 255, .5); line-height: 1;
-}
-.ball.idle .core b { color: rgba(255, 255, 255, .45); text-shadow: none; }
-.ball.idle .core > small { color: rgba(255, 255, 255, .3); }
-.ball.idle .ring .bar,
-.ball.idle .ring .spark { opacity: 0; }
-.ball.idle .ring .track { opacity: .45; }
-/* 4/5 位数值（如 1.2k、230M）收一档字号，避免顶到圆边。 */
-.ball.n4 .core b { font-size: 18px; }
-.ball.n5 .core b { font-size: 15px; }
-
 /* 贴边态：窗口 44px、一半在屏幕外，只留图标（宠物/精灵球，退回 Q）。
    图标要落在朝向屏幕内的那半：Go 裁剪按贴边侧保留对应半圆，
    这里把 core 的对齐方向也跟着转（左右贴边水平居中，上下贴边垂直居中）。 */
@@ -141,15 +109,6 @@ html, body {
   color: #fff;
   opacity: .9;
 }
-.ball.docked .core .pet {
-  position: static;
-  width: 18px; height: 18px;
-  transform: none;
-  opacity: .95;
-}
-.ball.docked .core { width: 100%; height: 100%; }
-/* 上下贴边时 Go 把窗口放在 y±22，可见半圆在竖直方向；core 依旧铺满窗口，
-   内容 grid 居中即可，无需额外翻转。 */
 .ball.docked .ring { opacity: .8; }
 .ball.docked .ring .bar { opacity: .9; }
 

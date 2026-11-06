@@ -160,12 +160,6 @@ func (a *App) guiDeps() gui.Deps {
 				app.BarMenu()
 			}
 		},
-		BarState: func() gui.BarStateView {
-			if app := guiCurrentApp(); app != nil {
-				return app.BarStateView()
-			}
-			return gui.BarStateView{}
-		},
 		TokenSpeedGet: func(context.Context) (tokenspeed.Snapshot, error) {
 			return tokenSpeed.Snapshot(), nil
 		},

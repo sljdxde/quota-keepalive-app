@@ -137,6 +137,13 @@ var Schema = []Field{
 		Default:     true,
 	},
 	{
+		Key:         "show_ball",
+		Type:        FieldBool,
+		Label:       "显示悬浮球",
+		Description: "屏幕边缘的常驻速度球（仅 Windows）；不需要时可关掉，状态面板与托盘不受影响。",
+		Default:     true,
+	},
+	{
 		Key:         "launch_at_login",
 		Type:        FieldBool,
 		Label:       "开机自动启动",

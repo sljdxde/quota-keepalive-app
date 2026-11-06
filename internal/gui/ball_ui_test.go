@@ -1,12 +1,13 @@
 package gui
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
 // 悬浮球替换掉旧的深色渐变胶囊：圆形卡、称号色进度环、滚动数字、可拖动、
-// 左键开迷你宠物 / 右键出自绘菜单。
+// 左键开迷你宠物 / 右键出自绘菜单。中央固定为 Q 水印，不随宠物切换。
 func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/bar.html")
 	if err != nil {
@@ -28,12 +29,6 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`titleThemeHues`,
 		`Bound.BarToggle`,
 		`Bound.BarMenu`,
-		`Bound.BarState`,
-		`id="ball-pet"`,
-		`assets/tray/`,
-		`pokeball.png`,
-		`Events.On("pet-selected"`,
-		`Events.On("pet-caught"`,
 		`Events.On("tokenspeed-changed"`,
 		`--wails-draggable: drag`,
 	} {
@@ -161,10 +156,13 @@ func TestBallMenuUsesMagpieRowMenu(t *testing.T) {
 	for _, want := range []string{
 		`data-action="main"`,
 		`data-action="settings"`,
+		`data-action="hide-ball"`,
 		`data-action="quit"`,
 		`打开主界面`,
 		`设置`,
+		`隐藏悬浮球`,
 		`退出 Quota Keepalive`,
+		`SettingsSet("show_ball", false)`,
 		`border-radius: 11px`,
 		`height: 28px`,
 		`border-radius: 7px`,
@@ -180,6 +178,44 @@ func TestBallMenuUsesMagpieRowMenu(t *testing.T) {
 			t.Errorf("右键菜单缺少 %q", want)
 		}
 	}
+}
+
+// 「显示悬浮球」设置：schema 有 show_ball 布尔项，关闭时球与浮层都不出现。
+func TestShowBallSettingWiredToEndToEnd(t *testing.T) {
+	schemaData, err := os.ReadFile("../settings/schema.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(schemaData), `Key:         "show_ball"`) {
+		t.Error("settings schema 缺少 show_ball 布尔项")
+	}
+	appData, err := os.ReadFile("app.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundData, err := os.ReadFile("bound.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wiring := string(appData) + string(boundData)
+	for _, want := range []string{
+		`current.Get("show_ball")`,
+		`deps.BallVisible = result.setBallPreference`,
+		`if key == "show_ball" && s.deps.BallVisible != nil`,
+		`if !a.ballShow.Load() {`,
+	} {
+		if !strings.Contains(wiring, want) {
+			t.Errorf("show_ball 接线缺少 %q", want)
+		}
+	}
+}
+
+func testReadFile(name string) []byte {
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
 func TestPetMiniAndMenuOptionsAreFixed(t *testing.T) {

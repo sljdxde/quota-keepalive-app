@@ -79,6 +79,14 @@
       </svg>
       <span class="label">设置</span>
     </button>
+    <button type="button" role="menuitem" data-action="hide-ball">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M2.3 8s2.1-3.7 5.7-3.7S13.7 8 13.7 8s-2.1 3.7-5.7 3.7S2.3 8 2.3 8Z" stroke="currentColor" stroke-width="1.3"/>
+        <circle cx="8" cy="8" r="1.7" stroke="currentColor" stroke-width="1.3"/>
+        <path d="m3 13 10-10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      <span class="label">隐藏悬浮球</span>
+    </button>
     <div class="sep" role="separator"></div>
     <button type="button" role="menuitem" class="danger" data-action="quit">
       <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -91,6 +99,7 @@
 
 <script type="module">
   import { Events } from "/wails/runtime.js";
+  import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
 
   const actions = {
     main: "open-main",
@@ -105,6 +114,14 @@
         Events.Emit(name);
       } catch (_) {}
     });
+  });
+  // 隐藏悬浮球：写设置（持久化，实时生效），浮层自己也会跟着被 Go 收起。
+  document.querySelector('button[data-action="hide-ball"]').addEventListener("click", function () {
+    try {
+      const pending = Bound.SettingsSet("show_ball", false);
+      if (pending && typeof pending.catch === "function") pending.catch(function () {});
+      Events.Emit("collapse-ballmenu");
+    } catch (_) {}
   });
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape") return;

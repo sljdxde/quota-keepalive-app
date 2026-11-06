@@ -64,8 +64,11 @@ type App struct {
 	startedAt     atomic.Int64
 	dockShow      atomic.Bool
 	failureOn     atomic.Bool
-	dockApply     func(bool)
-	quitStop      func()
+	// ballShow 记录「显示悬浮球」设置：false 时球与它的浮层都不再出现，
+	// 也不参与「主窗口关闭后恢复」逻辑。
+	ballShow  atomic.Bool
+	dockApply func(bool)
+	quitStop  func()
 	// barShow/barHide 控制常驻状态项（Windows 悬浮球）的显隐。默认指向真实
 	// 窗口操作；单测替换这两个字段即可验证「主窗口可见时收起、关闭后恢复」
 	// 的策略，不必创建真实 WebView2 窗口（同 dockApply 的接缝写法）。
@@ -106,10 +109,12 @@ func New(deps Deps) *App {
 	setProcessAppUserModelID()
 
 	showDock := true
+	showBall := true
 	theme := "system"
 	if deps.Settings != nil {
 		current := deps.Settings()
 		showDock = current.Get("show_dock_icon")
+		showBall = current.Get("show_ball")
 		theme = current.GetString("theme")
 	}
 
@@ -126,7 +131,9 @@ func New(deps Deps) *App {
 	result.barShow = result.showBar
 	result.barHide = result.hideBar
 	result.dockShow.Store(showDock)
+	result.ballShow.Store(showBall)
 	deps.DockIconVisible = result.setDockPreference
+	deps.BallVisible = result.setBallPreference
 	bound := NewBoundService(deps)
 
 	wails := application.New(application.Options{
@@ -370,8 +377,12 @@ func screenWorkArea(screen *application.Screen) application.Rect {
 }
 
 // showBar 确保悬浮球可见（主窗口关闭等场景后仍要常驻）。
+// 「显示悬浮球」设置关闭时不显示；托盘仍承担状态项职责。
 func (a *App) showBar() {
 	if goos != "windows" {
+		return
+	}
+	if !a.ballShow.Load() {
 		return
 	}
 	bar := a.ensureBar()
@@ -396,6 +407,25 @@ func (a *App) hideBar() {
 	a.windowMu.Unlock()
 	if bar != nil && bar.IsVisible() {
 		bar.Hide()
+	}
+}
+
+// setBallPreference 实现 Deps.BallVisible：应用「显示悬浮球」设置并立即生效。
+func (a *App) setBallPreference(visible bool) {
+	a.ballShow.Store(visible)
+	if !visible {
+		a.hideBallPanel()
+		a.hidePetMini()
+		a.hideBallMenu()
+		a.hideBar()
+		return
+	}
+	// 重新显示：主窗口可见时球仍然让位（与 showMain 的策略一致）。
+	a.windowMu.Lock()
+	main := a.main
+	a.windowMu.Unlock()
+	if main == nil || !main.IsVisible() {
+		a.showBar()
 	}
 }
 
@@ -858,19 +888,6 @@ func (a *App) setTrayCaught(caught bool) {
 	petID := a.trayPet
 	a.trayStateMu.Unlock()
 	a.applyTrayState(petID, caught)
-}
-
-// BarStateView 返回悬浮球中央图标状态（导出给 Bound.BarState 用）：
-// 当前宠物与是否精灵球模式。与 macOS 菜单栏图标共用同一份状态。
-func (a *App) BarStateView() BarStateView {
-	return a.barStateView()
-}
-
-// barStateView 是 BarStateView 的实现。
-func (a *App) barStateView() BarStateView {
-	a.trayStateMu.Lock()
-	defer a.trayStateMu.Unlock()
-	return BarStateView{PetID: a.trayPet, Caught: a.trayCaught}
 }
 
 func (a *App) applyTrayState(petID string, caught bool) {
