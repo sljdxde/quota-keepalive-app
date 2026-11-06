@@ -1,0 +1,7 @@
+# 前端资源在 Go/JS 单测里按源码文本断言（含多行片段）。Windows 上的
+# checkout 默认可能把 LF 转成 CRLF，导致同一份代码在 CI 假失败；这里固定
+# 为 LF，二进制资源显式声明，避免被当成文本改写。
+internal/gui/frontend/** text eol=lf
+internal/gui/frontend/**/*.png binary
+internal/gui/frontend/**/*.glb binary
+internal/gui/frontend/**/*.wasm binary

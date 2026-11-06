@@ -100,42 +100,25 @@ html, body {
   color: #fff;
   opacity: .1;
 }
-/* 贴边态：窗口 44px、一半在屏幕外，只留图标（宠物/精灵球，退回 Q）。
-   图标要落在朝向屏幕内的那半：Go 裁剪按贴边侧保留对应半圆，
-   这里把 core 的对齐方向也跟着转（左右贴边水平居中，上下贴边垂直居中）。 */
-.ball.docked .core b,
-.ball.docked .core > small { display: none; }
-.ball.docked .core .q {
-  position: static;
-  width: 18px; height: 18px;
-  transform: none;
-  color: #fff;
-  opacity: .9;
-}
-.ball.docked .ring { opacity: .8; }
-.ball.docked .ring .bar { opacity: .9; }
-
 /* ============================================================ 球面小宠物 / 精灵球
-   侧视 3D（modelYaw=90°）或 2D 回退；有速度时按速度节奏跑动。
-   高度 26px，与下面的速度数字（20px）一起塞进 64px 圆的环内。 */
+   球面只用 2D 立绘：64px 窗口里 3D 全身只占十几像素，看不出形状，且
+   模型加载失败时 WebGL 舞台会留白。3D 舞台只留在迷你宠物窗口里。
+   宠物 24px + 速度数字 16px，一起塞进 64px 圆的环内。 */
 .ball .core .pet-icon {
   position: relative;
-  width: 28px; height: 28px;
-  display: block;
+  width: 24px; height: 24px;
+  display: none;
   flex: none;
 }
-.ball .core .pet-icon .pokemon-3d-canvas,
+/* 两种模式互斥：show-pet / show-ball 由 bar.html 依 ballFaceState 切换。
+   不用 hidden 属性控制精灵球——SVG 没有 hidden IDL，设 .hidden 无效。 */
+.ball.show-pet .core .pet-icon { display: block; }
 .ball .core .pet-icon .pet-fallback {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   display: block;
+  object-fit: contain;
 }
-.ball .core .pet-icon .pet-fallback { object-fit: contain; }
-/* 3D 就绪前先显示 2D 立绘，避免小窗里出现空白或两层叠影。 */
-.ball .core .pet-icon .pokemon-3d-canvas { opacity: 0; transition: opacity .18s ease; }
-.ball .core .pet-icon.is-3d .pokemon-3d-canvas { opacity: 1; }
-.ball .core .pet-icon.is-3d .pet-fallback { display: none; }
-.ball .core .pet-icon.model-fallback .pokemon-3d-canvas { display: none; }
 .ball .core .pet-icon.running {
   animation: pet-run var(--run-duration, .6s) ease-in-out infinite;
   transform-origin: 50% 88%;
@@ -148,10 +131,11 @@ html, body {
 /* 精灵球：被捕获时占宠物位置；速度越快晃得越快（晃幅很小，不抢数字）。 */
 .ball .core .ball-icon {
   width: 24px; height: 24px;
-  display: block;
+  display: none;
   color: #fff;
   flex: none;
 }
+.ball.show-ball .core .ball-icon { display: block; }
 .ball.shaking .core .ball-icon {
   animation: ball-shake var(--shake-duration, .6s) ease-in-out infinite;
   transform-origin: 50% 92%;
@@ -161,13 +145,16 @@ html, body {
   25% { transform: rotate(-11deg); }
   75% { transform: rotate(11deg); }
 }
-/* 有宠物：Q 水印退场，数字缩到 20px（不再显示单位，避免拥挤）。 */
+/* 有宠物：Q 水印退场；速度数字用 16px 基准（页面按位数再收到 14/12px），
+   不再显示单位，避免拥挤。 */
 .ball.has-pet .core .q { display: none; }
-.ball.has-pet .core b { font-size: 20px; }
-/* 4/5 位数值（如 1.2k、230M）收一档字号，避免顶到圆边。 */
-.ball.has-pet.n4 .core b { font-size: 17px; }
-.ball.has-pet.n5 .core b { font-size: 14px; }
-/* 贴边态：窗口 44px、一半在屏幕外，只留 18px 宠物/精灵球。 */
+.ball.has-pet .core b { font-size: 16px; }
+/* 贴边态：窗口 44px、一半在屏幕外，只留 18px 宠物/精灵球。
+   主体往屏幕内偏移半宽（--dock-x/--dock-y 由 bar.html 依窗口与工作区推断），
+   否则 18px 内容正好被窗口边界切成一半。 */
+.ball.docked .core {
+  transform: translate(var(--dock-x, 0px), var(--dock-y, 0px));
+}
 .ball.docked .core b { display: none; }
 .ball.docked .core .pet-icon,
 .ball.docked .core .ball-icon { width: 18px; height: 18px; }

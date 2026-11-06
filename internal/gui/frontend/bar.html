@@ -22,10 +22,10 @@
 </head>
 <body>
   <!-- 常驻悬浮球：Windows 上等价于 macOS 菜单栏上的 QKA 状态项。
-       球面 = 侧视小宠物（有速度时跑动，越快越快）+ 纯数字 tok/s；
+       球面 = 24px 小宠物（有速度时跑动，越快越快）+ 纯数字速度（无单位）；
        伙伴被收进精灵球时换成精灵球（速度越快晃得越快，>1000 自动放出）。
        按住可拖动；左键单击打开迷你宠物窗口；右键出菜单。
-       拖到屏幕边缘会收成 44px 半圆（Go 侧 SetSize），此时只显示 Q/宠物。 -->
+       拖到屏幕边缘会收成 44px 半圆（Go 侧 SetSize），此时只显示宠物/精灵球。 -->
   <div id="ball" class="ball idle" role="button" title="Quota Keepalive">
     <svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
       <defs>
@@ -40,13 +40,14 @@
       <circle class="spark" id="ball-spark" cx="32" cy="3.4" r="2.2"></circle>
     </svg>
     <div class="core">
-      <!-- 侧视宠物（3D 旋转 90°；不可用时回退 2D 立绘） -->
-      <div class="pet-icon running" id="ball-pet">
-        <canvas class="pokemon-3d-canvas" id="ball-pet-canvas" aria-hidden="true"></canvas>
+      <!-- 球面宠物：始终用 2D 立绘。64px 窗口里的 3D 全身体积太小、
+           模型加载失败时还会留下空白，所以球面不再创建 WebGL 舞台；
+           3D 只留在迷你宠物窗口里。 -->
+      <div class="pet-icon" id="ball-pet">
         <img class="pet-fallback" id="ball-pet-img" alt="" draggable="false">
       </div>
-      <!-- 精灵球（伙伴被收进球时） -->
-      <svg class="ball-icon" id="ball-ball" viewBox="0 0 24 24" aria-hidden="true" hidden>
+      <!-- 精灵球（伙伴被收进球时；显隐由 .show-ball 控制，SVG 没有 hidden 属性） -->
+      <svg class="ball-icon" id="ball-ball" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
         <path d="M2.5 12h19" stroke="currentColor" stroke-width="1.8"/>
         <circle cx="12" cy="12" r="3.2" fill="var(--card, #fff)" stroke="currentColor" stroke-width="1.6"/>
@@ -72,13 +73,11 @@
     titleThemeHues,
   } from "./assets/title-system.js";
   import { POKEMON_CATALOG, pokemonById } from "./assets/pokemon-art.js";
-  import { createPokemon3D } from "./assets/pokemon-3d.js";
+  import { ballFaceState } from "./assets/ball-face.js";
+  import { dockSideForWindow, dockContentShift } from "./assets/ball-dock.js";
   import {
     shouldStartDrag,
     dragTargetOrigin,
-    runDuration,
-    shakeDuration,
-    shouldAutoRelease,
   } from "./assets/bar-gesture.js";
 
   function asJSON(value) {
@@ -114,9 +113,7 @@
   const ringBar = ball.querySelector(".ring .bar");
   const spark = document.getElementById("ball-spark");
   const petNode = document.getElementById("ball-pet");
-  const petCanvas = document.getElementById("ball-pet-canvas");
   const petImg = document.getElementById("ball-pet-img");
-  const ballIcon = document.getElementById("ball-ball");
   const RING_LENGTH = 191.6;
   const SPARK_RADIUS = 28.6;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -128,9 +125,9 @@
   let sparkProgress = 0;
   let sparkFrame = 0;
   let currentSpeed = 0;
+  let currentText = "0";
   let pet = POKEMON_CATALOG[0];
-  let viewer = null;
-  let viewerPetId = "";
+  let petSpriteId = "";
 
   function readStoredString(key, fallback) {
     try {
@@ -220,84 +217,61 @@
     return ((level - 1 + within) / total) * 100;
   }
 
-  // ---------- 球面宠物：侧视 3D（不可用回退 2D） ----------
-  function ensurePetViewer(nextPet) {
-    if (viewer && viewerPetId === nextPet.id) return;
-    if (viewer) viewer.dispose();
-    viewer = null;
-    viewerPetId = nextPet.id;
+  // ---------- 球面主体：宠物（未捕获）/ 精灵球（已捕获） ----------
+  function updatePetSprite(nextPet) {
+    if (petSpriteId === nextPet.id) return;
+    petSpriteId = nextPet.id;
     petImg.src = "./assets/pokemon/" + nextPet.stages[0].sprite;
-    petImg.hidden = true;
-    petCanvas.style.display = "";
-    viewer = createPokemon3D(petCanvas, {
-      models: [nextPet.stages[0].model],
-      boneAdjust: nextPet.stages[0].pose || null,
-      eyeMaterial: nextPet.eyeMaterial || null,
-      eyeMesh: nextPet.eyeMesh || null,
-      modelRotations: [nextPet.stages[0].rotation || null],
-      // 侧视图：把模型绕 Y 轴转 90°，正面朝向变成侧脸。
-      modelYaw: Math.PI / 2,
-      stage: 1,
-      enabled: true,
-      onReady: function () {
-        if (viewerPetId !== nextPet.id) return;
-        petNode.classList.add("is-3d");
-        petNode.classList.remove("model-fallback");
-        petImg.hidden = true;
-      },
-      onUnavailable: function () {
-        petNode.classList.add("model-fallback");
-        petImg.hidden = false;
-      },
-      onError: function () {
-        petNode.classList.add("model-fallback");
-        petImg.hidden = false;
-      },
-    });
   }
 
-  function releaseCaught() {
-    if (!isCaught(pet.id)) return;
-    writeCaught(pet.id, false);
-    try {
-      Events.Emit("pet-caught", { caught: false });
-    } catch (_) {}
-    renderBallState();
-  }
-
-  // 统一决定球面显示什么：精灵球（已捕获）/ 侧视宠物（未捕获）。
-  function renderBallState() {
-    pet = selectedPet();
+  // 球面的两种模式只在 paintFace 里切换：宠物可见 / 精灵球可见、跑动 / 晃动、
+  // 速度字号，全部由 ball-face.js 的纯函数判定，页面只负责落 DOM。
+  function paintFace() {
     const caught = isCaught(pet.id);
+    const face = ballFaceState({
+      caught: caught,
+      speed: currentSpeed,
+      speedText: currentText,
+      reducedMotion: reducedMotion,
+    });
     ball.classList.add("has-pet");
     ball.classList.toggle("caught", caught);
-    if (caught) {
-      petNode.hidden = true;
-      ballIcon.hidden = false;
-    } else {
-      ballIcon.hidden = true;
-      petNode.hidden = false;
-      ensurePetViewer(pet);
-    }
-    applyMotion();
-  }
+    // 宠物与精灵球互斥：用类控制显隐（SVG 元素没有 hidden IDL 属性，
+    // 给 SVG 设 .hidden = false 不会移除 hidden 属性，精灵球会一直不显示）。
+    ball.classList.toggle("show-pet", face.petVisible);
+    ball.classList.toggle("show-ball", face.ballVisible);
+    if (face.petVisible) updatePetSprite(pet);
 
-  // 奔跑 / 晃动的节奏只跟当前速度走：速度越快，动画一步越短。
-  function applyMotion() {
-    const running = !isCaught(pet.id) && runDuration(currentSpeed) > 0;
-    const shaking = isCaught(pet.id) && shakeDuration(currentSpeed) > 0;
-    petNode.classList.toggle("running", running && !reducedMotion);
-    ball.classList.toggle("shaking", shaking && !reducedMotion);
-    if (running) {
-      petNode.style.setProperty("--run-duration", runDuration(currentSpeed) + "s");
+    petNode.classList.toggle("running", face.running);
+    ball.classList.toggle("shaking", face.shaking);
+    if (face.running) {
+      petNode.style.setProperty("--run-duration", face.runSeconds + "s");
     } else {
       petNode.style.removeProperty("--run-duration");
     }
-    if (shaking) {
-      ball.style.setProperty("--shake-duration", shakeDuration(currentSpeed) + "s");
+    if (face.shaking) {
+      ball.style.setProperty("--shake-duration", face.shakeSeconds + "s");
     } else {
       ball.style.removeProperty("--shake-duration");
     }
+    // 字号跟着数字长度走：3 位以内 16px、4 位 14px、5 位以上 12px。
+    valueNode.style.fontSize = face.speedFontPx + "px";
+    return face;
+  }
+
+  function renderBallState() {
+    pet = selectedPet();
+    paintFace();
+  }
+
+  // 捕获状态写回（localStorage）+ 广播给迷你宠物窗口；球面立即重绘，
+  // 不依赖事件回环（同一窗口的 Emit 不保证同步派发）。
+  function setCaught(caught) {
+    writeCaught(pet.id, caught);
+    try {
+      Events.Emit("pet-caught", { caught: caught, petId: pet.id });
+    } catch (_) {}
+    paintFace();
   }
 
   function render(view) {
@@ -306,11 +280,9 @@
     const active = Boolean(view.active);
     themeId = normalizeTitleTheme(view.title_theme_id || themeId);
     currentSpeed = speed;
+    currentText = compactTokenRate(speed);
 
-    const text = compactTokenRate(speed);
-    setRoll(valueNode, text);
-    ball.classList.toggle("n4", text.length === 4);
-    ball.classList.toggle("n5", text.length >= 5);
+    setRoll(valueNode, currentText);
     ball.classList.toggle("idle", !active);
     ball.classList.toggle("live", active);
 
@@ -319,20 +291,63 @@
     animateSpark(progress);
     ball.style.setProperty("--ball-hue", String(titleThemeHues[themeId] ?? 193));
 
+    const face = paintFace();
     // 超过 1000 tok/s：精灵球被挣开，自动放出伙伴。
-    if (shouldAutoRelease(speed)) releaseCaught();
-    applyMotion();
+    if (face.autoRelease) setCaught(false);
   }
 
   Events.On("pet-selected", renderBallState);
-  Events.On("pet-caught", renderBallState);
+  // 捕获/放出事件携带权威结果：直接写回本地状态，避免依赖两个窗口共享
+  // localStorage（悬浮球超速自动放出时，迷你宠物窗口也要立刻同步）。
+  Events.On("pet-caught", function (event) {
+    const data = event && event.data;
+    const caught = data && typeof data === "object" ? data.caught : data;
+    const petId = data && typeof data === "object" ? data.petId : "";
+    // 只同步当前伙伴；事件若来自旧伙伴（切换间隙），忽略。
+    if (pet && typeof caught === "boolean" && (!petId || petId === pet.id)) {
+      writeCaught(pet.id, caught);
+    }
+    renderBallState();
+  });
   renderBallState();
 
-  // 贴边态：Go 把窗口缩到 44px，这里是纯 CSS 依据视口宽度切换内容。
+  // 贴边态：Go 把窗口缩到 44px 并有一半放到屏幕外，页面依据视口宽度切换内容；
+  // 再用「窗口矩形 vs 工作区」推断贴的是哪条边，把宠物/精灵球往屏幕内移半宽，
+  // 否则 18px 内容正好被窗口边界切成一半。
+  let dockTimer = 0;
+  let dockPoll = 0;
   function syncDocked() {
-    ball.classList.toggle("docked", window.innerWidth < 60);
+    const docked = window.innerWidth < 60;
+    ball.classList.toggle("docked", docked);
+    const screen = window.screen || {};
+    const side = docked ? dockSideForWindow({
+      screenX: window.screenX,
+      screenY: window.screenY,
+      width: window.outerWidth || window.innerWidth,
+      height: window.outerHeight || window.innerHeight,
+      availLeft: screen.availLeft,
+      availTop: screen.availTop,
+      availWidth: screen.availWidth,
+      availHeight: screen.availHeight,
+    }) : "";
+    const shift = dockContentShift(side);
+    ball.style.setProperty("--dock-x", shift.x + "px");
+    ball.style.setProperty("--dock-y", shift.y + "px");
+    ball.dataset.dock = side;
+    // 贴边换边时窗口大小不变（44→44），没有 resize；贴边期间低频复核位置。
+    if (docked && !dockPoll) {
+      dockPoll = setInterval(syncDocked, 500);
+    } else if (!docked && dockPoll) {
+      clearInterval(dockPoll);
+      dockPoll = 0;
+    }
   }
-  window.addEventListener("resize", syncDocked);
+  window.addEventListener("resize", function () {
+    syncDocked();
+    clearTimeout(dockTimer);
+    // resize 可能早于 SetPosition 完成，稍后再按新坐标复核一次。
+    dockTimer = setTimeout(syncDocked, 80);
+  });
   syncDocked();
 
   Events.On("tokenspeed-changed", function (event) {

@@ -21,14 +21,16 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`stroke-dasharray="191.6"`,
 		`id="speed-value"`,
 		`id="ball-pet"`,
-		`id="ball-pet-canvas"`,
 		`id="ball-pet-img"`,
 		`id="ball-ball"`,
-		`createPokemon3D`,
-		`modelYaw: Math.PI / 2`,
-		`runDuration`,
-		`shakeDuration`,
-		`shouldAutoRelease`,
+		`assets/ball-face.js`,
+		`ballFaceState`,
+		`face.petVisible`,
+		`face.ballVisible`,
+		`face.autoRelease`,
+		`face.speedFontPx`,
+		`updatePetSprite`,
+		`assets/pokemon/`,
 		`qka.pet.selected`,
 		`qka.pet.caught.v1`,
 		`assets/qka-ui.css`,
@@ -36,7 +38,6 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`assets/odometer.js`,
 		`assets/title-system.js`,
 		`assets/bar-gesture.js`,
-		`assets/pokemon-3d.js`,
 		`ringProgress`,
 		`titleThresholds`,
 		`titleThemeHues`,
@@ -48,6 +49,7 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`Events.On("tokenspeed-changed"`,
 		`Events.On("pet-selected"`,
 		`Events.On("pet-caught"`,
+		`petId: pet.id`,
 		`--wails-draggable: drag`,
 	} {
 		if !strings.Contains(page, want) {
@@ -63,6 +65,15 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		// 球面精简：不再展示 tok/s 单位，也不承载投球/技能演出。
 		`>tok/s<`,
 		`viewer.throwBall`,
+		// 球面不依赖 WebGL：64px 窗口里 3D 加载慢/失败会让宠物整块空白。
+		`createPokemon3D`,
+		`pokemon-3d-canvas`,
+		`modelYaw`,
+		`assets/pokemon-3d.js`,
+		`petImg.hidden = true`,
+		// SVG 没有 hidden IDL 属性：给精灵球设 .hidden 不会移除 hidden 属性，
+		// 捕获态会变成「宠物隐藏 + 精灵球也不显示」的空白球。
+		`ballIcon.hidden`,
 	} {
 		if strings.Contains(page, forbidden) {
 			t.Errorf("悬浮球页面仍残留旧样式或旧入口 %q", forbidden)
@@ -151,6 +162,8 @@ func TestPetMiniRendersSelectedCompanionOnly(t *testing.T) {
 		`collapse-petmini`,
 		`pet-selected`,
 		`pet-caught`,
+		`petId: pet.id`,
+		`writeCaught(pet.id, caught)`,
 		// 短按放技能 / 长按投球：手势与结果横幅。
 		`resolvePetGesture`,
 		`sweepProgress`,
@@ -303,7 +316,8 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	}
 }
 
-// 球面尺寸：宠物 26px、数字 20px、无单位；跑动/晃动动画按速度节奏。
+// 球面尺寸：宠物 24px、数字 16px 基准、无单位；跑动/晃动动画按速度节奏。
+// 宠物用 2D 立绘，不依赖 WebGL 就绪——这是「宠物根本显示不出来」的回归保护。
 func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/assets/ball.css")
 	if err != nil {
@@ -312,16 +326,140 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	css := string(data)
 	for _, want := range []string{
 		`.ball .core .pet-icon`,
-		`width: 28px; height: 28px`,
-		`.ball.has-pet .core b { font-size: 20px; }`,
+		`width: 24px; height: 24px`,
+		`.ball.has-pet .core b { font-size: 16px; }`,
 		`.ball .core .pet-icon.running`,
 		`@keyframes pet-run`,
 		`@keyframes ball-shake`,
 		`--run-duration`,
 		`--shake-duration`,
+		// hidden 必须真正不占位：作者样式的 display 会压过 UA 规则。
+		`.ball [hidden] { display: none !important; }`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("球面宠物/速度样式缺少 %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`.pokemon-3d-canvas`,
+		`.is-3d`,
+		`.model-fallback`,
+		`.ball.has-pet.n4`,
+		`.ball.has-pet.n5`,
+	} {
+		if strings.Contains(css, forbidden) {
+			t.Errorf("球面样式仍残留 3D/旧字号分档 %q", forbidden)
+		}
+	}
+
+	// 两种模式的判定必须落在可单测的纯函数模块里，而不是散在页面中。
+	faceData, err := frontendFS.ReadFile("frontend/assets/ball-face.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	face := string(faceData)
+	for _, want := range []string{
+		`export function ballFaceState`,
+		`petVisible: !caught`,
+		`ballVisible: caught`,
+		`running: !reducedMotion && runSeconds > 0`,
+		`shaking: !reducedMotion && shakeSeconds > 0`,
+		`autoRelease: caught && shouldAutoRelease(speed)`,
+		`speedFontPx: ballSpeedFontPx(source.speedText)`,
+		`runDuration`,
+		`shakeDuration`,
+		`shouldAutoRelease`,
+	} {
+		if !strings.Contains(face, want) {
+			t.Errorf("球面模式判定缺少 %q", want)
+		}
+	}
+}
+
+// 贴边态：44px 窗口有一半在屏幕外，18px 宠物/精灵球必须向屏幕内移半宽，
+// 否则正好被窗口边界切一半。贴边侧由窗口矩形与工作区推断（纯函数可单测）。
+func TestDockedBallContentMovesInsideScreen(t *testing.T) {
+	data, err := frontendFS.ReadFile("frontend/bar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(data)
+	for _, want := range []string{
+		`assets/ball-dock.js`,
+		`dockSideForWindow`,
+		`dockContentShift`,
+		`window.innerWidth < 60`,
+		`ball.style.setProperty("--dock-x"`,
+		`ball.style.setProperty("--dock-y"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("贴边态页面缺少 %q", want)
+		}
+	}
+
+	cssData, err := frontendFS.ReadFile("frontend/assets/ball.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`.ball.docked .core {`,
+		`transform: translate(var(--dock-x, 0px), var(--dock-y, 0px));`,
+	} {
+		if !strings.Contains(string(cssData), want) {
+			t.Errorf("贴边态样式缺少 %q", want)
+		}
+	}
+
+	dockData, err := frontendFS.ReadFile("frontend/assets/ball-dock.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dock := string(dockData)
+	for _, want := range []string{
+		`export const DOCK_CONTENT_SHIFT = 9`,
+		`export function dockSideForWindow`,
+		`export function dockContentShift`,
+	} {
+		if !strings.Contains(dock, want) {
+			t.Errorf("贴边判定模块缺少 %q", want)
+		}
+	}
+}
+
+// 捕获态必须真的画出精灵球：SVG 元素没有 hidden IDL 属性，历史上用
+// ballIcon.hidden 控制显隐，结果「宠物隐藏 + 精灵球也不显示」，球面只剩数字。
+// 现在两种主体由 .show-pet / .show-ball 类互斥控制，CSS 里必须有 display 规则。
+func TestBallCaughtModeShowsPokeBall(t *testing.T) {
+	data, err := frontendFS.ReadFile("frontend/bar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(data)
+	for _, want := range []string{
+		`classList.toggle("caught", caught)`,
+		`classList.toggle("show-pet", face.petVisible)`,
+		`classList.toggle("show-ball", face.ballVisible)`,
+		`if (face.petVisible) updatePetSprite(pet)`,
+		`id="ball-ball" viewBox="0 0 24 24" aria-hidden="true">`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("捕获态渲染缺少 %q", want)
+		}
+	}
+
+	cssData, err := frontendFS.ReadFile("frontend/assets/ball.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		`display: none;`,
+		`.ball.show-pet .core .pet-icon { display: block; }`,
+		`.ball.show-ball .core .ball-icon { display: block; }`,
+		`@keyframes ball-shake`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("捕获态样式缺少 %q", want)
 		}
 	}
 }

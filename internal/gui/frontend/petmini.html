@@ -464,7 +464,7 @@
     viewer.releaseBall();
     writeCaught(pet.id, false);
     try {
-      Events.Emit("pet-caught", { caught: false });
+      Events.Emit("pet-caught", { caught: false, petId: pet.id });
     } catch (_) {}
     showPopup("回来了！", "ok");
   }
@@ -495,7 +495,7 @@
         if (result && result.caught) {
           writeCaught(pet.id, true);
           try {
-            Events.Emit("pet-caught", { caught: true });
+            Events.Emit("pet-caught", { caught: true, petId: pet.id });
           } catch (_) {}
           showPopup("捕获成功！", "ok");
         } else if (result && result.dodged) {
@@ -598,6 +598,10 @@
   Events.On("pet-caught", function (event) {
     const data = event && event.data;
     const caught = data && typeof data === "object" ? !!data.caught : !!data;
+    const petId = data && typeof data === "object" ? data.petId : "";
+    // 事件是权威结果（也可能是悬浮球超速自动放出）：同步持久化状态，
+    // 不依赖两个窗口共享 localStorage。
+    if (pet && (!petId || petId === pet.id)) writeCaught(pet.id, caught);
     if (viewer && !viewer.isCapturing()) viewer.setCaught(caught, false);
   });
   Events.On("common:WindowShow", function (event) {

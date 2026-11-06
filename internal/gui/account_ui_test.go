@@ -11,7 +11,10 @@ func accountPage(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	// Windows 上的 checkout 可能把 LF 转成 CRLF（autocrlf），而不少断言
+	// 直接匹配源码里的多行片段；统一成 LF 再比对，避免平台差异假失败。
+	// 仓库根另有 .gitattributes 把前端文本固定为 LF，这里是第二道保险。
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
 func TestCheckinManagementUsesGenericProviderLifecycle(t *testing.T) {
