@@ -37,7 +37,7 @@ func TestAuditOperationLabelMapping(t *testing.T) {
 	cases := map[string]string{
 		"checkin":    "签到",
 		"refresh":    "额度刷新",
-		"keepalive":  "保活",
+		"keepalive":  "每日活跃",
 		"model_test": "模型测试",
 		"login":      "登录",
 		"account":    "账号设置",

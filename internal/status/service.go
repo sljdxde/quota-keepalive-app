@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"qka/internal/engine"
-	"qka/internal/features"
 )
 
 // CapabilitiesFunc 返回某目标支持的操作（从适配器能力推导，不硬编码产品）。
@@ -214,9 +213,6 @@ func (s *Service) Status(ctx context.Context) (View, error) {
 				rows.Close()
 				return View{}, err
 			}
-			if !features.OperationAvailable(op) {
-				continue
-			}
 			opStatus := OpStatus{
 				Target: a.target, AccountID: a.id, Operation: op, State: state,
 				TaskEnabled: taskEnabled(prefs, op),
@@ -262,6 +258,7 @@ func (s *Service) Status(ctx context.Context) (View, error) {
 
 func (s *Service) lastInvocation(ctx context.Context) string {
 	var ts sql.NullString
+	// 每日活跃是心跳操作，不计入「最近一次实质调用」。
 	_ = s.db.QueryRowContext(ctx,
 		`SELECT MAX(ts) FROM logs WHERE operation <> ?`, "keepalive").Scan(&ts)
 	return ts.String
@@ -291,9 +288,6 @@ func (s *Service) PlanValidate(ctx context.Context) (Plan, error) {
 		}
 
 		for _, op := range s.caps(a.target) {
-			if !features.OperationAvailable(op) {
-				continue
-			}
 			if !taskEnabled(prefs, op) {
 				continue
 			}
@@ -371,7 +365,8 @@ func previewTransition(op string, now time.Time, canRun bool) string {
 
 func costHint(op string) float64 {
 	if op == "keepalive" {
-		return 0.02 // 仅为提示，实际成本以当次回执为准
+		// 每日活跃只使用免费模型，所以计划成本为 0。
+		return 0
 	}
 	return 0
 }

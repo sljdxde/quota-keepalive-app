@@ -15,8 +15,8 @@ func TestMissingFileReturnsDisabledDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.Enabled || cfg.IntervalMinutes != DefaultIntervalMinutes ||
-		cfg.Action != ActionCheckin || cfg.Timezone != TimezoneLocal {
-		t.Fatalf("默认调度应停用并采用 2 小时/签到，实际 %+v", cfg)
+		cfg.Action != ActionAll || cfg.Timezone != TimezoneLocal {
+		t.Fatalf("默认调度应停用并采用 2 小时/全部任务，实际 %+v", cfg)
 	}
 }
 
@@ -35,7 +35,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Enabled || got.IntervalMinutes != DefaultIntervalMinutes || got.Action != ActionCheckin || got.LastRun == nil ||
+	if !got.Enabled || got.IntervalMinutes != DefaultIntervalMinutes || got.Action != ActionAll || got.LastRun == nil ||
 		got.LastRun.Succeeded != 2 {
 		t.Fatalf("往返结果不符: %+v", got)
 	}
@@ -69,7 +69,7 @@ func TestInvalidIntervalActionAndTimezoneRejected(t *testing.T) {
 func TestNormalizeAndValidateLastRun(t *testing.T) {
 	cfg := Config{}
 	cfg.normalize()
-	if cfg.IntervalMinutes != DefaultIntervalMinutes || cfg.Action != ActionCheckin || cfg.Timezone != TimezoneLocal {
+	if cfg.IntervalMinutes != DefaultIntervalMinutes || cfg.Action != ActionAll || cfg.Timezone != TimezoneLocal {
 		t.Fatalf("缺省字段未规范化: %+v", cfg)
 	}
 
@@ -105,8 +105,14 @@ func TestNormalizeAndValidateLastRun(t *testing.T) {
 	}
 }
 
-func TestLoadNormalizesLegacyKeepaliveActions(t *testing.T) {
-	for _, action := range []string{"all", "keepalive"} {
+func TestLoadNormalizesActivityActions(t *testing.T) {
+	cases := map[string]string{
+		"all":       ActionAll,
+		"keepalive": ActionActivity,
+		"activity":  ActionActivity,
+		"checkin":   ActionCheckin,
+	}
+	for action, want := range cases {
 		t.Run(action, func(t *testing.T) {
 			dir := t.TempDir()
 			data := []byte(`{"enabled":true,"interval_minutes":30,"action":"` + action + `","timezone":"local"}`)
@@ -117,8 +123,8 @@ func TestLoadNormalizesLegacyKeepaliveActions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.Action != ActionCheckin {
-				t.Fatalf("legacy action %q must normalize to checkin, got %q", action, cfg.Action)
+			if cfg.Action != want {
+				t.Fatalf("action %q must normalize to %q, got %q", action, want, cfg.Action)
 			}
 		})
 	}

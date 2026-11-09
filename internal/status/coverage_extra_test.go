@@ -9,8 +9,8 @@ import (
 
 // TestCostHintMapping 覆盖操作成本提示的三种取值。
 func TestCostHintMapping(t *testing.T) {
-	if got := costHint("keepalive"); got != 0.02 {
-		t.Fatalf("keepalive cost = %v", got)
+	if got := costHint("keepalive"); got != 0 {
+		t.Fatalf("activity is free and must cost 0, got %v", got)
 	}
 	for _, op := range []string{"checkin", "refresh", ""} {
 		if got := costHint(op); got != 0 {

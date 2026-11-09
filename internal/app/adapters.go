@@ -89,8 +89,8 @@ func (a *App) registryAdapters() []registry.LoadedAdapter {
 }
 
 // capabilitiesFor 从适配器声明的能力推导目标操作（不硬编码产品清单）。
-// 保活已全局停用（features.KeepaliveAvailable=false），原 keepalive 追加分支
-// 是永远走不到的死代码，已删除；恢复保活能力时在这里重新接入。
+// 「每日活跃」只走 provider 插件通道，不依赖本机 Agent 客户端，所以适配器
+// 路径永远只暴露 checkin。
 func (a *App) capabilitiesFor(string) []string {
 	return []string{"checkin"}
 }

@@ -8,8 +8,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	"qka/internal/features"
 )
 
 const (
@@ -76,15 +74,8 @@ func Tail(ctx context.Context, db *sql.DB, filter Filter, limit int, cursor int6
 		args = append(args, filter.AccountID)
 	}
 	if filter.Operation != "" {
-		if features.OperationAvailable(filter.Operation) {
-			where = append(where, "operation = ?")
-			args = append(args, filter.Operation)
-		} else {
-			where = append(where, "1 = 0")
-		}
-	} else if !features.KeepaliveAvailable {
-		where = append(where, "operation <> ?")
-		args = append(args, "keepalive")
+		where = append(where, "operation = ?")
+		args = append(args, filter.Operation)
 	}
 	if filter.State != "" {
 		where = append(where, "state = ?")

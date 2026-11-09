@@ -33,7 +33,8 @@ func CheckinExecutor(host HostLike) engine.Executor {
 	}
 }
 
-// KeepaliveExecutor 把适配器 keepalive.run 适配为引擎保活 Executor。
+// KeepaliveExecutor 是历史适配器通道；每日活跃已改走 provider 插件通道，
+// 这里仅为旧数据/旧测试保留，产品能力不再启用它。
 func KeepaliveExecutor(host HostLike) engine.Executor {
 	return func(ctx context.Context, key engine.Key) (engine.ExternalResult, error) {
 		result, err := host.CallWith(ctx, "keepalive.run",

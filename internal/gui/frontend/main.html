@@ -2550,12 +2550,14 @@
         <div class="page-head">
           <div class="copy">
             <h1>应用管理</h1>
-            <p>点一个 Agent 打开详情：账号、额度、签到与模型测试都在弹层里，逐项展开查看。</p>
+            <p>点一个 Agent 打开详情：账号、额度、签到、每日活跃与模型测试都在弹层里，逐项展开查看。</p>
           </div>
           <div class="end"><span class="pill" id="apps-badge">正在读取</span></div>
         </div>
         <div class="strip" aria-live="polite">
           <span id="apps-summary">正在读取应用状态</span>
+          <span class="sep"></span>
+          <span id="apps-activity">今日活跃 —</span>
           <span class="sep"></span>
           <span id="apps-last">—</span>
           <span class="sp"></span>
@@ -2568,7 +2570,7 @@
           <input class="input" id="apps-search" type="search" placeholder="搜索应用" aria-label="搜索应用">
         </div>
         <div id="apps-body"></div>
-        <p class="footnote">应用开关只控制该应用下的全部账号，不会删除账号；账号登录、签到与模型测试都在点开 Agent 后的详情弹层里。</p>
+        <p class="footnote">应用开关只控制该应用下的全部账号，不会删除账号；账号登录、签到、每日活跃与模型测试都在点开 Agent 后的详情弹层里。</p>
       </section>
 
       <section id="logs" class="page">
@@ -3020,6 +3022,14 @@
     timingAccuracy,
   } from "./assets/pet-motion.js";
   import { resolveAccountProviderView } from "./assets/account-view.js";
+  import {
+    activityAccountsFor,
+    activityChipText,
+    activityDetailText,
+    activityStateKind,
+    activityStateText,
+    activitySummaryText,
+  } from "./assets/activity.js";
   import { createPokemon3D } from "./assets/pokemon-3d.js";
   import {
     initPerformanceMode,
@@ -4983,6 +4993,36 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     window.setTimeout(function () { fn(); }, 2500);
   }
 
+  function activityForAccount(provider, accountKey) {
+    return activityAccountsFor(activitySnapshot, provider).find(function (item) {
+      return item && item.account === accountKey;
+    }) || null;
+  }
+
+  function applyActivitySummary() {
+    const el = document.getElementById("apps-activity");
+    if (!el) return;
+    el.textContent = activitySnapshot
+      ? activitySummaryText(activitySnapshot.summary)
+      : "今日活跃 —";
+  }
+
+  function refreshActivityView() {
+    if (activityRefreshPromise) return activityRefreshPromise;
+    activityRefreshPromise = (async function () {
+      try {
+        activitySnapshot = asJSON(await Bound.ActivityView());
+      } catch (_) {
+        activitySnapshot = null;
+      }
+      applyActivitySummary();
+      return activitySnapshot;
+    })();
+    return activityRefreshPromise.finally(function () {
+      activityRefreshPromise = null;
+    });
+  }
+
   async function renderApps() {
     const body = document.getElementById("apps-body");
     if (!body.dataset.loaded) {
@@ -4999,6 +5039,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       retryRenderOnce("apps", renderApps);
       return;
     }
+
+    await refreshActivityView();
 
     const providers = (view && view.providers) || [];
     const errors = (view && view.plugin_errors) || [];
@@ -5207,6 +5249,21 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
     body.appendChild(agentModalSection("账号", accounts.length + " 个", "含签到开关与额度", accountNodes, true));
 
+    if (provider.activity && accounts.length) {
+      const activityList = document.createElement("div");
+      activityList.className = "task-list";
+      accounts.forEach(function (account) {
+        activityList.appendChild(activityTaskRow(provider, account));
+      });
+      body.appendChild(agentModalSection(
+        "每日活跃", accounts.length + " 个", "每天一次 · 免费模型优先", [activityList], true));
+      if (!activitySnapshot && !activityRefreshPromise) {
+        void refreshActivityView().then(function (view) {
+          if (view) void renderAccounts();
+        });
+      }
+    }
+
     const info = document.createElement("div");
     info.className = "info-row";
     info.innerHTML = '<span class="ik">运行方式</span><span class="id">' +
@@ -5288,13 +5345,16 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     none: "尚未执行",
   };
   const opLabel = {
-    checkin: "签到", schedule: "定时任务", all: "全部任务", refresh: "额度刷新",
+    checkin: "签到", keepalive: "每日活跃", activity: "每日活跃",
+    schedule: "定时任务", all: "全部任务", refresh: "额度刷新",
     model_test: "模型测试", login: "登录", account: "账号设置",
     provider: "供应商设置", automation: "自动执行",
   };
   const quotaStates = ["signed_confirmed", "signed_provisional", "already"];
   const checkinTerminalStates = quotaStates.concat(["ineligible", "inactive", "manual_required"]);
   let providersSnapshot = null;
+  let activitySnapshot = null;
+  let activityRefreshPromise = null;
   let visibleAccountGroupKeys = [];
   let checkinFocusGeneration = 0;
   let accountsRenderGeneration = 0;
@@ -5738,6 +5798,85 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return panel;
   }
 
+  function activityTaskRow(provider, account) {
+    const accountKey = account.key || account.id || "";
+    const activity = activityForAccount(provider.id, accountKey);
+    const state = activity ? activity.today_state : "none";
+    const row = document.createElement("div");
+    row.className = "task-row" + (activityStateKind(state) === "bad" ? " bad" : "") +
+      (account.enabled ? "" : " off");
+
+    const copy = document.createElement("div");
+    copy.className = "task-copy";
+    const title = document.createElement("div");
+    title.className = "task-title";
+    title.textContent = displayAccountIdentity(account.masked_identity);
+    copy.appendChild(title);
+    const stateLine = document.createElement("div");
+    stateLine.className = "task-state";
+    stateLine.textContent = activity
+      ? activityStateText(state)
+      : "今日未活跃";
+    copy.appendChild(stateLine);
+    const detail = activity ? activityDetailText(activity) : "";
+    if (detail) {
+      const hint = document.createElement("div");
+      hint.className = "task-hint";
+      hint.textContent = detail;
+      copy.appendChild(hint);
+    }
+    row.appendChild(copy);
+
+    const actions = document.createElement("div");
+    actions.className = "task-actions";
+    const sw = document.createElement("button");
+    sw.type = "button";
+    sw.className = "switch";
+    sw.setAttribute("role", "switch");
+    const taskOn = !activity || activity.task_enabled !== false;
+    sw.setAttribute("aria-checked", taskOn ? "true" : "false");
+    sw.setAttribute("aria-label", (taskOn ? "关闭" : "开启") + "每日活跃自动执行");
+    sw.onclick = async function () {
+      sw.disabled = true;
+      try {
+        await Bound.ActivitySetEnabled(provider.id, accountKey, !taskOn);
+        await refreshActivityView();
+        await renderAccounts();
+        await renderApps();
+        showAccountsMessage("每日活跃" + (taskOn ? "自动执行已关闭" : "自动执行已开启"), "success");
+      } catch (err) {
+        sw.disabled = false;
+        showAccountsMessage(accountErrorMessage(err, "每日活跃任务偏好保存失败，请重试。"));
+      }
+    };
+    actions.appendChild(sw);
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "mini-action";
+    const sentToday = !!(activity && activity.sent_today);
+    trigger.textContent = sentToday ? "今日已完成" : "立即活跃";
+    trigger.disabled = !account.enabled || sentToday;
+    trigger.onclick = async function () {
+      trigger.disabled = true;
+      showAccountsMessage("正在发送每日活跃…", "pending");
+      try {
+        await Bound.ActivityRun(provider.id, accountKey);
+        await refreshActivityView();
+        await renderAccounts();
+        await renderApps();
+        showAccountsMessage("每日活跃完成", "success");
+      } catch (err) {
+        trigger.disabled = false;
+        const detail = err && err.message ? String(err.message) : "";
+        showAccountsMessage(detail || "每日活跃失败；本次未宣称成功。");
+      }
+    };
+    actions.appendChild(trigger);
+    row.appendChild(actions);
+    return row;
+  }
+
   function providerAccountCard(provider, account) {
     const accountKey = account.key || account.id || "";
     const failed = accountHealth(account);
@@ -5787,6 +5926,19 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     stateChip.className = "op-chip " + stateClass(failed ? failed.state : "");
     stateChip.textContent = accountStateText;
     ops.appendChild(stateChip);
+    if (provider.activity) {
+      const activity = activityForAccount(provider.id, accountKey);
+      const activityChip = document.createElement("span");
+      activityChip.className = "op-chip " + activityStateKind(
+        activity ? activity.today_state : "");
+      activityChip.textContent = activity
+        ? activityChipText(activity)
+        : "活跃读取中";
+      activityChip.title = activity
+        ? activityDetailText(activity)
+        : "每天通过供应商插件发送一条 hi；免费模型优先，订阅账号可用订阅额度";
+      ops.appendChild(activityChip);
+    }
     copy.appendChild(ops);
 
     // 轻量操作：mac 里是文字/迷你按钮，不再用一排大按钮。

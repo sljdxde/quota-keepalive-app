@@ -174,3 +174,25 @@ const schemaV6 = `
 UPDATE providers
 SET enabled = CASE WHEN id = 'workbuddy' THEN 1 ELSE 0 END;
 `
+
+// schemaV7 records one row per「每日活跃」attempt so the UI can show today's
+// result, failure reason, cost and the consecutive-day streak. Response text
+// and credentials are never stored here.
+const schemaV7 = `
+CREATE TABLE IF NOT EXISTS activity_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    day_key     TEXT NOT NULL,
+    provider    TEXT NOT NULL,
+    account_id  TEXT NOT NULL,
+    state       TEXT NOT NULL,
+    http_status INTEGER NOT NULL DEFAULT 0,
+    latency_ms  INTEGER NOT NULL DEFAULT 0,
+    cost        REAL NOT NULL DEFAULT 0,
+    message     TEXT NOT NULL DEFAULT '',
+    ts          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_activity_runs_account_day
+ON activity_runs (provider, account_id, day_key);
+CREATE INDEX IF NOT EXISTS idx_activity_runs_ts
+ON activity_runs (ts);
+`

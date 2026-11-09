@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"qka/internal/accounts"
 	"qka/internal/adapterhost"
-	"qka/internal/features"
 	"qka/internal/gui"
 	"qka/internal/providers"
 	"qka/internal/settings"
@@ -160,10 +160,11 @@ func TestRunAllActionFilteringSkippingAndResults(t *testing.T) {
 		executeRunOperation = func(*App, context.Context, string, string, string) (any, error) {
 			return "ok", nil
 		}
-		if _, err := a.RunAllActionSummary(ctx, "keepalive"); !errors.Is(err, features.ErrKeepaliveDisabled) {
-			t.Fatalf("keepalive must be disabled before execution, got %v", err)
+		summary, err := a.RunAllActionSummary(ctx, "activity")
+		if err != nil || summary.Attempted != 0 {
+			t.Fatalf("activity action must not run adapter checkin: %+v err=%v", summary, err)
 		}
-		summary, err := a.RunAllActionSummary(ctx, "all")
+		summary, err = a.RunAllActionSummary(ctx, "all")
 		if err != nil || summary.Attempted != 1 || summary.Succeeded != 1 {
 			t.Fatalf("summary = %+v err=%v", summary, err)
 		}
@@ -289,8 +290,9 @@ func TestToolKeepaliveDisabledAndEffectsBranches(t *testing.T) {
 	a := coverageApp(t)
 	host := launchCoverageAdapterHost(t, `{"ok":true}`)
 	a.hosts["script-target"] = host
-	if _, err := a.runOperation(context.Background(), "script-target", "acct", "keepalive"); !errors.Is(err, features.ErrKeepaliveDisabled) {
-		t.Fatalf("keepalive must be rejected, got %v", err)
+	if _, err := a.runOperation(context.Background(), "script-target", "acct", "keepalive"); err == nil ||
+		!strings.Contains(err.Error(), "供应商插件通道") {
+		t.Fatalf("adapter activity must be rejected, got %v", err)
 	}
 
 	a.loaded = []Loaded{{

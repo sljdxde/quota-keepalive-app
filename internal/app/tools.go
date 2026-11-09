@@ -4,13 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"qka/internal/adapterwiring"
 	"qka/internal/doctor"
 	"qka/internal/engine"
-	"qka/internal/features"
 	"qka/internal/feed"
 	"qka/internal/logtail"
 	"qka/internal/mcp"
@@ -95,10 +95,11 @@ func (a *App) runCheckin(ctx context.Context, args map[string]any) (any, error) 
 	return a.RunOperationGuarded(ctx, target, accountID, operation)
 }
 
-// runOperation 是类型化的单账号×操作执行核心（checkin / keepalive 共用）。
+// runOperation 是类型化的单账号×操作执行核心（checkin / 每日活跃共用）。
 func (a *App) runOperation(ctx context.Context, target, accountID, operation string) (any, error) {
-	if !features.OperationAvailable(operation) {
-		return nil, features.ErrKeepaliveDisabled
+	if operation == "keepalive" {
+		// 每日活跃只走 provider 插件通道，不能落到适配器的本地客户端通道。
+		return nil, errors.New("每日活跃由供应商插件通道执行，请使用供应商账号的每日活跃入口")
 	}
 	if target == "workbuddy-cn" && operation == "checkin" {
 		return a.runWorkBuddyCheckin(ctx, accountID)
@@ -116,6 +117,7 @@ func (a *App) runOperation(ctx context.Context, target, accountID, operation str
 
 func (a *App) lastInvocation(ctx context.Context) time.Time {
 	var ts sql.NullString
+	// 每日活跃是心跳操作，不计入「最近一次实质调用」。
 	_ = a.store.DB().QueryRowContext(ctx,
 		`SELECT MAX(ts) FROM logs WHERE operation <> ?`, "keepalive").Scan(&ts)
 	if !ts.Valid || ts.String == "" {

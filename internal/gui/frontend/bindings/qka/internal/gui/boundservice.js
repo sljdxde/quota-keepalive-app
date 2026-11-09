@@ -16,6 +16,35 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 import * as json$0 from "../../../encoding/json/models.js";
 
 /**
+ * ActivityRun 立即为单个账号执行一次每日活跃；仍受当天幂等与冷却约束。
+ * @param {string} provider
+ * @param {string} account
+ * @returns {$CancellablePromise<void>}
+ */
+export function ActivityRun(provider, account) {
+    return $Call.ByID(919320725, provider, account);
+}
+
+/**
+ * ActivitySetEnabled 开关单个账号的每日活跃任务。
+ * @param {string} provider
+ * @param {string} account
+ * @param {boolean} enabled
+ * @returns {$CancellablePromise<void>}
+ */
+export function ActivitySetEnabled(provider, account, enabled) {
+    return $Call.ByID(2942169009, provider, account, enabled);
+}
+
+/**
+ * ActivityView 返回「每日活跃」视图：逐账号今日状态、连续天数与汇总。
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function ActivityView() {
+    return $Call.ByID(1504037297);
+}
+
+/**
  * AccountsBeginLogin 发起官方登录并返回可见状态。
  * @param {string} target
  * @returns {$CancellablePromise<json$0.RawMessage>}

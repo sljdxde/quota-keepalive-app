@@ -22,7 +22,7 @@ const (
 	FileName = "schedule.json"
 	lockName = "schedule.lock"
 	// DefaultIntervalMinutes is the product default: 自动执行固定每 2 小时
-	// 跑一次签到，不再提供用户可选间隔。
+	// 跑一次签到与每日活跃，不再提供用户可选间隔。
 	DefaultIntervalMinutes = 120
 	// TimezoneLocal means the system task follows the current machine timezone.
 	TimezoneLocal = "local"
@@ -45,9 +45,9 @@ const (
 )
 
 const (
-	ActionAll       = "all"
-	ActionCheckin   = "checkin"
-	ActionKeepalive = "keepalive"
+	ActionAll      = "all"
+	ActionCheckin  = "checkin"
+	ActionActivity = "activity"
 )
 
 // LastRun is a redacted summary of one task-run invocation.
@@ -76,7 +76,7 @@ func Default() Config {
 	return Config{
 		Enabled:         false,
 		IntervalMinutes: DefaultIntervalMinutes,
-		Action:          ActionCheckin,
+		Action:          ActionAll,
 		Timezone:        TimezoneLocal,
 	}
 }
@@ -86,7 +86,7 @@ func (c *Config) normalize() {
 		c.IntervalMinutes = DefaultIntervalMinutes
 	}
 	if c.Action == "" {
-		c.Action = ActionCheckin
+		c.Action = ActionAll
 	}
 	c.Action = features.NormalizeAction(c.Action)
 	if c.Timezone == "" {
@@ -102,7 +102,7 @@ func (c Config) validate() error {
 		return ErrInvalidInterval
 	}
 	switch c.Action {
-	case ActionAll, ActionCheckin, ActionKeepalive:
+	case ActionAll, ActionCheckin, ActionActivity:
 	default:
 		return ErrInvalidAction
 	}

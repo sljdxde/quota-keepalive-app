@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"qka/internal/accounts"
-	"qka/internal/features"
 	"qka/internal/status"
 	"qka/internal/store"
 	"qka/internal/workbuddy"
@@ -265,15 +264,15 @@ func TestBridgeListOnlyReturnsWorkBuddyCNWithTodayState(t *testing.T) {
 	if !containsString(list[0].TaskOperations, "checkin") {
 		t.Fatalf("账号列表应带任务能力，实际 %+v", list[0].TaskOperations)
 	}
-	if containsString(list[0].TaskOperations, "keepalive") {
-		t.Fatalf("保活任务不应暴露，实际 %+v", list[0].TaskOperations)
+	if !containsString(list[0].TaskOperations, "keepalive") {
+		t.Fatalf("每日活跃任务应暴露，实际 %+v", list[0].TaskOperations)
 	}
-	if !list[0].TaskPreferences["checkin"] {
+	if !list[0].TaskPreferences["checkin"] || list[0].TaskPreferences["keepalive"] {
 		t.Errorf("任务偏好投影错误，实际 %+v", list[0].TaskPreferences)
 	}
 }
 
-func TestBridgeListFiltersGloballyDisabledTasksAndMergesVisiblePreferences(t *testing.T) {
+func TestBridgeListMergesActivityTaskPreferences(t *testing.T) {
 	hosts := &fakeDiscoverer{
 		accounts: []accounts.DiscoveredAccount{{
 			ID: "u1", DisplayName: "User One", MaskedIdentity: "****1234",
@@ -314,12 +313,9 @@ func TestBridgeListFiltersGloballyDisabledTasksAndMergesVisiblePreferences(t *te
 	}
 	got := []string{}
 	for _, operation := range list[0].TaskOperations {
-		if operation == "keepalive" {
-			t.Fatal("globally disabled keepalive leaked into task operations")
-		}
 		got = append(got, operation)
 	}
-	for _, want := range []string{"checkin", "refresh"} {
+	for _, want := range []string{"checkin", "refresh", "keepalive"} {
 		found := false
 		for _, operation := range got {
 			if operation == want {
@@ -352,8 +348,8 @@ func TestBoundAccountsRunRejectsUnsupportedTargetAndOperation(t *testing.T) {
 	if runner.calls != 0 {
 		t.Fatalf("被拒绝的动作不得进入执行链，实际调用 %d 次", runner.calls)
 	}
-	if err := svc.AccountsRun("workbuddy-cn", "u1", "keepalive"); !errors.Is(err, features.ErrKeepaliveDisabled) {
-		t.Fatalf("保活应被全局拒绝，实际 %v", err)
+	if err := svc.AccountsRun("workbuddy-cn", "u1", "keepalive"); !errors.Is(err, errUnsupportedAccountAction) {
+		t.Fatalf("适配器账号通道不应执行每日活跃，实际 %v", err)
 	}
 
 	if err := svc.AccountsRun("workbuddy-cn", "u1", "checkin"); err != nil {

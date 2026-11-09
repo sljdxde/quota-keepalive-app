@@ -184,7 +184,7 @@ func TestBridgeCoverageMergesMissingOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !containsString(list[0].TaskOperations, "refresh") ||
-		containsString(list[0].TaskOperations, "keepalive") {
+		!containsString(list[0].TaskOperations, "keepalive") {
 		t.Fatalf("missing view/preference operations were not merged: %+v", list[0].TaskOperations)
 	}
 }

@@ -11,8 +11,10 @@ import (
 const (
 	// DefaultLeaseTTL 是执行租约的有效期。
 	DefaultLeaseTTL = 30 * time.Second
-	// KeepaliveCooldown 是保活可重试失败后的冷却时长。
-	KeepaliveCooldown = 10 * time.Minute
+	// ActivityCooldown 是每日活跃可重试失败后的冷却时长。
+	ActivityCooldown = 10 * time.Minute
+	// KeepaliveCooldown is the historical name of ActivityCooldown.
+	KeepaliveCooldown = ActivityCooldown
 )
 
 // Key 是每日操作的身份部分（日期由调用时刻按北京日界决定）。
@@ -203,11 +205,11 @@ WHERE target = ? AND account_id = ? AND operation = ? AND day_key = ?`, args...)
 	return err
 }
 
-// complete 写回新状态并释放租约；保活可重试失败时设置冷却。
+// complete 写回新状态并释放租约；每日活跃可重试失败时设置冷却。
 func (e *Engine) complete(ctx context.Context, key Key, day string, newState State, message string, now time.Time) error {
 	cooldown := ""
-	if key.Operation == Keepalive && newState == FailedRetryable {
-		cooldown = formatTS(now.Add(KeepaliveCooldown))
+	if key.Operation == Activity && newState == FailedRetryable {
+		cooldown = formatTS(now.Add(ActivityCooldown))
 	}
 
 	_, err := e.db.ExecContext(ctx, `

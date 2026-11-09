@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"qka/internal/features"
 	"qka/internal/providers"
 	"qka/internal/schedule"
 	"qka/internal/selfupdate"
@@ -241,7 +240,7 @@ func TestBoundCoverageNotWired(t *testing.T) {
 		{"provider api key", func() error { _, err := svc.ProvidersLoginAPIKey("", 0, nil, ""); return err }},
 		{"provider enabled", func() error { return svc.ProvidersSetEnabled("", true) }},
 		{"provider account", func() error { return svc.ProvidersSetAccountEnabled("", "", true) }},
-		{"provider task", func() error { return svc.ProvidersSetTaskEnabled("", "", "", true) }},
+		{"provider task", func() error { return svc.ProvidersSetTaskEnabled("", "", "checkin", true) }},
 		{"provider run", func() error { return svc.ProvidersRun("", "", "checkin") }},
 		{"provider test model", func() error {
 			_, err := svc.ProvidersTestModel("", "", "")
@@ -347,7 +346,7 @@ func TestBoundCoverageCallbackErrors(t *testing.T) {
 		{"provider api key", func() error { _, err := svc.ProvidersLoginAPIKey("", 0, nil, ""); return err }},
 		{"provider enabled", func() error { return svc.ProvidersSetEnabled("", true) }},
 		{"provider account", func() error { return svc.ProvidersSetAccountEnabled("", "", true) }},
-		{"provider task", func() error { return svc.ProvidersSetTaskEnabled("", "", "", true) }},
+		{"provider task", func() error { return svc.ProvidersSetTaskEnabled("", "", "checkin", true) }},
 		{"provider run", func() error { return svc.ProvidersRun("", "", "checkin") }},
 		{"provider test model", func() error {
 			_, err := svc.ProvidersTestModel("", "", "")
@@ -357,7 +356,7 @@ func TestBoundCoverageCallbackErrors(t *testing.T) {
 		{"provider history", func() error { _, err := svc.ProvidersHistory("", "", 1); return err }},
 		{"accounts list", func() error { _, err := svc.AccountsList(); return err }},
 		{"accounts run", func() error { return svc.AccountsRun("", "", "checkin") }},
-		{"accounts task", func() error { return svc.AccountsSetTaskEnabled("", "", "", true) }},
+		{"accounts task", func() error { return svc.AccountsSetTaskEnabled("", "", "checkin", true) }},
 		{"accounts enabled", func() error { return svc.AccountsSetEnabled("", "", true) }},
 		{"accounts delete", func() error { return svc.AccountsDelete("", "") }},
 		{"accounts pin", func() error { return svc.AccountsPinSource("", "", "", true) }},
@@ -451,26 +450,40 @@ func TestBoundProviderRunRejectsUnsupportedAction(t *testing.T) {
 	}
 }
 
-func TestBoundTaskOperationsHideDisabledKeepalive(t *testing.T) {
+func TestBoundActivityTaskOperationsReachCallbacks(t *testing.T) {
+	var taskProvider, taskAccount, runProvider string
 	svc := NewBoundService(Deps{
-		ProviderSetTaskEnabled: func(context.Context, string, string, string, bool) error {
-			t.Fatal("disabled keepalive must not reach the provider callback")
+		ProviderSetTaskEnabled: func(_ context.Context, provider, account, operation string, enabled bool) error {
+			taskProvider, taskAccount = provider+"/"+operation, account
 			return nil
 		},
-		ProviderRun: func(context.Context, string, string, string) error {
-			t.Fatal("disabled keepalive must not reach the provider runner")
+		ProviderRun: func(_ context.Context, provider, _ string, operation string) error {
+			runProvider = provider + "/" + operation
 			return nil
 		},
 		Accounts: &coverageAccounts{},
+		ActivityRun: func(context.Context, string, string) error {
+			return nil
+		},
 	})
-	if err := svc.ProvidersSetTaskEnabled("qoder", "a", "keepalive", true); !errors.Is(err, features.ErrKeepaliveDisabled) {
-		t.Fatalf("provider task keepalive = %v", err)
+	if err := svc.ProvidersSetTaskEnabled("qoder", "a", "keepalive", true); err != nil {
+		t.Fatalf("provider task activity = %v", err)
 	}
-	if err := svc.ProvidersRun("qoder", "a", "keepalive"); !errors.Is(err, features.ErrKeepaliveDisabled) {
+	if taskProvider != "qoder/keepalive" || taskAccount != "a" {
+		t.Fatalf("provider task callback = %q/%q", taskProvider, taskAccount)
+	}
+	if err := svc.AccountsSetTaskEnabled("workbuddy-cn", "a", "keepalive", true); err != nil {
+		t.Fatalf("account task activity = %v", err)
+	}
+	// 手动「每日活跃」走独立绑定，不混入适配器/供应商通用 Run 入口。
+	if err := svc.ProvidersRun("qoder", "a", "keepalive"); !errors.Is(err, errUnsupportedAccountAction) {
 		t.Fatalf("provider run keepalive = %v", err)
 	}
-	if err := svc.AccountsSetTaskEnabled("workbuddy-cn", "a", "keepalive", true); !errors.Is(err, features.ErrKeepaliveDisabled) {
-		t.Fatalf("account task keepalive = %v", err)
+	if runProvider != "" {
+		t.Fatalf("activity must not reach generic provider runner: %q", runProvider)
+	}
+	if err := svc.ActivityRun("qoder", "a"); err != nil {
+		t.Fatalf("ActivityRun = %v", err)
 	}
 }
 

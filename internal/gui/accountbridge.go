@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"qka/internal/accounts"
-	"qka/internal/features"
 	"qka/internal/status"
 	"qka/internal/workbuddy"
 )
@@ -103,23 +102,17 @@ func (b *realBridge) List(ctx context.Context) ([]AccountView, error) {
 		operations := []string{}
 		if b.tasks != nil {
 			for _, operation := range b.tasks(account.Target) {
-				if features.OperationAvailable(operation) {
+				if !containsString(operations, operation) {
 					operations = append(operations, operation)
 				}
 			}
 		}
 		for _, op := range entry.Operations {
-			if !features.OperationAvailable(op.Operation) {
-				continue
-			}
 			if !containsString(operations, op.Operation) {
 				operations = append(operations, op.Operation)
 			}
 		}
 		for operation := range prefs {
-			if !features.OperationAvailable(operation) {
-				continue
-			}
 			if !containsString(operations, operation) {
 				operations = append(operations, operation)
 			}

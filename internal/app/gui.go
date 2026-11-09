@@ -53,13 +53,13 @@ type guiState struct {
 // 调用方负责通过 Run() 进入事件循环。
 func (a *App) GUI() *gui.App {
 	// 自动执行不再提供用户开关：启动时幂等地把系统计划任务收敛为
-	// 「每 2 小时签到一次」。异步执行，不拖慢窗口出现。
+	// 「每 2 小时签到 + 每日活跃一次」。异步执行，不拖慢窗口出现。
 	go a.ensureDefaultSchedule()
 	return gui.New(a.guiDeps())
 }
 
 // ensureDefaultSchedule 把内置自动执行收敛到产品默认：始终开启、每 2 小时
-// 签到一次。失败只记日志（下次启动再收敛），绝不阻塞启动。
+// 跑一次签到 + 每日活跃。失败只记日志（下次启动再收敛），绝不阻塞启动。
 func (a *App) ensureDefaultSchedule() {
 	// GUI() 用 `go a.ensureDefaultSchedule()` 异步收敛计划；零值/测试里
 	// `a` 可能是 nil，这里显式兜住，避免 goroutine 把整个测试进程带崩。
@@ -80,10 +80,10 @@ func (a *App) ensureDefaultSchedule() {
 		return
 	}
 	if view.Enabled && view.Installed &&
-		view.IntervalMinutes == 120 && view.Action == schedule.ActionCheckin {
+		view.IntervalMinutes == 120 && view.Action == schedule.ActionAll {
 		return
 	}
-	if _, err := mgr.SetConfig(ctx, 120, schedule.ActionCheckin); err != nil {
+	if _, err := mgr.SetConfig(ctx, 120, schedule.ActionAll); err != nil {
 		applog.Warnf("app", "自动执行默认计划：写入间隔失败：%v", err)
 		return
 	}
@@ -93,7 +93,7 @@ func (a *App) ensureDefaultSchedule() {
 			return
 		}
 	}
-	applog.Infof("app", "自动执行已按默认计划运行：每 2 小时签到一次")
+	applog.Infof("app", "自动执行已按默认计划运行：每 2 小时签到并执行每日活跃")
 }
 
 func (a *App) guiDeps() gui.Deps {
@@ -204,7 +204,10 @@ func (a *App) guiDeps() gui.Deps {
 		OpenURL:  openBrowser,
 		Accounts: bridge,
 		// 页面打开走缓存投影（秒开），过期后在后台刷新；写操作会立即失效缓存。
-		ProvidersList: a.providers.CachedListView,
+		ProvidersList:      a.providers.CachedListView,
+		ActivityView:       a.providers.ActivityView,
+		ActivityRun:        a.RunProviderActivity,
+		ActivitySetEnabled: a.providers.SetActivityEnabled,
 		ProvidersWarm: func(ctx context.Context) error {
 			_, err := a.providers.List(ctx)
 			return err
@@ -246,6 +249,19 @@ func (a *App) RunProviderAccount(
 	}
 	defer unlock()
 	return a.providers.Run(ctx, provider, account, operation)
+}
+
+// RunProviderActivity runs one account's daily activity heartbeat through the
+// config-directory lock so manual and scheduled runs cannot overlap.
+func (a *App) RunProviderActivity(
+	ctx context.Context, provider, account string,
+) error {
+	unlock, err := a.acquireRunLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return a.providers.RunActivity(ctx, provider, account)
 }
 
 func (a *App) workBuddyLoginService() *workbuddy.LoginService {

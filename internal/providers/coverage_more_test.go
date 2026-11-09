@@ -31,8 +31,8 @@ func TestRuntimeProviderAndCapabilityBranches(t *testing.T) {
 	provider.Fetch = true
 	provider.APIURL = ""
 	provider.Models = nil
-	if err := checkOperationCapability(provider, "keepalive"); err == nil {
-		t.Fatal("unsupported keepalive must fail")
+	if err := checkOperationCapability(provider, "keepalive"); err != nil {
+		t.Fatalf("fetch-capable provider should support activity: %v", err)
 	}
 	provider = providerFixture()
 	provider.Usage = false
@@ -44,26 +44,23 @@ func TestRuntimeProviderAndCapabilityBranches(t *testing.T) {
 	}
 }
 
-func TestProviderKeepaliveSupportedBranches(t *testing.T) {
-	if providerKeepaliveSupported(providerruntime.Provider{}) {
-		t.Fatal("fetch-disabled provider must not support keepalive")
+func TestProviderActivitySupportedBranches(t *testing.T) {
+	if providerActivitySupported(providerruntime.Provider{}) {
+		t.Fatal("fetch-disabled provider must not support activity")
 	}
-	if !providerKeepaliveSupported(providerruntime.Provider{
+	if !providerActivitySupported(providerruntime.Provider{
 		Fetch: true, APIURL: "https://provider.example",
 	}) {
-		t.Fatal("provider API URL should enable keepalive")
+		t.Fatal("fetch-capable provider should support activity")
 	}
-	if !providerKeepaliveSupported(providerruntime.Provider{
+	if !providerActivitySupported(providerruntime.Provider{
 		Fetch:  true,
 		Models: []providerruntime.Model{{APIURL: "https://model.example"}},
 	}) {
-		t.Fatal("model API URL should enable keepalive")
+		t.Fatal("fetch-capable provider should support activity")
 	}
-	if providerKeepaliveSupported(providerruntime.Provider{
-		Fetch:  true,
-		Models: []providerruntime.Model{{}},
-	}) {
-		t.Fatal("empty model URLs must not enable keepalive")
+	if !providerActivitySupported(providerruntime.Provider{Fetch: true}) {
+		t.Fatal("loader base URL fallback should keep activity available")
 	}
 }
 
@@ -405,9 +402,9 @@ func TestKeepaliveRuntimeAndProtocolBranches(t *testing.T) {
 
 	t.Run("runtime provider error", func(t *testing.T) {
 		f := newFixture(t)
-		result, err := f.service.keepalive(ctx, f.runtime, "missing", "a1")
-		if err != nil || result.Kind != engine.RRetryable {
-			t.Fatalf("keepalive runtime provider error = %+v %v", result, err)
+		result, outcome := f.service.activity(ctx, f.runtime, "missing", "a1")
+		if result.Kind != engine.RRetryable || outcome.State != "failed_retryable" {
+			t.Fatalf("activity runtime provider error = %+v %+v", result, outcome)
 		}
 	})
 
@@ -427,51 +424,59 @@ func TestKeepaliveRuntimeAndProtocolBranches(t *testing.T) {
 	})
 }
 
-func TestKeepaliveModelSelectionBranches(t *testing.T) {
+func TestActivityModelSelectionBranches(t *testing.T) {
 	provider := providerruntime.Provider{
 		Models: []providerruntime.Model{
-			{ID: "blocked", APIURL: "https://blocked.example/v1"},
-			{ID: "allowed", NPM: "@ai-sdk/anthropic", APIURL: "https://allowed.example/v1/"},
+			{ID: "paid", APIURL: "https://paid.example/v1"},
+			{ID: "blocked", Free: true, APIURL: "https://blocked.example/v1"},
+			{ID: "allowed", Free: true, NPM: "@ai-sdk/anthropic", APIURL: "https://allowed.example/v1/"},
 		},
 		Accounts: []providerruntime.Account{
 			{Key: "other", Models: []string{"ignored"}},
 			{Key: "a1", Models: []string{"allowed"}},
 		},
 	}
-	model, url := keepaliveModel(provider, "a1", "")
+	model, url, _ := activityModel(provider, "a1", "")
 	if model.ID != "allowed" || url != "https://allowed.example/v1/messages" {
 		t.Fatalf("selected model = %+v %q", model, url)
 	}
 
 	provider = providerruntime.Provider{
-		Models: []providerruntime.Model{{ID: "model"}},
+		Models: []providerruntime.Model{{ID: "model", Free: true}},
 	}
-	if model, url := keepaliveModel(provider, "a1", ""); model.ID != "" || url != "" {
+	if model, url, _ := activityModel(provider, "a1", ""); model.ID != "" || url != "" {
 		t.Fatalf("model without base URL = %+v %q", model, url)
 	}
 
-	model, url = keepaliveModel(provider, "a1", "https://fallback.example/v1")
+	model, url, _ = activityModel(provider, "a1", "https://fallback.example/v1")
 	if model.ID != "model" || url != "https://fallback.example/v1/chat/completions" {
 		t.Fatalf("fallback model = %+v %q", model, url)
 	}
 
 	provider = providerruntime.Provider{
-		Models: []providerruntime.Model{{ID: "blocked"}},
+		Models: []providerruntime.Model{{ID: "blocked", Free: true}},
 		Accounts: []providerruntime.Account{{
 			Key: "a1", Models: []string{"different"},
 		}},
 	}
-	if model, url := keepaliveModel(provider, "a1", "https://fallback.example/v1"); model.ID != "" || url != "" {
+	if model, url, _ := activityModel(provider, "a1", "https://fallback.example/v1"); model.ID != "" || url != "" {
 		t.Fatalf("restricted fallback model = %+v %q", model, url)
+	}
+
+	provider = providerruntime.Provider{
+		Models: []providerruntime.Model{{ID: "paid", APIURL: "https://paid.example/v1"}},
+	}
+	if model, url, _ := activityModel(provider, "a1", "https://fallback.example/v1"); model.ID != "" || url != "" {
+		t.Fatalf("paid-only provider must be skipped = %+v %q", model, url)
 	}
 }
 
-func TestCompletedKeepaliveRecordsUsage(t *testing.T) {
+func TestCompletedActivityRecordsUsage(t *testing.T) {
 	f := newFixture(t)
 	result := f.service.runOne(context.Background(), f.runtime, "fixture", "a1", "keepalive")
 	if result.Err != nil || result.State != string(engine.Completed) ||
 		result.Balance == nil || *result.Balance != 12.5 {
-		t.Fatalf("completed keepalive usage = %+v", result)
+		t.Fatalf("completed activity usage = %+v", result)
 	}
 }
 

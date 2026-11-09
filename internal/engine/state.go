@@ -2,12 +2,16 @@ package engine
 
 import "time"
 
-// Operation 是每日操作类型：签到与保活是两套独立状态机。
+// Operation 是每日操作类型：签到与每日活跃是两套独立状态机。
 type Operation string
 
 const (
-	Checkin   Operation = "checkin"
-	Keepalive Operation = "keepalive"
+	Checkin Operation = "checkin"
+	// Activity is the persisted operation id for「每日活跃」. The wire value
+	// stays "keepalive" so existing daily_ops and run_items history keeps working.
+	Activity Operation = "keepalive"
+	// Keepalive is the historical name of Activity; new code should use Activity.
+	Keepalive = Activity
 )
 
 // State 是每日操作的机器可读状态。
@@ -60,7 +64,7 @@ type ExternalResult struct {
 
 // Transition 是状态机纯函数：给定操作、结果类别与时间，返回新状态。
 // 签到：午前成功→signed_provisional，午后成功→signed_confirmed；
-// 保活：成功→completed；其余按结果类别映射。
+// 每日活跃：成功→completed；其余按结果类别映射。
 func Transition(op Operation, kind ResultKind, now time.Time) State {
 	if op == Checkin {
 		switch kind {
@@ -86,7 +90,7 @@ func Transition(op Operation, kind ResultKind, now time.Time) State {
 		}
 	}
 
-	if op == Keepalive {
+	if op == Activity {
 		switch kind {
 		case RSuccess:
 			return Completed

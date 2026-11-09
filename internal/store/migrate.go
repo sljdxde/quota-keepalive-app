@@ -7,7 +7,7 @@ import (
 )
 
 // latestVersion 是当前代码内置的最新迁移版本号。
-const latestVersion = 6
+const latestVersion = 7
 
 type migration struct {
 	version int
@@ -22,6 +22,7 @@ var migrations = []migration{
 	{version: 4, stmt: schemaV4},
 	{version: 5, stmt: schemaV5},
 	{version: 6, stmt: schemaV6},
+	{version: 7, stmt: schemaV7},
 }
 
 func ensureMigrationsTable(ctx context.Context, db *sql.DB) error {

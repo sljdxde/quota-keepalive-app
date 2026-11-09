@@ -102,7 +102,7 @@ func TestTaskRunEnabledUsesRunAllAndRecordsRedactedSummary(t *testing.T) {
 		t.Fatalf("启用时应恰好执行一次并释放资源: resp=%+v runner=%+v builds=%d locks=%d",
 			resp, runner, builds, locks)
 	}
-	if runner.action != schedule.ActionCheckin {
+	if runner.action != schedule.ActionAll {
 		t.Fatalf("task-run 应把动作传给执行链，实际 %q", runner.action)
 	}
 	if builtConfigDir != dir {

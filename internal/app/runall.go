@@ -26,7 +26,7 @@ type RunSummary struct {
 }
 
 // RunAll 是「立即全部执行」的后端：与宿主调用同一条执行链，按预演（plan_validate）
-// 中可执行的账号×操作逐个运行，遵守当天幂等与保活冷却；单个失败不拖垮其余，
+// 中可执行的账号×操作逐个运行，遵守当天幂等与每日活跃冷却；单个失败不拖垮其余，
 // 最终返回聚合错误（若有）。
 func (a *App) RunAll(ctx context.Context) error {
 	_, err := a.RunAllGuarded(ctx)
@@ -72,14 +72,11 @@ func (a *App) RunAllSummary(ctx context.Context) (RunSummary, error) {
 }
 
 // RunAllActionSummary executes only the requested operation family. The
-// scheduler uses checkin/keepalive/all while manual "run all" keeps the same
+// scheduler uses all/checkin/activity while manual "run all" keeps the same
 // shared state machine and Beijing-day idempotency rules.
 func (a *App) RunAllActionSummary(ctx context.Context, action string) (RunSummary, error) {
-	if action != "all" && action != "checkin" && action != "keepalive" {
+	if !features.ValidAction(action) {
 		return RunSummary{}, fmt.Errorf("unsupported run action %q", action)
-	}
-	if !features.OperationAvailable("keepalive") && action == "keepalive" {
-		return RunSummary{}, features.ErrKeepaliveDisabled
 	}
 	action = features.NormalizeAction(action)
 	providerView, providerAccounts, providerErr := a.providerExecutionView(ctx)
@@ -96,8 +93,12 @@ func (a *App) RunAllActionSummary(ctx context.Context, action string) (RunSummar
 		failures = append(failures, providerErr)
 	}
 	for _, item := range plan.Items {
-		// PlanValidate 只产出当前可用的操作（保活全局停用后仅 checkin），action
-		// 已在入口校验并 NormalizeAction，此处的二次过滤是死分支，已删除。
+		// 适配器路径只有 checkin；每日活跃由 provider 插件通道执行。
+		// 先排除非 checkin 计划项，再按 action 过滤，避免 activity 误跑签到。
+		if item.Operation != features.OperationCheckin ||
+			!actionRunsOperation(action, item.Operation) {
+			continue
+		}
 		if providerAccounts[item.Target][item.AccountID] {
 			// Provider accounts have their own lifecycle and history. They are
 			// executed only by providers.RunAllView below.
@@ -146,6 +147,21 @@ func (a *App) RunAllActionSummary(ctx context.Context, action string) (RunSummar
 		}
 	}
 	return summary, errors.Join(failures...)
+}
+
+// actionRunsOperation reports whether one adapter operation belongs to the
+// requested automation action. Daily activity never runs through adapters.
+func actionRunsOperation(action, operation string) bool {
+	switch features.NormalizeAction(action) {
+	case features.ActionAll:
+		return true
+	case features.ActionCheckin:
+		return operation == features.OperationCheckin
+	case features.ActionActivity:
+		return operation == features.OperationActivity
+	default:
+		return false
+	}
 }
 
 func (a *App) providerExecutionView(

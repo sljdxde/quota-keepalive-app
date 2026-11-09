@@ -243,7 +243,7 @@ func TestListSyncsProvidersAndMasksAccounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(view.Providers) != 1 || view.AccountCount != 2 ||
-		view.EnabledCount != 1 || view.Providers[0].Keepalive {
+		view.EnabledCount != 1 || !view.Providers[0].Activity {
 		t.Fatalf("view: %+v", view)
 	}
 	if view.Providers[0].Accounts[0].MaskedIdentity != "us***@example.com" {
@@ -264,11 +264,9 @@ func TestListSyncsProvidersAndMasksAccounts(t *testing.T) {
 		t.Errorf("model metadata mismatch: %+v", model)
 	}
 	for _, account := range view.Providers[0].Accounts {
-		if !account.Enabled || !account.TaskPreferences["checkin"] {
+		if !account.Enabled || !account.TaskPreferences["checkin"] ||
+			!account.TaskPreferences["keepalive"] {
 			t.Errorf("new healthy accounts should default enabled: %+v", account)
-		}
-		if _, exposed := account.TaskPreferences["keepalive"]; exposed {
-			t.Errorf("keepalive must remain hidden: %+v", account)
 		}
 	}
 }
@@ -487,7 +485,7 @@ func TestSetEnabledAndTaskPreferences(t *testing.T) {
 	}
 }
 
-func TestHistoryHidesKeepaliveRunItems(t *testing.T) {
+func TestHistoryIncludesActivityRunItems(t *testing.T) {
 	f := newFixture(t)
 	mustExec(t, f.store.DB(), `
 INSERT INTO runs
@@ -504,8 +502,15 @@ VALUES ('history-run', 'fixture', 'a1', 'keepalive', 'completed', 'hidden', 'ts'
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].Action != "checkin" {
-		t.Fatalf("keepalive history must stay hidden, got %+v", items)
+	if len(items) != 2 {
+		t.Fatalf("activity runs must be visible in history, got %+v", items)
+	}
+	actions := map[string]bool{}
+	for _, item := range items {
+		actions[item.Action] = true
+	}
+	if !actions["checkin"] || !actions["keepalive"] {
+		t.Fatalf("history actions = %+v", actions)
 	}
 }
 
@@ -990,15 +995,15 @@ func TestKeepalivePaths(t *testing.T) {
 	}{
 		{"load error", func(f *fakeRuntime) { f.loadErr = errors.New("load") }, "failed_retryable"},
 		{"no fetch", func(f *fakeRuntime) { f.loader.Fetch = false }, "failed_final"},
-		{"no model", func(f *fakeRuntime) {
+		{"no free model", func(f *fakeRuntime) {
 			f.providers[0].Models = nil
-		}, "failed_final"},
+		}, "failed_retryable"},
 		{"http 401", func(f *fakeRuntime) {
 			f.fetch.Status = 401
 		}, "failed_final"},
 		{"http 429", func(f *fakeRuntime) {
 			f.fetch.Status = 429
-		}, "failed_final"},
+		}, "failed_retryable"},
 		{"http 500", func(f *fakeRuntime) {
 			f.fetch.Status = 500
 		}, "failed_retryable"},
@@ -1011,8 +1016,9 @@ func TestKeepalivePaths(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			tc.configure(f.runtime)
-			if err := f.service.Run(ctx, "fixture", "a1", "keepalive"); err != nil {
-				t.Fatal(err)
+			result := f.service.runOne(ctx, f.runtime, "fixture", "a1", "keepalive")
+			if result.Err != nil {
+				t.Fatal(result.Err)
 			}
 			var state string
 			if err := f.store.DB().QueryRowContext(ctx, `
@@ -1040,8 +1046,8 @@ func TestKeepaliveAnthropicProtocolAndFetchError(t *testing.T) {
 
 	f2 := newFixture(t)
 	f2.runtime.fetchErr = errors.New("network")
-	if err := f2.service.Run(context.Background(), "fixture", "a1", "keepalive"); err != nil {
-		t.Fatal(err)
+	if err := f2.service.Run(context.Background(), "fixture", "a1", "keepalive"); err == nil {
+		t.Fatal("manual activity must report network failure")
 	}
 }
 
@@ -1201,8 +1207,8 @@ func TestHelpers(t *testing.T) {
 	if !hasReply([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\ndata: [DONE]\n")) {
 		t.Fatal("SSE reply should count as a keepalive response")
 	}
-	if !keepaliveNeedsStream(400, []byte(`{"msg":"Non-stream chat request is currently not supported"}`)) ||
-		keepaliveNeedsStream(200, []byte(`{"choices":[]}`)) {
+	if !activityNeedsStream(400, []byte(`{"msg":"Non-stream chat request is currently not supported"}`)) ||
+		activityNeedsStream(200, []byte(`{"choices":[]}`)) {
 		t.Fatal("stream fallback detection mismatch")
 	}
 	if kindForCheckin("done") != engine.RAlready ||
@@ -1274,22 +1280,29 @@ func TestHelpers(t *testing.T) {
 }
 
 func TestProviderOperationsHelpers(t *testing.T) {
-	v := ProviderView{Checkin: true, Keepalive: false}
+	v := ProviderView{Checkin: true, Activity: false}
 	a := AccountView{TaskPreferences: map[string]bool{"keepalive": false}}
 	if ops := providerOperations(v, a, "all"); len(ops) != 1 || ops[0] != "checkin" {
 		t.Fatalf("ops: %+v", ops)
 	}
-	v.Keepalive = true
+	v.Activity = true
 	a.TaskPreferences["keepalive"] = true
-	if ops := providerOperations(v, a, "keepalive"); len(ops) != 0 {
-		t.Fatalf("keepalive ops: %+v", ops)
+	if ops := providerOperations(v, a, "all"); len(ops) != 2 ||
+		ops[0] != "checkin" || ops[1] != "keepalive" {
+		t.Fatalf("all ops: %+v", ops)
+	}
+	if ops := providerOperations(v, a, "activity"); len(ops) != 1 || ops[0] != "keepalive" {
+		t.Fatalf("activity ops: %+v", ops)
+	}
+	if ops := providerOperations(v, a, "checkin"); len(ops) != 1 || ops[0] != "checkin" {
+		t.Fatalf("checkin ops: %+v", ops)
 	}
 	if !enabledPref(nil, "checkin") || enabledPref(map[string]bool{"checkin": false}, "checkin") {
 		t.Fatal("enabledPref mismatch")
 	}
 	if operationLabel("checkin", v) != "checkin" ||
-		operationLabel("all", v) != "checkin" ||
-		operationLabel("all", ProviderView{Checkin: false}) != "checkin" {
+		operationLabel("all", v) != "all" ||
+		operationLabel("keepalive", v) != "activity" {
 		t.Fatal("operationLabel mismatch")
 	}
 	if id := newRunID(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)); !strings.HasPrefix(id, "20260101T000000-") {

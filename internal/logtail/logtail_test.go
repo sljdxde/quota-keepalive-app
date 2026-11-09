@@ -113,7 +113,7 @@ func TestTailFilters(t *testing.T) {
 	}
 }
 
-func TestTailHidesKeepaliveWhileDisabled(t *testing.T) {
+func TestTailIncludesActivityLogs(t *testing.T) {
 	db := openDB(t)
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, operation := range []string{"checkin", "keepalive"} {
@@ -127,16 +127,16 @@ func TestTailHidesKeepaliveWhileDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Entries) != 1 || page.Entries[0].Operation != "checkin" {
-		t.Fatalf("default log view must hide keepalive, got %+v", page.Entries)
+	if len(page.Entries) != 2 {
+		t.Fatalf("default log view must include activity logs, got %+v", page.Entries)
 	}
 
 	page, err = Tail(context.Background(), db, Filter{Operation: "keepalive"}, DefaultLimit, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Entries) != 0 {
-		t.Fatalf("explicit keepalive filter must stay empty, got %+v", page.Entries)
+	if len(page.Entries) != 1 || page.Entries[0].Operation != "keepalive" {
+		t.Fatalf("explicit activity filter mismatch, got %+v", page.Entries)
 	}
 }
 

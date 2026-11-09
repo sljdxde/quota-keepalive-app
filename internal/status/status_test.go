@@ -223,7 +223,7 @@ func TestPlanValidateOmitsDisabledAccountTasks(t *testing.T) {
 	t.Fatal("同一账号仍应保留启用的签到计划项")
 }
 
-func TestStatusHidesDisabledKeepaliveTask(t *testing.T) {
+func TestStatusIncludesActivityTask(t *testing.T) {
 	st, svc := setup(t)
 	seedOp(t, st, "q_1", "keepalive", "failed_retryable")
 	acc := accounts.NewService(st.DB())
@@ -241,12 +241,15 @@ func TestStatusHidesDisabledKeepaliveTask(t *testing.T) {
 		}
 		for _, op := range account.Operations {
 			if op.Operation == "keepalive" {
-				t.Fatalf("全局停用的保活任务不得出现在状态视图: %+v", op)
+				if op.TaskEnabled {
+					t.Fatalf("activity task preference should be off: %+v", op)
+				}
+				return
 			}
 		}
-		return
+		t.Fatal("缺少 q_1 每日活跃状态")
 	}
-	t.Fatal("缺少 q_1 保活状态")
+	t.Fatal("缺少 q_1 账号")
 }
 
 func TestPlanValidateTreatsCheckinRefusalsAsTerminal(t *testing.T) {

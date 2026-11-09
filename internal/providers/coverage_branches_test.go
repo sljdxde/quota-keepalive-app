@@ -187,9 +187,9 @@ func TestModelViewNameFallsBackToID(t *testing.T) {
 	}
 }
 
-// TestOperationViewsSkipsUnavailableOperation 覆盖读取当日操作时过滤掉
-// 全局停用的 keepalive 记录。
-func TestOperationViewsSkipsUnavailableOperation(t *testing.T) {
+// TestOperationViewsKeepCheckinRowOnly 覆盖签到行只投影 checkin：每日活跃
+// 记录不会混进账号卡片的签到操作列表。
+func TestOperationViewsKeepCheckinRowOnly(t *testing.T) {
 	f := newFixture(t)
 	day := engine.BeijingDay(f.service.now())
 	if _, err := f.store.DB().Exec(`
@@ -349,17 +349,17 @@ func TestRunResultAuditBranches(t *testing.T) {
 	}
 }
 
-// TestKeepaliveStreamRetryError 覆盖保活流式重试时的网络失败分支。
-func TestKeepaliveStreamRetryError(t *testing.T) {
+// TestActivityStreamRetryError 覆盖每日活跃流式重试时的网络失败分支。
+func TestActivityStreamRetryError(t *testing.T) {
 	f := newFixture(t)
 	f.runtime.fetchQueue = []providerruntime.FetchResponse{
 		{Status: 400, Body: []byte(`{"error":"non-stream is not supported"}`)},
 	}
 	f.runtime.fetchErr = errors.New("network down")
-	result, err := f.service.keepalive(context.Background(), f.runtime, "fixture", "a1")
-	if err != nil || result.Kind != engine.RRetryable ||
-		!strings.Contains(result.Message, "流式保活请求失败") {
-		t.Fatalf("流式保活失败处理错误: %+v %v", result, err)
+	result, outcome := f.service.activity(context.Background(), f.runtime, "fixture", "a1")
+	if result.Kind != engine.RRetryable || outcome.State != "needs_stream" ||
+		!strings.Contains(result.Message, "流式请求") {
+		t.Fatalf("流式活跃失败处理错误: %+v %+v", result, outcome)
 	}
 }
 

@@ -187,7 +187,7 @@ func runTaskRun(ctx context.Context, configDir string, deps taskRunDeps) (*Respo
 func disabledTaskRunResponse() *Response {
 	out := taskRunOutput{
 		Status: "disabled", AutoRunEnabled: false,
-		IntervalMinutes: schedule.DefaultIntervalMinutes, Action: schedule.ActionCheckin,
+		IntervalMinutes: schedule.DefaultIntervalMinutes, Action: schedule.ActionAll,
 	}
 	return &Response{Status: "disabled", Data: out}
 }

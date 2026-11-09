@@ -273,11 +273,11 @@ func TestManagerSetConfig(t *testing.T) {
 	t.Run("disabled saves without installing", func(t *testing.T) {
 		fake := &fakeScheduler{}
 		m := NewManager(t.TempDir(), "/tmp/qka", fake, time.Now)
-		view, err := m.SetConfig(context.Background(), 60, ActionKeepalive)
+		view, err := m.SetConfig(context.Background(), 60, ActionActivity)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if view.IntervalMinutes != 60 || view.Action != ActionCheckin || fake.installs != 0 {
+		if view.IntervalMinutes != 60 || view.Action != ActionActivity || fake.installs != 0 {
 			t.Fatalf("停用配置应保存但不安装: view=%+v fake=%+v", view, fake)
 		}
 	})
@@ -321,7 +321,7 @@ func TestManagerSetConfig(t *testing.T) {
 			t.Fatal("安装失败必须返回错误")
 		}
 		got, err := Load(m.ConfigDir)
-		if err != nil || got.IntervalMinutes != DefaultIntervalMinutes || got.Action != ActionCheckin {
+		if err != nil || got.IntervalMinutes != DefaultIntervalMinutes || got.Action != ActionAll {
 			t.Fatalf("安装失败不应改变配置: %+v %v", got, err)
 		}
 	})

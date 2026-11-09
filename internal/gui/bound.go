@@ -76,6 +76,12 @@ type Deps struct {
 	TokenSpeed *tokenspeed.Service
 	// Accounts 是账号管理桥接。
 	Accounts AccountBridge
+	// ActivityView 返回「每日活跃」投影（逐账号今日状态、连续天数与汇总）。
+	ActivityView func(ctx context.Context) (providers.ActivityView, error)
+	// ActivityRun 立即为单个账号执行一次每日活跃。
+	ActivityRun func(ctx context.Context, provider, account string) error
+	// ActivitySetEnabled 开关单个账号的每日活跃任务。
+	ActivitySetEnabled func(ctx context.Context, provider, account string, enabled bool) error
 	// Providers 是随包供应商插件的统一管理投影。
 	ProvidersList func(ctx context.Context) (providers.View, error)
 	// ProvidersWarm 在启动时预热供应商运行时与模型目录，避免首次打开页面
@@ -365,6 +371,34 @@ func (s *BoundService) OpenURL(raw string) error {
 	return s.deps.OpenURL(raw)
 }
 
+// ActivityView 返回「每日活跃」视图：逐账号今日状态、连续天数与汇总。
+func (s *BoundService) ActivityView() (json.RawMessage, error) {
+	if s.deps.ActivityView == nil {
+		return nil, errNotWired
+	}
+	view, err := s.deps.ActivityView(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(view)
+}
+
+// ActivityRun 立即为单个账号执行一次每日活跃；仍受当天幂等与冷却约束。
+func (s *BoundService) ActivityRun(provider, account string) error {
+	if s.deps.ActivityRun == nil {
+		return errNotWired
+	}
+	return s.deps.ActivityRun(context.Background(), provider, account)
+}
+
+// ActivitySetEnabled 开关单个账号的每日活跃任务。
+func (s *BoundService) ActivitySetEnabled(provider, account string, enabled bool) error {
+	if s.deps.ActivitySetEnabled == nil {
+		return errNotWired
+	}
+	return s.deps.ActivitySetEnabled(context.Background(), provider, account, enabled)
+}
+
 // AppsList 返回应用管理页聚合行。
 func (s *BoundService) AppsList() (json.RawMessage, error) {
 	view, err := s.deps.Status(context.Background())
@@ -449,8 +483,10 @@ func (s *BoundService) ProvidersSetTaskEnabled(
 	if s.deps.ProviderSetTaskEnabled == nil {
 		return errNotWired
 	}
-	if !features.OperationAvailable(operation) {
-		return features.ErrKeepaliveDisabled
+	switch operation {
+	case features.OperationCheckin, features.OperationActivity:
+	default:
+		return errUnsupportedAccountAction
 	}
 	return s.deps.ProviderSetTaskEnabled(context.Background(), provider, account, operation, enabled)
 }
@@ -463,9 +499,6 @@ func (s *BoundService) ProvidersRun(provider, account, operation string) error {
 	switch operation {
 	case "checkin", "refresh":
 	default:
-		if !features.OperationAvailable(operation) {
-			return features.ErrKeepaliveDisabled
-		}
 		return errUnsupportedAccountAction
 	}
 	return s.deps.ProviderRun(context.Background(), provider, account, operation)
@@ -525,9 +558,6 @@ func (s *BoundService) AccountsRun(target, accountID, operation string) error {
 	switch operation {
 	case "checkin", "refresh":
 	default:
-		if !features.OperationAvailable(operation) {
-			return features.ErrKeepaliveDisabled
-		}
 		return errUnsupportedAccountAction
 	}
 	return s.deps.Accounts.Run(context.Background(), target, accountID, operation)
@@ -538,8 +568,10 @@ func (s *BoundService) AccountsSetTaskEnabled(
 	target, accountID, operation string,
 	enabled bool,
 ) error {
-	if !features.OperationAvailable(operation) {
-		return features.ErrKeepaliveDisabled
+	switch operation {
+	case features.OperationCheckin, features.OperationActivity:
+	default:
+		return errUnsupportedAccountAction
 	}
 	return s.deps.Accounts.SetTaskEnabled(
 		context.Background(), target, accountID, operation, enabled)

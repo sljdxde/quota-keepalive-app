@@ -1,5 +1,6 @@
 // Package providers ports Magpie's OpenCode provider runtime into QKA and
-// owns provider/account persistence, login, quota, check-in, and keepalive.
+// owns provider/account persistence, login, quota, check-in, and the daily
+// activity heartbeat (persisted under the historical "keepalive" id).
 package providers
 
 import (
@@ -99,17 +100,17 @@ type OperationView struct {
 
 // ProviderView is one provider and its accounts.
 type ProviderView struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Icon      string        `json:"icon,omitempty"`
-	Enabled   bool          `json:"enabled"`
-	SignedIn  bool          `json:"signed_in"`
-	Usage     bool          `json:"usage"`
-	Checkin   bool          `json:"checkin"`
-	Keepalive bool          `json:"keepalive"`
-	Methods   []MethodView  `json:"methods"`
-	Models    []ModelView   `json:"models"`
-	Accounts  []AccountView `json:"accounts"`
+	ID       string        `json:"id"`
+	Name     string        `json:"name"`
+	Icon     string        `json:"icon,omitempty"`
+	Enabled  bool          `json:"enabled"`
+	SignedIn bool          `json:"signed_in"`
+	Usage    bool          `json:"usage"`
+	Checkin  bool          `json:"checkin"`
+	Activity bool          `json:"activity"`
+	Methods  []MethodView  `json:"methods"`
+	Models   []ModelView   `json:"models"`
+	Accounts []AccountView `json:"accounts"`
 }
 
 // View is the complete provider page projection.
@@ -351,13 +352,16 @@ func checkOperationCapability(provider providerruntime.Provider, operation strin
 	case "checkin":
 		supported = provider.Checkin
 	case "keepalive":
-		supported = providerKeepaliveSupported(provider)
+		supported = providerActivitySupported(provider)
 	case "refresh":
 		supported = provider.Usage
 	default:
 		return fmt.Errorf("unsupported provider operation %q", operation)
 	}
 	if !supported {
+		if operation == features.OperationActivity {
+			return fmt.Errorf("%s 不支持每日活跃", provider.Name)
+		}
 		return fmt.Errorf("%s 不支持操作 %s", provider.Name, operation)
 	}
 	return nil
@@ -740,7 +744,7 @@ ON CONFLICT(id) DO UPDATE SET
   updated_at = excluded.updated_at`,
 		p.ID, p.Name, p.Spec, p.Icon, boolInt(defaultProviderEnabled(p.ID)),
 		boolInt(p.Usage), boolInt(p.Checkin),
-		boolInt(providerKeepaliveSupported(p)), string(models), ts, ts)
+		boolInt(providerActivitySupported(p)), string(models), ts, ts)
 	return err
 }
 
@@ -750,19 +754,12 @@ func defaultProviderEnabled(providerID string) bool {
 	return providerID == "workbuddy"
 }
 
-func providerKeepaliveSupported(p providerruntime.Provider) bool {
-	if !p.Fetch {
-		return false
-	}
-	if strings.TrimSpace(p.APIURL) != "" {
-		return true
-	}
-	for _, model := range p.Models {
-		if strings.TrimSpace(model.APIURL) != "" {
-			return true
-		}
-	}
-	return false
+// providerActivitySupported reports whether the plugin exposes the signed
+// runtime fetch path. Endpoint resolution is per account (loader.BaseURL is a
+// valid fallback), so a missing static URL is not a reason to hide the task;
+// the sender reports "no free model" with a visible reason instead.
+func providerActivitySupported(p providerruntime.Provider) bool {
+	return p.Fetch
 }
 
 func (s *Service) syncAccounts(ctx context.Context, p providerruntime.Provider) error {
@@ -836,6 +833,7 @@ VALUES (?, ?, ?, ?)`,
 		`DELETE FROM logs WHERE target = ? AND account_id = ?`,
 		`DELETE FROM quota_readings WHERE provider = ? AND account_id = ?`,
 		`DELETE FROM run_items WHERE provider = ? AND account_id = ?`,
+		`DELETE FROM activity_runs WHERE provider = ? AND account_id = ?`,
 		`DELETE FROM daily_ops WHERE target = ? AND account_id = ?`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, provider, account.Key); err != nil {
@@ -900,8 +898,8 @@ func (s *Service) view(ctx context.Context, runtimeItems []providerruntime.Provi
 		pv := ProviderView{
 			ID: p.ID, Name: p.Name, Icon: p.Icon, Enabled: enabled,
 			SignedIn: p.SignedIn, Usage: p.Usage, Checkin: p.Checkin,
-			Keepalive: false,
-			Methods:   []MethodView{}, Models: []ModelView{},
+			Activity: providerActivitySupported(p),
+			Methods:  []MethodView{}, Models: []ModelView{},
 			Accounts: []AccountView{},
 		}
 		for _, method := range p.Methods {
@@ -942,7 +940,7 @@ func (s *Service) view(ctx context.Context, runtimeItems []providerruntime.Provi
 			if err != nil {
 				return View{}, err
 			}
-			for _, operation := range []string{"checkin"} {
+			for _, operation := range []string{"checkin", features.OperationActivity} {
 				on, ok := prefs[operation]
 				av.TaskPreferences[operation] = !ok || on
 			}
@@ -987,9 +985,6 @@ FROM daily_ops WHERE target = ? AND account_id = ? AND day_key = ?`,
 		if err := rows.Scan(&op.Operation, &op.State, &credits, &balance,
 			&creditsKnown, &balanceKnown, &op.Message); err != nil {
 			return nil, err
-		}
-		if !features.OperationAvailable(op.Operation) {
-			continue
 		}
 		op.TaskEnabled = prefs[op.Operation]
 		if creditsKnown == 1 {
@@ -1395,7 +1390,7 @@ func (s *Service) testModel(
 		Provider: provider, Account: account, URL: endpoint, Method: "POST",
 		Headers: headers, Body: string(encoded),
 	})
-	if fetchErr == nil && keepaliveNeedsStream(response.Status, response.Body) {
+	if fetchErr == nil && activityNeedsStream(response.Status, response.Body) {
 		body["stream"] = true
 		encoded, _ = json.Marshal(body)
 		response, fetchErr = host.Fetch(ctx, providerruntime.FetchRequest{
@@ -1571,19 +1566,32 @@ func (s *Service) Run(
 		return result.Err
 	}
 	if !result.Executed {
+		if operation == features.OperationActivity {
+			switch result.State {
+			case string(engine.Completed):
+				return errors.New("今日已活跃，无需重复发送")
+			case string(engine.FailedRetryable):
+				return errors.New("每日活跃失败后的冷却中，请稍后重试")
+			case string(engine.FailedFinal):
+				return errors.New("今日每日活跃已失败，明天会自动重试")
+			}
+		}
 		return fmt.Errorf("%w（当前状态：%s）", ErrNotExecuted, result.State)
+	}
+	// 手动「立即活跃」必须把执行失败如实返回，否则 UI 会把限流/无免费模型
+	// 误报成完成。自动执行走 runOne，不经过这里，仍由 RunSummary 统计。
+	if operation == features.OperationActivity && result.State != string(engine.Completed) {
+		return errors.New(firstNonEmpty(result.Message, "每日活跃失败"))
 	}
 	return nil
 }
 
 // RunAll executes the provider-backed accounts selected by action. The action
-// values are all/checkin/keepalive. One account failure never aborts the rest.
+// values are all/checkin/activity (legacy "keepalive" is normalized). One
+// account failure never aborts the rest.
 func (s *Service) RunAll(ctx context.Context, action string, exclude map[string]bool) (RunSummary, error) {
-	if action != "all" && action != "checkin" && action != "keepalive" {
+	if !features.ValidAction(action) {
 		return RunSummary{}, fmt.Errorf("unsupported provider action %q", action)
-	}
-	if !features.OperationAvailable("keepalive") && action == "keepalive" {
-		return RunSummary{}, features.ErrKeepaliveDisabled
 	}
 	action = features.NormalizeAction(action)
 	s.runMu.Lock()
@@ -1605,11 +1613,8 @@ func (s *Service) RunAllView(
 	action string,
 	exclude map[string]bool,
 ) (RunSummary, error) {
-	if action != "all" && action != "checkin" && action != "keepalive" {
+	if !features.ValidAction(action) {
 		return RunSummary{}, fmt.Errorf("unsupported provider action %q", action)
-	}
-	if !features.OperationAvailable("keepalive") && action == "keepalive" {
-		return RunSummary{}, features.ErrKeepaliveDisabled
 	}
 	action = features.NormalizeAction(action)
 	s.runMu.Lock()
@@ -1685,19 +1690,34 @@ func (s *Service) runAllViewLocked(
 	return summary, errors.Join(failures...)
 }
 
+// providerOperations expands an automation action into the concrete operations
+// for one account. "all" runs check-in and the daily activity heartbeat
+// independently; "activity" maps to the persisted "keepalive" operation id.
 func providerOperations(provider ProviderView, account AccountView, action string) []string {
-	if !features.OperationAvailable(action) {
-		return []string{}
-	}
 	action = features.NormalizeAction(action)
+	wantCheckin := action == features.ActionAll || action == features.ActionCheckin
+	wantActivity := action == features.ActionAll || action == features.ActionActivity
 	out := []string{}
-	want := func(operation string) bool {
-		return action == operation
+	if wantCheckin && provider.Checkin && enabledPref(account.TaskPreferences, features.OperationCheckin) {
+		out = append(out, features.OperationCheckin)
 	}
-	if provider.Checkin && want("checkin") && enabledPref(account.TaskPreferences, "checkin") {
-		out = append(out, "checkin")
+	if wantActivity && provider.Activity && enabledPref(account.TaskPreferences, features.OperationActivity) {
+		out = append(out, features.OperationActivity)
 	}
 	return out
+}
+
+// RunActivity executes the daily activity heartbeat for one account. It still
+// obeys the shared Beijing-day idempotency and retry cooldown rules.
+func (s *Service) RunActivity(ctx context.Context, provider, account string) error {
+	return s.Run(ctx, provider, account, features.OperationActivity)
+}
+
+// SetActivityEnabled toggles the per-account daily activity task.
+func (s *Service) SetActivityEnabled(
+	ctx context.Context, provider, account string, enabled bool,
+) error {
+	return s.SetTaskEnabled(ctx, provider, account, features.OperationActivity, enabled)
 }
 
 func enabledPref(prefs map[string]bool, operation string) bool {
@@ -1788,15 +1808,16 @@ func (s *Service) runOne(
 			_ = s.confirmEvidencedCheckins(ctx)
 		}
 	case "keepalive":
-		// 保活当前由 features.KeepaliveAvailable=false 全局停用：
-		// providerOperations/NormalizeAction 不会产出该操作，GUI/调度都不会
-		// 走到这里。保留分支只为实现与测试内部路径，恢复功能前不得绕过
-		// features.OperationAvailable 直接调用 Run(..., "keepalive")。
+		// 每日活跃：通过 provider 插件通道发一条真实但最小的对话消息。
+		// operation id 仍是 keepalive（旧数据兼容），对外文案统一叫「每日活跃」。
+		var outcome activityOutcome
 		var obs engine.Observation
 		obs, err := s.engine.Run(ctx,
-			engine.Key{Target: provider, AccountID: account, Operation: engine.Keepalive},
+			engine.Key{Target: provider, AccountID: account, Operation: engine.Activity},
 			func(ctx context.Context, _ engine.Key) (engine.ExternalResult, error) {
-				return s.keepalive(ctx, host, provider, account)
+				var execution engine.ExternalResult
+				execution, outcome = s.activity(ctx, host, provider, account)
+				return execution, nil
 			})
 		if err != nil {
 			result.Err = err
@@ -1805,6 +1826,14 @@ func (s *Service) runOne(
 		result.State = string(obs.State)
 		result.Executed = obs.Executed
 		result.Message = redactMessage(obs.Message)
+		result.Model = outcome.Model
+		if obs.Executed {
+			outcome.State = activityStateForResult(obs.State, outcome.State)
+			if recordErr := s.recordActivityRun(ctx, provider, account, obs.Day, outcome); recordErr != nil {
+				result.Err = recordErr
+				return result
+			}
+		}
 		if obs.Executed && obs.State == engine.Completed {
 			usage, usageErr := requestguard.Do(ctx, s.riskGuard,
 				provider, account, "refresh", 15*time.Second,
@@ -1812,7 +1841,8 @@ func (s *Service) runOne(
 					return host.Usage(ctx, provider, account)
 				})
 			if usageErr == nil && strings.TrimSpace(usage.Error) == "" {
-				result.Credits, result.Balance, _ = s.recordUsage(ctx, provider, account, usage)
+				// 每日活跃不是领取动作：只更新余额展示，不把额度记成「今日已领取」。
+				_, result.Balance, _ = s.recordUsage(ctx, provider, account, usage)
 			}
 		}
 	case "refresh":
@@ -2115,7 +2145,7 @@ func auditOperationLabel(operation string) string {
 	case "refresh":
 		return "额度刷新"
 	case "keepalive":
-		return "保活"
+		return "每日活跃"
 	case "model_test":
 		return "模型测试"
 	case "login":
@@ -2192,10 +2222,6 @@ JOIN runs r ON r.id = i.run_id
 WHERE (? = '' OR i.provider = ?) AND (? = '' OR i.account_id = ?)
 `
 	args := []any{provider, provider, account, account}
-	if !features.KeepaliveAvailable {
-		query += ` AND i.action <> ?`
-		args = append(args, "keepalive")
-	}
 	query += ` ORDER BY i.created_at DESC, i.id DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -2256,23 +2282,47 @@ LIMIT ?`, provider, provider, account, account, limit)
 	return items, readings, nil
 }
 
-func (s *Service) keepalive(
+// activityOutcome carries the non-secret metadata of one daily activity send.
+type activityOutcome struct {
+	State      string
+	HTTPStatus int
+	LatencyMS  int64
+	Cost       float64
+	Model      string
+	Message    string
+}
+
+// activity sends the smallest real chat message ("hi") through the provider
+// plugin runtime. It never uses a local agent client. Free models are always
+// preferred; subscription sign-ins (oauth/browser/device) may fall back to
+// their cheapest included model, while metered API-key accounts are skipped so
+// the feature never silently spends credit.
+func (s *Service) activity(
 	ctx context.Context, host Runtime, provider, account string,
-) (engine.ExternalResult, error) {
+) (engine.ExternalResult, activityOutcome) {
 	loader, err := host.Load(ctx, provider, account)
 	if err != nil {
-		return engine.ExternalResult{Kind: engine.RRetryable, Message: "读取供应商登录态失败"}, nil
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: "读取供应商登录态失败"},
+			activityOutcome{State: "failed_retryable", Message: "读取供应商登录态失败"}
 	}
 	if !loader.Fetch {
-		return engine.ExternalResult{Kind: engine.RFinal, Message: "该供应商不支持保活请求"}, nil
+		return engine.ExternalResult{Kind: engine.RFinal, Message: "该供应商不支持每日活跃对话请求"},
+			activityOutcome{State: "failed_final", Message: "该供应商不支持每日活跃对话请求"}
 	}
 	runtimeProvider, err := s.runtimeProvider(ctx, host, provider)
 	if err != nil {
-		return engine.ExternalResult{Kind: engine.RRetryable, Message: "读取供应商模型失败"}, nil
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: "读取供应商模型失败"},
+			activityOutcome{State: "failed_retryable", Message: "读取供应商模型失败"}
 	}
-	model, url := keepaliveModel(runtimeProvider, account, loader.BaseURL)
+	model, url, subscription := activityModel(runtimeProvider, account, loader.BaseURL)
 	if model.ID == "" || url == "" {
-		return engine.ExternalResult{Kind: engine.RFinal, Message: "没有可用的保活模型"}, nil
+		message := "没有可用的免费模型（按量计费账号不自动发送），已跳过每日活跃"
+		if isSubscriptionAuth(accountAuthType(runtimeProvider, account)) {
+			message = "没有可用的模型，已跳过每日活跃"
+		}
+		// 可重试：失败不消耗当天次数；用户后来补上免费模型时仍能自动成功。
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: message},
+			activityOutcome{State: "no_free_model", Message: message}
 	}
 	npm := firstNonEmpty(model.NPM, runtimeProvider.NPM)
 	protocol := "openai"
@@ -2281,51 +2331,143 @@ func (s *Service) keepalive(
 	}
 	body := map[string]any{
 		"model":      model.ID,
-		"messages":   []map[string]string{{"role": "user", "content": "Reply OK."}},
-		"max_tokens": 4,
+		"messages":   []map[string]string{{"role": "user", "content": "hi"}},
+		"max_tokens": 16,
 		"stream":     false,
 	}
 	headers := map[string]string{"content-type": "application/json"}
 	if protocol == "anthropic" {
-		body["system"] = "You are a connectivity check."
+		body["system"] = "You are a daily activity check."
 		headers["anthropic-version"] = "2023-06-01"
 	}
 	encoded, _ := json.Marshal(body)
-	response, err := host.Fetch(ctx, providerruntime.FetchRequest{
+
+	started := time.Now()
+	outcome := activityOutcome{Model: model.ID, Cost: 0}
+	response, fetchErr := host.Fetch(ctx, providerruntime.FetchRequest{
 		Provider: provider, Account: account, URL: url, Method: "POST",
 		Headers: headers, Body: string(encoded),
 	})
-	if err != nil {
-		return engine.ExternalResult{Kind: engine.RRetryable, Message: "供应商保活请求失败"}, nil
+	if fetchErr != nil {
+		outcome.LatencyMS = time.Since(started).Milliseconds()
+		outcome.State = "failed_retryable"
+		outcome.Message = "供应商每日活跃请求失败"
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: outcome.Message}, outcome
 	}
-	if keepaliveNeedsStream(response.Status, response.Body) {
+	needsStream := activityNeedsStream(response.Status, response.Body)
+	if needsStream {
 		body["stream"] = true
 		encoded, _ = json.Marshal(body)
-		response, err = host.Fetch(ctx, providerruntime.FetchRequest{
+		response, fetchErr = host.Fetch(ctx, providerruntime.FetchRequest{
 			Provider: provider, Account: account, URL: url, Method: "POST",
 			Headers: headers, Body: string(encoded),
 		})
-		if err != nil {
-			return engine.ExternalResult{Kind: engine.RRetryable, Message: "供应商流式保活请求失败"}, nil
+		if fetchErr != nil {
+			outcome.LatencyMS = time.Since(started).Milliseconds()
+			outcome.State = "needs_stream"
+			outcome.Message = "供应商要求流式请求，自动重试仍失败"
+			return engine.ExternalResult{Kind: engine.RRetryable, Message: outcome.Message}, outcome
 		}
 	}
+	outcome.LatencyMS = time.Since(started).Milliseconds()
+	outcome.HTTPStatus = response.Status
 	if response.Status < 200 || response.Status >= 300 {
-		kind := engine.RRetryable
-		if response.Status == 401 || response.Status == 403 || response.Status == 429 {
-			kind = engine.RFinal
+		state, kind := activityStatusOutcome(response.Status)
+		if needsStream && (response.Status == 400 || response.Status == 415 || response.Status == 422) &&
+			activityNeedsStream(response.Status, response.Body) {
+			state = "needs_stream"
 		}
-		return engine.ExternalResult{Kind: kind, Message: fmt.Sprintf("供应商保活返回 HTTP %d", response.Status)}, nil
+		outcome.State = state
+		outcome.Message = activityStatusMessage(response.Status)
+		return engine.ExternalResult{Kind: kind, Message: outcome.Message}, outcome
 	}
 	if !hasReply(response.Body) {
-		return engine.ExternalResult{Kind: engine.RRetryable, Message: "供应商返回成功但没有模型回复"}, nil
+		outcome.State = "no_reply"
+		outcome.Message = "供应商返回成功但没有模型回复"
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: outcome.Message}, outcome
 	}
-	return engine.ExternalResult{Kind: engine.RSuccess, Message: "保活完成"}, nil
+	outcome.State = "completed"
+	if subscription {
+		outcome.Message = "每日活跃完成（订阅额度）"
+	} else {
+		outcome.Message = "每日活跃完成"
+	}
+	return engine.ExternalResult{Kind: engine.RSuccess, Message: outcome.Message}, outcome
 }
 
-func keepaliveModel(
+// activityStatusOutcome maps one HTTP status to the persisted activity state and
+// the shared state-machine result kind. Auth failures are final for the day
+// (re-login required); rate limits and upstream errors are retried after the
+// activity cooldown.
+func activityStatusOutcome(status int) (string, engine.ResultKind) {
+	switch status {
+	case 401, 403:
+		return "unauthorized", engine.RFinal
+	case 429:
+		return "rate_limited", engine.RRetryable
+	case 408:
+		return "failed_retryable", engine.RRetryable
+	}
+	if status >= 500 {
+		return "failed_retryable", engine.RRetryable
+	}
+	return "failed_final", engine.RFinal
+}
+
+func activityStatusMessage(status int) string {
+	switch status {
+	case 401, 403:
+		return fmt.Sprintf("账号鉴权失败（HTTP %d），请重新登录后再试", status)
+	case 429:
+		return fmt.Sprintf("供应商限流（HTTP %d），稍后自动重试", status)
+	}
+	if status >= 500 {
+		return fmt.Sprintf("供应商服务异常（HTTP %d），稍后自动重试", status)
+	}
+	return fmt.Sprintf("供应商每日活跃返回 HTTP %d", status)
+}
+
+func activityStateForResult(state engine.State, rich string) string {
+	if rich != "" {
+		return rich
+	}
+	switch state {
+	case engine.Completed:
+		return "completed"
+	case engine.FailedRetryable:
+		return "failed_retryable"
+	case engine.FailedFinal:
+		return "failed_final"
+	default:
+		return string(state)
+	}
+}
+
+func (s *Service) recordActivityRun(
+	ctx context.Context, provider, account, day string, outcome activityOutcome,
+) error {
+	if s.db == nil {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO activity_runs
+  (day_key, provider, account_id, state, http_status, latency_ms, cost, message, ts)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		day, provider, account, outcome.State, outcome.HTTPStatus,
+		outcome.LatencyMS, outcome.Cost, redactMessage(outcome.Message),
+		s.now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// activityModel picks a model for the daily-activity message. Free models are
+// preferred (lower rate first, then a larger context). When the account has no
+// free model, subscription sign-ins (oauth/browser/device) fall back to their
+// cheapest usable model because usage is included in the plan; metered
+// API-key accounts are skipped so the feature never silently spends credit.
+func activityModel(
 	provider providerruntime.Provider,
 	account, fallbackBaseURL string,
-) (providerruntime.Model, string) {
+) (providerruntime.Model, string, bool) {
 	allowed := map[string]bool{}
 	for _, item := range provider.Accounts {
 		if item.Key != account {
@@ -2336,7 +2478,7 @@ func keepaliveModel(
 		}
 		break
 	}
-	try := func(model providerruntime.Model) (providerruntime.Model, string) {
+	endpointFor := func(model providerruntime.Model) (providerruntime.Model, string) {
 		if len(allowed) > 0 && !allowed[model.ID] {
 			return providerruntime.Model{}, ""
 		}
@@ -2354,15 +2496,60 @@ func keepaliveModel(
 		}
 		return model, base
 	}
+	all := make([]providerruntime.Model, 0, len(provider.Models))
+	free := make([]providerruntime.Model, 0, len(provider.Models))
 	for _, model := range provider.Models {
-		if candidate, url := try(model); url != "" {
-			return candidate, url
+		if strings.TrimSpace(model.ID) == "" {
+			continue
+		}
+		all = append(all, model)
+		if model.Free {
+			free = append(free, model)
 		}
 	}
-	if fallbackBaseURL != "" && len(provider.Models) > 0 {
-		return try(provider.Models[0])
+	sortByCost := func(models []providerruntime.Model) {
+		sort.SliceStable(models, func(i, j int) bool {
+			if models[i].Rate != models[j].Rate {
+				return models[i].Rate < models[j].Rate
+			}
+			return models[i].Context > models[j].Context
+		})
 	}
-	return providerruntime.Model{}, ""
+	sortByCost(free)
+	for _, model := range free {
+		if candidate, url := endpointFor(model); url != "" {
+			return candidate, url, false
+		}
+	}
+	if isSubscriptionAuth(accountAuthType(provider, account)) {
+		sortByCost(all)
+		for _, model := range all {
+			if candidate, url := endpointFor(model); url != "" {
+				return candidate, url, true
+			}
+		}
+	}
+	return providerruntime.Model{}, "", false
+}
+
+// accountAuthType returns the account's auth type (oauth/browser/device/api/key).
+func accountAuthType(provider providerruntime.Provider, account string) string {
+	for _, item := range provider.Accounts {
+		if item.Key == account {
+			return strings.ToLower(strings.TrimSpace(item.Type))
+		}
+	}
+	return ""
+}
+
+// isSubscriptionAuth reports whether the account signs in with a subscription
+// identity (usage included) rather than a metered API key.
+func isSubscriptionAuth(kind string) bool {
+	switch kind {
+	case "oauth", "browser", "device", "subscription":
+		return true
+	}
+	return false
 }
 
 func hasReply(data []byte) bool {
@@ -2401,7 +2588,7 @@ func jsonHasReply(value map[string]any) bool {
 	return false
 }
 
-func keepaliveNeedsStream(status int, body []byte) bool {
+func activityNeedsStream(status int, body []byte) bool {
 	if status != 400 && status != 415 && status != 422 {
 		return false
 	}
@@ -2486,4 +2673,273 @@ func usageCredits(usage providerruntime.Usage) *float64 {
 // StaleAuthPath returns the temporary auth file for cleanup/test diagnostics.
 func StaleAuthPath(configDir string) string {
 	return filepath.Join(configDir, "provider-auth.tmp.json")
+}
+
+// ActivityAccountView is one account's「每日活跃」projection.
+type ActivityAccountView struct {
+	Provider     string `json:"provider"`
+	ProviderName string `json:"provider_name"`
+	Account      string `json:"account"`
+	Masked       string `json:"masked"`
+	Enabled      bool   `json:"enabled"`
+	TaskEnabled  bool   `json:"task_enabled"`
+	TodayState   string `json:"today_state"`
+	TodayMessage string `json:"today_message"`
+	LastAt       string `json:"last_at,omitempty"`
+	Streak       int    `json:"streak"`
+	SentToday    bool   `json:"sent_today"`
+}
+
+// ActivitySummaryView aggregates today's daily activity across accounts.
+type ActivitySummaryView struct {
+	Total     int `json:"total"`
+	Done      int `json:"done"`
+	Failed    int `json:"failed"`
+	StreakMax int `json:"streak_max"`
+}
+
+// ActivityView is the complete daily activity projection used by the apps page,
+// account chips, and the agent detail modal.
+type ActivityView struct {
+	Accounts  []ActivityAccountView `json:"accounts"`
+	Summary   ActivitySummaryView   `json:"summary"`
+	UpdatedAt string                `json:"updated_at"`
+}
+
+// ActivityAccountInput is the provider/account side of the projection.
+type ActivityAccountInput struct {
+	Provider     string
+	ProviderName string
+	Account      string
+	Masked       string
+	Enabled      bool
+	TaskEnabled  bool
+	TodayState   string
+	TodayMessage string
+}
+
+// ActivityRecord is one persisted activity_runs row (already redacted).
+type ActivityRecord struct {
+	Provider   string
+	Account    string
+	Day        string
+	State      string
+	HTTPStatus int
+	LatencyMS  int64
+	Cost       float64
+	Message    string
+	TS         string
+}
+
+func activityKey(provider, account string) string {
+	return provider + "\x00" + account
+}
+
+func activityFailureState(state string) bool {
+	switch state {
+	case "failed_retryable", "failed_final", "unauthorized", "rate_limited",
+		"no_free_model", "needs_stream", "no_reply":
+		return true
+	default:
+		return false
+	}
+}
+
+func activityStateLabel(state string) string {
+	if state == "" {
+		return "none"
+	}
+	return state
+}
+
+// activityStreak counts consecutive Beijing days with a successful activity
+// record. Today is not required: when today has not succeeded yet, the streak
+// still counts back from yesterday (a broken day stops the count).
+func activityStreak(successDays map[string]bool, today string) int {
+	day, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return 0
+	}
+	if !successDays[today] {
+		day = day.AddDate(0, 0, -1)
+	}
+	streak := 0
+	for successDays[day.Format("2006-01-02")] {
+		streak++
+		day = day.AddDate(0, 0, -1)
+	}
+	return streak
+}
+
+// BuildActivityView projects provider accounts plus stored activity records
+// into the UI view. It is a pure function so the projection can be tested
+// without a database or provider runtime.
+func BuildActivityView(
+	accounts []ActivityAccountInput,
+	runs []ActivityRecord,
+	today string,
+	now time.Time,
+) ActivityView {
+	type aggregate struct {
+		todayRecord *ActivityRecord
+		lastAt      string
+		successDays map[string]bool
+	}
+	byAccount := map[string]*aggregate{}
+	for i := range runs {
+		record := runs[i]
+		key := activityKey(record.Provider, record.Account)
+		agg := byAccount[key]
+		if agg == nil {
+			agg = &aggregate{successDays: map[string]bool{}}
+			byAccount[key] = agg
+		}
+		if record.Day == today && (agg.todayRecord == nil || record.TS >= agg.todayRecord.TS) {
+			copied := record
+			agg.todayRecord = &copied
+		}
+		if record.TS > agg.lastAt {
+			agg.lastAt = record.TS
+		}
+		if record.State == "completed" {
+			agg.successDays[record.Day] = true
+		}
+	}
+
+	view := ActivityView{
+		Accounts:  make([]ActivityAccountView, 0, len(accounts)),
+		UpdatedAt: now.UTC().Format(time.RFC3339),
+	}
+	for _, input := range accounts {
+		key := activityKey(input.Provider, input.Account)
+		agg := byAccount[key]
+		if agg == nil {
+			agg = &aggregate{successDays: map[string]bool{}}
+			byAccount[key] = agg
+		}
+		// 旧数据可能只有 daily_ops 的 completed 行而没有 activity_runs 记录；
+		// 今天已成功仍然计入连续天数，避免升级后连击凭空断一天。
+		if input.TodayState == string(engine.Completed) {
+			agg.successDays[today] = true
+		}
+		item := ActivityAccountView{
+			Provider:     input.Provider,
+			ProviderName: input.ProviderName,
+			Account:      input.Account,
+			Masked:       input.Masked,
+			Enabled:      input.Enabled,
+			TaskEnabled:  input.TaskEnabled,
+		}
+		item.LastAt = agg.lastAt
+		item.Streak = activityStreak(agg.successDays, today)
+		switch {
+		case agg.todayRecord != nil:
+			item.TodayState = activityStateLabel(agg.todayRecord.State)
+			item.TodayMessage = agg.todayRecord.Message
+		case input.TodayState == string(engine.Completed):
+			item.TodayState = "completed"
+			item.TodayMessage = input.TodayMessage
+		case input.TodayState == string(engine.FailedRetryable),
+			input.TodayState == string(engine.FailedFinal):
+			item.TodayState = input.TodayState
+			item.TodayMessage = input.TodayMessage
+		default:
+			item.TodayState = "none"
+		}
+		if item.TodayState == "completed" {
+			item.SentToday = true
+			view.Summary.Done++
+		} else if activityFailureState(item.TodayState) {
+			view.Summary.Failed++
+		}
+		if item.Streak > view.Summary.StreakMax {
+			view.Summary.StreakMax = item.Streak
+		}
+		view.Accounts = append(view.Accounts, item)
+	}
+	view.Summary.Total = len(view.Accounts)
+	return view
+}
+
+// ActivityView projects all configured provider accounts that support chat
+// requests through their plugin.
+func (s *Service) ActivityView(ctx context.Context) (ActivityView, error) {
+	view, err := s.CachedListView(ctx)
+	if err != nil {
+		return ActivityView{}, err
+	}
+	today := engine.BeijingDay(s.now())
+	accounts := []ActivityAccountInput{}
+	for _, provider := range view.Providers {
+		if !provider.Activity {
+			continue
+		}
+		for _, account := range provider.Accounts {
+			accounts = append(accounts, ActivityAccountInput{
+				Provider:     provider.ID,
+				ProviderName: provider.Name,
+				Account:      account.Key,
+				Masked:       account.MaskedIdentity,
+				Enabled:      provider.Enabled && account.Enabled,
+				TaskEnabled:  enabledPref(account.TaskPreferences, features.OperationActivity),
+			})
+		}
+	}
+
+	states := map[string]ActivityAccountInput{}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT target, account_id, state, message
+FROM daily_ops
+WHERE operation = ? AND day_key = ?`,
+		features.OperationActivity, today)
+	if err != nil {
+		return ActivityView{}, err
+	}
+	for rows.Next() {
+		var provider, account, state, message string
+		if err := rows.Scan(&provider, &account, &state, &message); err != nil {
+			rows.Close()
+			return ActivityView{}, err
+		}
+		states[activityKey(provider, account)] = ActivityAccountInput{
+			TodayState: state, TodayMessage: message,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return ActivityView{}, err
+	}
+	rows.Close()
+	for i := range accounts {
+		if state, ok := states[activityKey(accounts[i].Provider, accounts[i].Account)]; ok {
+			accounts[i].TodayState = state.TodayState
+			accounts[i].TodayMessage = state.TodayMessage
+		}
+	}
+
+	records := []ActivityRecord{}
+	rows, err = s.db.QueryContext(ctx, `
+SELECT provider, account_id, day_key, state, http_status, latency_ms, cost, message, ts
+FROM activity_runs
+ORDER BY ts ASC, id ASC`)
+	if err != nil {
+		return ActivityView{}, err
+	}
+	for rows.Next() {
+		var record ActivityRecord
+		if err := rows.Scan(&record.Provider, &record.Account, &record.Day,
+			&record.State, &record.HTTPStatus, &record.LatencyMS, &record.Cost,
+			&record.Message, &record.TS); err != nil {
+			rows.Close()
+			return ActivityView{}, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return ActivityView{}, err
+	}
+	rows.Close()
+
+	return BuildActivityView(accounts, records, today, s.now()), nil
 }
