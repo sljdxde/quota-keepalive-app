@@ -308,7 +308,12 @@
   }
   .topbar {
     position: relative; height: 52px; flex: none;
-    display: flex; align-items: center; gap: 10px;
+    /* 三栏 grid：品牌 | 居中导航 | 右侧图标。导航仍严格位于窗口水平中心，
+       但左右两栏把空间预留出来——窗口变窄时品牌先截断/隐藏，导航不会再
+       绝对定位后压住品牌文字（6 个页签后实际发生过的遮挡）。 */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center; gap: 10px;
     padding: 0 14px 0 92px; border-bottom: .5px solid var(--line);
     background: color-mix(in srgb, var(--topbar) var(--glass-alpha-titlebar), transparent);
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
@@ -322,7 +327,9 @@
   /* 常驻刘海是独立的置顶窗口（bar.html），主窗口顶栏不再承载它；只有主窗口
      不可见时才显示刘海，避免它压住顶栏居中的导航。 */
   .brand {
-    min-width: 0;
+    grid-column: 1;
+    justify-self: start;
+    min-width: 0; overflow: hidden;
     display: flex; align-items: center; gap: 9px;
     font-size: var(--fs-md); font-weight: 690; letter-spacing: .012em;
   }
@@ -345,11 +352,10 @@
   }
   .brand-tile svg { width: 19px; height: 19px; }
   .topbar .nav {
-    /* 显式定住垂直位置：绝对定位的子元素如果只写 left，纵向位置来自 flex
-       的「静态位置」推导，在界面缩放（zoom 0.85 等）下容易差半像素到一像素，
-       表现为导航文字与白色胶囊、与右侧图标没对齐。 */
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
+    /* 位于三栏 grid 的中间列并 justify-self:center：几何上仍是窗口水平中心，
+       但不再脱离文档流，品牌与右侧图标各占自己的栏位，互不遮挡。 */
+    grid-column: 2;
+    justify-self: center;
     display: flex; align-items: center; gap: 2px;
     padding: 3px; border-radius: 9px;
     background: var(--seg-track);
@@ -364,7 +370,8 @@
   .nav button:hover { color: var(--fg-2); }
   .nav button.active { color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge); }
   .top-actions {
-    margin-left: auto;
+    grid-column: 3;
+    justify-self: end;
     display: flex; align-items: center; gap: 2px;
   }
   .content {
@@ -2343,17 +2350,19 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
+  /* 默认窗口 920px：6 个页签的导航约 526px，三栏合计放得下品牌全名需要
+     把按钮内边距与栏间距各收一点；再窄到 860 就只留品牌图标。 */
+  @media (max-width: 1000px) {
+    .topbar { gap: 8px; }
+    .nav button { padding: 0 9px; }
+  }
   @media (max-width: 860px) {
     .page { padding: 16px 18px 24px; }
     .topbar {
       padding: 0 10px 0 78px; gap: 8px;
     }
     .brand-name { display: none; }
-    .topbar .nav {
-      position: absolute; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      gap: 0;
-    }
+    .topbar .nav { gap: 0; }
     .nav button { padding: 0 7px; font-size: var(--fs-sm); }
     .pet-settings-layout { grid-template-columns: 1fr; }
     .pet-console { padding: 15px; }

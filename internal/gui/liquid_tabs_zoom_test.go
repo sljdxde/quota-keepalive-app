@@ -33,22 +33,30 @@ func TestLiquidTabsCompensateZoom(t *testing.T) {
 	}
 }
 
-// 顶栏导航必须显式垂直居中：只写 left 的绝对定位元素依赖 flex 静态位置推导，
-// zoom 下容易差半像素，导致导航文字与胶囊/右侧图标不齐。
-func TestTopbarNavIsExplicitlyCentered(t *testing.T) {
+// 回归保护：6 个页签后导航变宽，曾经用绝对定位居中压住左侧品牌文字。
+// 顶栏必须是「品牌 | 居中导航 | 右侧图标」三栏 grid，导航在中间列居中，
+// 左右两栏为品牌和图标保留空间，窗口变窄时品牌先截断/隐藏而不是被遮挡。
+func TestTopbarLayoutReservesSpaceAroundCenteredNav(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/main.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	page := string(data)
-	if !strings.Contains(page, "position: absolute; top: 50%; left: 50%;") {
-		t.Error("顶栏导航缺少显式 top:50% 居中")
+	for _, want := range []string{
+		"grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);",
+		"grid-column: 1;",
+		"grid-column: 2;",
+		"justify-self: center;",
+		"grid-column: 3;",
+		"justify-self: end;",
+		"@media (max-width: 1000px)",
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("顶栏三栏布局缺少 %q", want)
+		}
 	}
-	if !strings.Contains(page, "transform: translate(-50%, -50%);") {
-		t.Error("顶栏导航应使用 translate(-50%,-50%) 双向居中")
-	}
-	if strings.Contains(page, "position: absolute; left: 50%; transform: translateX(-50%);") {
-		t.Error("仍有只做水平居中的绝对定位导航（纵向位置不确定）")
+	if strings.Contains(page, "position: absolute; top: 50%; left: 50%;") {
+		t.Error("顶栏导航不应再用绝对定位居中：会压住品牌文字")
 	}
 }
 

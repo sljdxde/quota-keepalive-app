@@ -544,6 +544,7 @@
     gap: 5px;
     flex: none;
   }
+  /* 只读状态格：不显示手型/悬停/按压反馈，避免让人误以为可以点进去。 */
   .summary-tile {
     min-height: 56px;
     padding: 9px 10px;
@@ -554,17 +555,7 @@
     box-shadow: 0 0 0 .5px var(--line);
     font: inherit;
     text-align: left;
-    cursor: pointer;
-    transition: background .16s ease, box-shadow .16s ease, transform .16s ease;
-  }
-  .summary-tile:hover {
-    background: color-mix(in srgb, var(--card) 86%, var(--accent-soft));
-    box-shadow: 0 0 0 .5px color-mix(in srgb, var(--accent) 24%, var(--line));
-  }
-  .summary-tile:active { transform: scale(.985); }
-  .summary-tile:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    cursor: default;
   }
   .summary-tile.primary {
     background:
@@ -1956,19 +1947,20 @@
     <div class="panel-content">
       <section class="panel-page checkin-page active" id="page-checkin" role="tabpanel"
                aria-labelledby="tab-checkin" tabindex="0">
+        <!-- 三格只做状态展示：点击不再跳转主窗口（用户不需要这个自动跳转）。 -->
         <div class="summary-strip">
-          <button class="summary-tile primary" type="button" data-checkin-scope="all">
+          <div class="summary-tile primary">
             <span class="label">账号</span>
             <b id="summary-total">0<small>个</small></b>
-          </button>
-          <button class="summary-tile" type="button" data-checkin-scope="done">
+          </div>
+          <div class="summary-tile">
             <span class="label">今日完成</span>
             <b id="summary-done">0<small>个</small></b>
-          </button>
-          <button class="summary-tile attention" type="button" data-checkin-scope="attention">
+          </div>
+          <div class="summary-tile attention">
             <span class="label">需处理</span>
             <b id="summary-attention">0<small>个</small></b>
-          </button>
+          </div>
         </div>
 
         <div class="alert" id="alert" hidden>

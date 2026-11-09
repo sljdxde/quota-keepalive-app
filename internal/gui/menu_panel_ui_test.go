@@ -506,13 +506,17 @@ func TestMenuPanelOpenMainStillHidesPanel(t *testing.T) {
 
 func TestCheckinPanelNavigationCollapseAndHiddenScrollbars(t *testing.T) {
 	page, script := readMenuPanelAssets(t)
+	// 汇总三格「账号 / 今日完成 / 需处理」只做状态展示，点击不跳转主窗口。
 	requireStrings(t, page, "菜单栏签到导航",
-		`data-checkin-scope="all"`,
-		`data-checkin-scope="done"`,
-		`data-checkin-scope="attention"`,
+		`class="summary-tile primary"`,
+		`class="summary-tile"`,
+		`class="summary-tile attention"`,
 		`id="checkin-collapse-all"`,
 		`scrollbar-width: none`,
 	)
+	if strings.Contains(page, "data-checkin-scope") {
+		t.Error("汇总三格应只读展示，不应保留跳转入口 data-checkin-scope")
+	}
 	requireStrings(t, script, "菜单栏签到导航逻辑",
 		`function openCheckin(payload)`,
 		`Events.Emit("open-checkin"`,
@@ -521,6 +525,9 @@ func TestCheckinPanelNavigationCollapseAndHiddenScrollbars(t *testing.T) {
 		`currentTargets.every(function (target)`,
 		`function displayAccountIdentity(`,
 	)
+	if strings.Contains(script, "[data-checkin-scope]") {
+		t.Error("panel.js 不应再给汇总三格绑定跳转点击")
+	}
 	// 额度行与状态文案向主窗口对齐：只报「剩余 / 总量」一套口径，窗口额度
 	// 异步补读（带缓存），插件英文原文收进悬停提示。
 	requireStrings(t, page, "菜单栏账号卡额度行",

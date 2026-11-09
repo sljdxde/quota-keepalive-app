@@ -1951,11 +1951,6 @@ document.getElementById("refresh").addEventListener("click", function () {
   refresh();
 });
 document.getElementById("open-main-top").addEventListener("click", openMain);
-document.querySelectorAll("[data-checkin-scope]").forEach(function (tile) {
-  tile.addEventListener("click", function () {
-    openCheckin({ scope: tile.dataset.checkinScope || "all" });
-  });
-});
 document.getElementById("checkin-collapse-all").addEventListener("click", function () {
   if (!currentTargets.length) return;
   const next = nextGroupExpansion(currentTargets, expanded);
