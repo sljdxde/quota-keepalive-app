@@ -251,7 +251,7 @@
     popupTimer = setTimeout(function () {
       popupNode.hidden = true;
       popupTimer = 0;
-    }, 1600);
+    }, 2200);
   }
 
   function placeCharge(progress) {
@@ -498,9 +498,8 @@
             Events.Emit("pet-caught", { caught: true, petId: pet.id });
           } catch (_) {}
           showPopup("捕获成功！", "ok");
-        } else if (result && result.dodged) {
-          showPopup("躲开了！", "miss");
         } else {
+          // 失败统一用「捕获失败」横幅，与「捕获成功！」同一种美漫风格。
           showPopup("捕获失败", "miss");
         }
       },

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { petAimPoint } from "../frontend/assets/pet-gaze.js";
+import {
+  aimForClientPoint,
+  clampPointerToStage,
+  petAimPoint,
+} from "../frontend/assets/pet-gaze.js";
 
 const stage = { left: 0, top: 0, right: 300, bottom: 220, width: 300, height: 220 };
 const avatar = { left: 90, top: 50, right: 210, bottom: 170, width: 120, height: 120 };
@@ -48,4 +52,16 @@ test("pet gaze reaches full range at the stage edges", function () {
   const top = petAimPoint(150, 1, stage, avatar);
   assert.ok(right.x > 0.95 && left.x < -0.95);
   assert.ok(bottom.y > 0.95 && top.y < -0.95);
+});
+
+// 指针可以离开舞台：先钳到最近边缘，方向仍然成立（右下角指针 → x>0, y>0）。
+test("aimForClientPoint clamps pointers outside the stage", function () {
+  const stage = { left: 0, top: 0, width: 400, height: 300, right: 400, bottom: 300 };
+  const avatar = { left: 115, top: 65, width: 170, height: 170, right: 285, bottom: 235 };
+  const outside = aimForClientPoint(900, 900, stage, avatar);
+  assert.ok(outside && outside.x === 1 && outside.y === 1);
+  const topLeft = aimForClientPoint(-50, -50, stage, avatar);
+  assert.ok(topLeft && topLeft.x === -1 && topLeft.y === -1);
+  assert.deepEqual(clampPointerToStage(500, 120, stage), { x: 400, y: 120 });
+  assert.equal(clampPointerToStage(NaN, 0, stage), null);
 });

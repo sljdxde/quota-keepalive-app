@@ -36,3 +36,22 @@ export function petAimPoint(clientX, clientY, stageRect, avatarRect) {
     y: Math.max(-1, Math.min(1, normY)),
   };
 }
+
+// clampPointerToStage 把任意指针位置投影到舞台矩形内。眼神跟随用「指针方向」
+// 而不是「指针必须落在舞台里」：指针移到标题栏/统计区时，头也能往那个方向看，
+// 不会因为指针离开舞台而突然回正。
+export function clampPointerToStage(clientX, clientY, stageRect) {
+  if (!stageRect || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+  if (!(stageRect.width > 0) || !(stageRect.height > 0)) return null;
+  const x = Math.max(stageRect.left, Math.min(stageRect.right, clientX));
+  const y = Math.max(stageRect.top, Math.min(stageRect.bottom, clientY));
+  return { x, y };
+}
+
+// aimForClientPoint 是页面用的唯一入口：先钳到舞台，再按「头到边缘的距离」
+// 归一化。返回值仍是 -1..1，交给 gazePose 转世界角度。
+export function aimForClientPoint(clientX, clientY, stageRect, avatarRect) {
+  const point = clampPointerToStage(clientX, clientY, stageRect);
+  if (!point) return null;
+  return petAimPoint(point.x, point.y, stageRect, avatarRect);
+}

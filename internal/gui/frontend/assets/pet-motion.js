@@ -8,19 +8,22 @@
 // 2. skillProfile：技能类型 + 强度档位 → 粒子数、环数、闪光、镜头冲击、
 //    持续时间、颜色。档位 1-5 与「大招」在同一张表上单调递增，视觉差异由
 //    参数保证，而不是靠调几个系数碰运气。
-// 俯仰与偏航限幅平衡：旧的 headPitch(0.48) 远小于 headYaw(0.72)，「往下看」
-// 只有「往左右看」三分之二的幅度，叠加默认 3/4 侧脸就显得头一直偏右。
-// 现在让竖直与水平接近等强，跟随才「准」。
+// 头部朝向的限幅（弧度）：世界坐标轴口径——偏航绕世界上方 Y、俯仰绕屏幕
+// 水平轴 X。3D 侧会把这组角度转成「相对骨骼父节点」的局部旋转，因此不再依赖
+// 各模型骨骼自身的轴向（旧实现直接把欧拉角乘进骨骼局部四元数，模型一换
+// 骨骼朝向，「往下」就可能变成「往上」，杰尼龟/妙蛙种子都踩过）。
+// 数值按「指针到舞台边缘时，头颈合计约 60° 偏航、45° 俯仰」定，既明显又
+// 不会把脖子扭断。
 export const GAZE_LIMITS = {
-  headYaw: 0.66,
-  headPitch: 0.6,
-  headRoll: 0.1,
-  neckYaw: 0.34,
-  neckPitch: 0.32,
-  bodyYaw: 0.2,
-  bodyPitch: 0.12,
-  bodyRoll: 0.04,
-  bodyShift: 0.06,
+  headYaw: 0.95,
+  headPitch: 0.72,
+  headRoll: 0.12,
+  neckYaw: 0.42,
+  neckPitch: 0.34,
+  bodyYaw: 0.32,
+  bodyPitch: 0.16,
+  bodyRoll: 0.05,
+  bodyShift: 0.09,
 };
 
 function clamp(value, min, max) {
@@ -40,8 +43,10 @@ function signedCurve(value, exponent) {
 // x/y 用同一条灵敏度曲线：旧的 y 指数 0.7 比 x 的 0.62 更钝，竖直跟手更差，
 // 现在两者一致，上下与左右同等灵敏。
 export function gazePose(aimX, aimY) {
-  const x = signedCurve(aimX, 0.62);
-  const y = signedCurve(aimY, 0.62);
+  // 指数 0.55 比旧值 0.62 更敏感：指针离开头部 1/4 舞台就已经有明显偏转，
+  // 不会出现「鼠标动了、头几乎没动」的观感。
+  const x = signedCurve(aimX, 0.55);
+  const y = signedCurve(aimY, 0.55);
   return {
     headYaw: x * GAZE_LIMITS.headYaw,
     headPitch: y * GAZE_LIMITS.headPitch,

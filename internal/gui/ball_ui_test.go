@@ -179,7 +179,6 @@ func TestPetMiniRendersSelectedCompanionOnly(t *testing.T) {
 		`id="pm-popup"`,
 		`捕获成功！`,
 		`捕获失败`,
-		`躲开了！`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("迷你宠物缺少 %q", want)

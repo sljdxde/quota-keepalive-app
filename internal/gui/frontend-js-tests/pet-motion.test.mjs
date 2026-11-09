@@ -47,12 +47,12 @@ test("gazePose is symmetric and shares work between neck, head and body", functi
 test("gazePose vertical pitch tracks as strongly as horizontal yaw", function () {
   const horizontal = gazePose(1, 0);
   const vertical = gazePose(0, 1);
-  assert.ok(Math.abs(vertical.headPitch) >= Math.abs(horizontal.headYaw) * 0.8,
+  assert.ok(Math.abs(vertical.headPitch) >= Math.abs(horizontal.headYaw) * 0.7,
     "俯仰不应弱于偏航太多");
   // 同样小幅位移，上下与左右的响应一致。
   const smallY = gazePose(0, 0.3);
   const smallX = gazePose(0.3, 0);
-  assert.ok(Math.abs(smallY.headPitch) >= Math.abs(smallX.headYaw) * 0.8);
+  assert.ok(Math.abs(smallY.headPitch) >= Math.abs(smallX.headYaw) * 0.7);
 });
 
 test("captureOutcome turns accuracy into dodge / catch results", function () {

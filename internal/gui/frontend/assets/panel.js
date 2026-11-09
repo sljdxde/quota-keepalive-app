@@ -8,7 +8,7 @@ import {
   pokemonById,
 } from "./pokemon-art.js";
 import { nextGroupExpansion } from "./group-collapse.js";
-import { petAimPoint } from "./pet-gaze.js";
+import { aimForClientPoint } from "./pet-gaze.js";
 import { resolvePetGesture } from "./bar-gesture.js";
 import { quotaViewForBalance, quotaViewForReading } from "./account-quota.js";
 import {
@@ -216,6 +216,8 @@ function activateTab(tabId, options) {
     renderPet();
   }
   schedulePanelAutoSkill();
+  if (selected === "pet") schedulePetTalk();
+  else stopPetTalk();
   if (settings.persist !== false) writeStoredValue(panelTabStorageKey, selected);
   updateFooter();
   if (settings.focus) {
@@ -1156,7 +1158,7 @@ function ensurePetViewer(pet) {
       avatar.classList.remove("is-loading", "model-fallback");
       avatar.classList.add("is-3d");
       if (latestPointer.x !== null && latestPointer.y !== null) {
-        updatePetGaze(latestPointer.x, latestPointer.y);
+        applyGazeAtClient(latestPointer.x, latestPointer.y);
       }
     },
     onUnavailable: function () {
@@ -1184,7 +1186,7 @@ function renderPetAvatar(pet) {
   avatar.dataset.evolution = "1";
   if (latestPointer.x !== null && latestPointer.y !== null) {
     requestAnimationFrame(function () {
-      updatePetGaze(latestPointer.x, latestPointer.y);
+      applyGazeAtClient(latestPointer.x, latestPointer.y);
     });
   }
 }
@@ -1275,27 +1277,24 @@ function renderPet() {
   return { pet, tier, previousTier, changedTier };
 }
 
-function updatePetGaze(x, y) {
+// applyGazeAtClient 用指针的屏幕坐标驱动眼神：指针在面板任意位置都有效，
+// 舞台外会钳到最近边缘（朝那个方向看），不会因为指针离开舞台而突然回正。
+function applyGazeAtClient(clientX, clientY) {
   const stage = document.getElementById("pet-stage");
   const avatar = document.getElementById("pet-avatar");
   if (!stage || !avatar) return;
   const stageRect = stage.getBoundingClientRect();
   const avatarRect = avatar.getBoundingClientRect();
-  const aim = petAimPoint(
-    x + stageRect.left,
-    y + stageRect.top,
-    stageRect,
-    avatarRect
-  );
+  const aim = aimForClientPoint(clientX, clientY, stageRect, avatarRect);
   if (!aim) {
     resetPetGaze();
     return;
   }
   const nx = aim.x;
   const ny = aim.y;
-  stage.style.setProperty("--pet-look-x", (nx * 5.2).toFixed(1) + "px");
-  stage.style.setProperty("--pet-look-y", (ny * 3.2).toFixed(1) + "px");
-  stage.style.setProperty("--pet-look-roll", (nx * 1.8).toFixed(1) + "deg");
+  stage.style.setProperty("--pet-look-x", (nx * 6.4).toFixed(1) + "px");
+  stage.style.setProperty("--pet-look-y", (ny * 4.2).toFixed(1) + "px");
+  stage.style.setProperty("--pet-look-roll", (nx * 2.2).toFixed(1) + "deg");
   if (petViewer) petViewer.setPointer(nx, ny);
 }
 
@@ -1314,11 +1313,11 @@ function updatePetForDailyTokens(total) {
   const rendered = renderPet();
   if (rendered.changedTier && previousTier > 0) {
     const pet = rendered.pet;
-    document.getElementById("pet-bubble").textContent = rendered.tier > previousTier
+    speakPet(rendered.tier > previousTier
       ? "今日 Token 达到 " + compactTokenCount(evolutionThreshold(rendered.tier)) +
         "，「" + pet.name + "」技能提升到 " + romanStage(rendered.tier) + " 级。"
       : "今日 Token 重置，「" + pet.name + "」技能回到 " +
-        romanStage(rendered.tier) + " 级。";
+        romanStage(rendered.tier) + " 级。");
   }
   return rendered;
 }
@@ -1335,8 +1334,7 @@ function selectPet(petId) {
   resetPetGaze();
   clearPetSkill();
   renderPet();
-  document.getElementById("pet-bubble").textContent =
-    "轮到「" + pet.name + "」啦，技能等级 " + romanStage(currentSkillTier());
+  speakPet("轮到「" + pet.name + "」啦，技能等级 " + romanStage(currentSkillTier()));
 }
 
 document.querySelectorAll("button[data-pet-id]").forEach(function (button) {
@@ -1611,7 +1609,7 @@ function showPetPopup(text, kind) {
   petPopupTimer = window.setTimeout(function () {
     popup.hidden = true;
     petPopupTimer = 0;
-  }, 1600);
+  }, 2200);
 }
 
 function readPetCaughtMap() {
@@ -1668,10 +1666,8 @@ function playPanelSkill() {
   // 档位越高圈越多：与 3D 粒子一起把「这次更强」讲清楚。
   spawnPanelShockwave(power >= 4 ? 3 : power >= 2 ? 2 : 1);
   const bubble = document.getElementById("pet-bubble");
-  if (bubble) {
-    bubble.classList.remove("is-ultimate");
-    bubble.textContent = pet.messages[petMessageIndex++ % pet.messages.length];
-  }
+  if (bubble) bubble.classList.remove("is-ultimate");
+  speakPet(pet.messages[petMessageIndex++ % pet.messages.length]);
   spawnPetEffect(pet, targetX, targetY, rect);
   stage.classList.remove("playing");
   void stage.offsetWidth;
@@ -1723,12 +1719,15 @@ function panelChargeTick() {
   petChargeFrame = requestAnimationFrame(panelChargeTick);
 }
 
+let petPressActive = false;
+
 function beginPanelPetPress() {
   if (petViewer && (petViewer.isCapturing() || petViewer.isCharging())) return;
+  petPressActive = true;
+  petPressStart = performance.now();
   // 已捕获：按下不蓄力；松手时手势判为「放出」，不会误投第二球。
   if (panelPetIsCaught()) return;
   stopPanelChargeLoop();
-  petPressStart = performance.now();
   petCharging = true;
   const stage = document.getElementById("pet-stage");
   if (stage) stage.classList.add("is-charging");
@@ -1740,6 +1739,8 @@ function beginPanelPetPress() {
 }
 
 function endPanelPetPress(cancelled) {
+  if (!petPressActive) return;
+  petPressActive = false;
   const held = petPressStart ? performance.now() - petPressStart : 0;
   const sweep = sweepProgress(held);
   stopPanelChargeLoop();
@@ -1795,14 +1796,16 @@ function throwPanelBall(accuracy) {
         if (stageNode) stageNode.classList.add("is-caught");
         showPetPopup("捕获成功！", "ok");
         if (bubble) bubble.textContent = "点精灵球放出伙伴";
+        stopPetTalk();
         spawnPanelShockwave(2);
       } else {
-        showPetPopup(result.dodged ? "躲开了！" : "捕获失败", "miss");
+        showPetPopup("捕获失败", "miss");
         if (bubble) {
           bubble.textContent = result.dodged
             ? "它躲开了！再来一球"
             : "球晃了两下弹开了…卡准 PERFECT 更稳";
         }
+        schedulePetTalk();
       }
       schedulePanelAutoSkill();
     },
@@ -1831,6 +1834,50 @@ function releasePanelPetBall() {
   showPetPopup("回来了！", "ok");
   spawnPanelShockwave(1);
   schedulePanelAutoSkill();
+  speakPet(pet.name + "回来啦！");
+}
+
+// ---------- 宠物自动说话（美漫气泡） ----------
+// 每 9-15 秒随机说一句；技能演出也会占用同一条气泡。说话/技能互不打断
+// 正在进行的手势（蓄力/捕获演出期间不自动说话）。
+let petTalkTimer = 0;
+let petTalkIndex = 0;
+
+function speakPet(text) {
+  const bubble = document.getElementById("pet-bubble");
+  if (!bubble || !text) return;
+  bubble.textContent = text;
+  bubble.classList.remove("pop");
+  void bubble.offsetWidth;
+  bubble.classList.add("pop");
+  schedulePetTalk();
+}
+
+function stopPetTalk() {
+  window.clearTimeout(petTalkTimer);
+  petTalkTimer = 0;
+}
+
+function schedulePetTalk() {
+  stopPetTalk();
+  if (activeTab !== "pet" || document.visibilityState === "hidden" || panelPetIsCaught()) {
+    return;
+  }
+  petTalkTimer = window.setTimeout(function () {
+    petTalkTimer = 0;
+    if (activeTab !== "pet" || document.visibilityState === "hidden" || panelPetIsCaught()) {
+      return;
+    }
+    if (petViewer && (petViewer.isCapturing() || petViewer.isCharging())) {
+      schedulePetTalk();
+      return;
+    }
+    const pet = currentPet();
+    const messages = pet.messages && pet.messages.length
+      ? pet.messages
+      : [pet.name + "在陪你写代码。"];
+    speakPet(messages[petTalkIndex++ % messages.length]);
+  }, 9000 + Math.random() * 6000);
 }
 
 let panelAutoSkillTimer = 0;
@@ -1857,18 +1904,14 @@ function schedulePanelAutoSkill() {
 }
 
 const petStage = document.getElementById("pet-stage");
-petStage.addEventListener("pointermove", function (event) {
+// 眼神跟随监听整个文档：指针在面板任意位置移动都生效（舞台外自动钳到边缘）。
+// 只挂 petStage 时，指针移到标题栏/统计区就完全没有事件，头会停在上一帧。
+document.addEventListener("pointermove", function (event) {
   if (activeTab !== "pet") return;
-  const rect = petStage.getBoundingClientRect();
-  latestPointer.x = event.clientX - rect.left;
-  latestPointer.y = event.clientY - rect.top;
-  updatePetGaze(latestPointer.x, latestPointer.y);
+  latestPointer.x = event.clientX;
+  latestPointer.y = event.clientY;
+  applyGazeAtClient(event.clientX, event.clientY);
 }, { passive: true });
-petStage.addEventListener("pointerleave", function () {
-  latestPointer.x = null;
-  latestPointer.y = null;
-  resetPetGaze();
-});
 document.documentElement.addEventListener("pointerleave", function () {
   latestPointer.x = null;
   latestPointer.y = null;
@@ -1879,6 +1922,8 @@ document.addEventListener("visibilitychange", function () {
     petViewer.setEnabled(document.visibilityState !== "hidden" && activeTab === "pet");
   }
   schedulePanelAutoSkill();
+  if (document.visibilityState === "hidden") stopPetTalk();
+  else schedulePetTalk();
 });
 window.addEventListener("blur", resetPetGaze);
 
@@ -1886,12 +1931,13 @@ petStage.addEventListener("pointerdown", function (event) {
   if (event.button !== 0) return;
   beginPanelPetPress();
 });
-petStage.addEventListener("pointerup", function (event) {
-  if (event.button !== 0) return;
+// 松手/取消挂在 window 上：长按蓄力后即使指针滑出舞台再松手，也能正常结算，
+// 不会出现「投出去了但没有任何结果提示」。
+window.addEventListener("pointerup", function (event) {
+  if (event.button !== undefined && event.button !== 0) return;
   endPanelPetPress(false);
 });
-petStage.addEventListener("pointercancel", function () { endPanelPetPress(true); });
-petStage.addEventListener("pointerleave", function () { endPanelPetPress(true); });
+window.addEventListener("pointercancel", function () { endPanelPetPress(true); });
 petStage.addEventListener("keydown", function (event) {
   if (event.key !== "Enter" && event.key !== " ") return;
   event.preventDefault();
@@ -2017,7 +2063,10 @@ Events.On("common:WindowShow", function (event) {
   if (event.sender !== "panel") return;
   if (activeTab === "checkin") refresh();
   if (activeTab === "speed") refreshSpeed();
-  if (activeTab === "pet") renderPet();
+  if (activeTab === "pet") {
+    renderPet();
+    schedulePetTalk();
+  }
   if (pendingSpeedSnapshot) {
     renderSpeed(pendingSpeedSnapshot);
     pendingSpeedSnapshot = null;

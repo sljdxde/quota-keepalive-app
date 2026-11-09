@@ -275,25 +275,47 @@ function captureBone(bone) {
   };
 }
 
+// 世界坐标系的朝向旋转：偏航绕世界 Y、俯仰绕屏幕水平轴 X、滚转绕 Z。
+// 这组旋转与模型/骨骼自身的静止轴向无关，是「屏幕上的朝向」的权威定义。
+function worldAimQuaternion(pitch, yaw, roll) {
+  return new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(pitch, yaw, roll, "YXZ")
+  );
+}
+
+// 复用临时对象，避免每帧给 GC 添垃圾。
+const boneParentWorld = new THREE.Quaternion();
+const boneParentInverse = new THREE.Quaternion();
+const boneDeltaLocal = new THREE.Quaternion();
+const boneDesired = new THREE.Quaternion();
+
+// applyBoneAim 把「世界朝向」换回骨骼父节点的局部旋转：
+//
+//   local = P⁻¹ · R_world · P · base
+//
+// P 是骨骼父节点的当前世界四元数、base 是静止局部四元数。旧实现直接把欧拉角
+// 乘在 base 后面（base · R_local），一旦模型的骨骼静止轴向不是「Y 向上、X 向
+// 右」，低头就会变成抬头、看左变成看右——不同宝可梦骨骼朝向不同，所以必须用
+// 世界轴做中间变换。头承担大部分转向、脖子分担一部分，整体才像「转头」。
 function applyBoneAim(rig, aimX, aimY, delta) {
-  // 角度表在 pet-motion.gazePose 里：头/颈各拿一份独立角度，指针小幅移动也
-  // 能有十几度的偏转，指针到边缘时头颈合计约 50 度，读起来是真的「在看你」。
   const pose = gazePose(aimX, aimY);
-  const headLocal = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(pose.headPitch, pose.headYaw, pose.headRoll, "YXZ")
-  );
-  const neckLocal = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(pose.neckPitch, pose.neckYaw, 0, "YXZ")
-  );
-  // 头承担大部分转向、脖子分担一部分，整体才不会像一块木板在转。
+  const headWorld = worldAimQuaternion(pose.headPitch, pose.headYaw, pose.headRoll);
+  const neckWorld = worldAimQuaternion(pose.neckPitch, pose.neckYaw, 0);
   const headAlpha = 1 - Math.exp(-HEAD_FOLLOW_LAMBDA * delta);
   const neckAlpha = 1 - Math.exp(-NECK_FOLLOW_LAMBDA * delta);
-  [rig.neck && { entry: rig.neck, part: neckLocal, alpha: neckAlpha },
-    rig.head && { entry: rig.head, part: headLocal, alpha: headAlpha }].forEach(function (item) {
-    if (!item || !item.entry) return;
-    const entry = item.entry;
-    const desired = entry.base.clone().multiply(item.part);
-    entry.bone.quaternion.slerp(desired, item.alpha);
+  [
+    { entry: rig.neck, world: neckWorld, alpha: neckAlpha },
+    { entry: rig.head, world: headWorld, alpha: headAlpha },
+  ].forEach(function (item) {
+    if (!item.entry || !item.entry.bone) return;
+    const bone = item.entry.bone;
+    const parent = bone.parent;
+    if (!parent) return;
+    parent.getWorldQuaternion(boneParentWorld);
+    boneParentInverse.copy(boneParentWorld).invert();
+    boneDeltaLocal.copy(boneParentInverse).multiply(item.world).multiply(boneParentWorld);
+    boneDesired.copy(boneDeltaLocal).multiply(item.entry.base);
+    bone.quaternion.slerp(boneDesired, item.alpha);
   });
 }
 
@@ -1199,9 +1221,11 @@ function createStageViewer(canvas, options) {
   const eyeLocalOffset = new THREE.Vector3();
   function applyEyeLook(aimX, aimY) {
     if (!current || !current.eyes || !current.eyes.length) return;
+    // 眼珠层位移放大：只转头时虹膜不动，眼神会显得发直；0.024/0.018 的世界
+    // 位移在 170px 舞台上是「眼珠明显偏过去」的量级。
     eyeWorldOffset.set(
-      Math.max(-1, Math.min(1, aimX)) * 0.014,
-      -Math.max(-1, Math.min(1, aimY)) * 0.01,
+      Math.max(-1, Math.min(1, aimX)) * 0.024,
+      -Math.max(-1, Math.min(1, aimY)) * 0.018,
       0
     );
     current.eyes.forEach(function (eye) {

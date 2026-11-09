@@ -1365,20 +1365,57 @@
     40% { transform: translate(var(--pet-dx, 0px), var(--pet-dy, 0px)) translateY(-14px) scale(.94,1.06) rotate(-4deg); }
     100% { transform: translate(var(--pet-dx, 0px), var(--pet-dy, 0px)) scale(1); }
   }
+  /* 美漫风说话气泡：白底粗描边 + 轻微倾斜 + 双层尾巴指向宠物。
+     宠物会自动说话，气泡要足够显眼（旧版只是左上角一行小字）。 */
   .pet-bubble {
     position: absolute;
-    z-index: 5;
-    left: 15px;
-    top: 15px;
-    max-width: 150px;
-    padding: 7px 9px;
-    border-radius: 9px 9px 9px 3px;
-    color: var(--fg-2);
-    background: var(--card);
-    box-shadow: 0 3px 12px rgba(0,0,0,.08), inset 0 0 0 .5px var(--line);
-    font-size: var(--fs-xs);
+    z-index: 6;
+    left: 14px;
+    top: 14px;
+    max-width: 216px;
+    padding: 9px 12px;
+    border: 2px solid #17191e;
+    border-radius: 12px;
+    color: #17191e;
+    background: #fffdf3;
+    box-shadow: 3px 3px 0 #17191e, 0 8px 18px rgba(0,0,0,.16);
+    font-size: var(--fs-md);
+    font-weight: 760;
     line-height: 1.35;
+    letter-spacing: .01em;
+    transform: rotate(-1.6deg);
+    transform-origin: 0 100%;
     pointer-events: none;
+  }
+  .pet-bubble::after,
+  .pet-bubble::before {
+    content: "";
+    position: absolute;
+    left: 30px;
+    width: 0;
+    height: 0;
+  }
+  .pet-bubble::after {
+    bottom: -14px;
+    border-left: 10px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 14px solid #17191e;
+  }
+  .pet-bubble::before {
+    bottom: -10px;
+    left: 32px;
+    border-left: 7px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 10px solid #fffdf3;
+  }
+  .pet-bubble.pop { animation: pet-bubble-speak .34s cubic-bezier(.18,1.5,.4,1) both; }
+  @keyframes pet-bubble-speak {
+    0% { transform: rotate(-1.6deg) scale(.55); opacity: 0; }
+    62% { transform: rotate(-1.6deg) scale(1.06); opacity: 1; }
+    100% { transform: rotate(-1.6deg) scale(1); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pet-bubble.pop { animation: none; }
   }
   /* 捕获结果：美漫风斜切大字横幅，只在结果瞬间出现（取自 Windows 迷你伙伴）。 */
   .pet-popup {
