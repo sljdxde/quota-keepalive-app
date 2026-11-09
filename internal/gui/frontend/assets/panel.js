@@ -9,6 +9,8 @@ import {
 } from "./pokemon-art.js";
 import { nextGroupExpansion } from "./group-collapse.js";
 import { petAimPoint } from "./pet-gaze.js";
+import { resolvePetGesture } from "./bar-gesture.js";
+import { quotaViewForBalance, quotaViewForReading } from "./account-quota.js";
 import {
   CAPTURE_SWEEP,
   autoSkillDelay,
@@ -256,20 +258,14 @@ function stateLabel(state) {
     signed_confirmed: "已到账",
     signed_provisional: "待复核",
     already: "已领取",
-    ineligible: "不符合资格",
-    inactive: "活动已结束",
+    ineligible: "不符合活动资格",
+    inactive: "活动未开始或已结束",
     manual_required: "需 App 签到",
     failed_retryable: "可重试",
     failed_final: "失败",
     completed: "已完成",
   };
   return labels[state] || "待执行";
-}
-
-function quotaNumber(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 }
 
 function displayAccountIdentity(value) {
@@ -330,6 +326,64 @@ function needsAttention(account) {
     operation.state === "failed_retryable" || operation.state === "failed_final");
 }
 
+// 额度观测缓存：面板每次弹出都会重建账号卡，同一账号 2 分钟内只取一次历史，
+// 避免频繁唤起供应商运行时。
+const accountQuotaCache = new Map();
+const ACCOUNT_QUOTA_CACHE_MS = 120000;
+
+// applyQuotaLine 把纯函数算出的视图落到 DOM：文案 + 可选已用比例细条。
+function applyQuotaLine(line, view) {
+  line.replaceChildren();
+  line.hidden = false;
+  line.classList.toggle("none", !view);
+  if (!view) {
+    line.textContent = "暂无额度读数";
+    return;
+  }
+  const text = document.createElement("span");
+  text.textContent = view.text;
+  line.appendChild(text);
+  if (view.pct == null) return;
+  const track = document.createElement("span");
+  track.className = "quota-track";
+  const bar = document.createElement("i");
+  bar.className = "quota-bar" + (view.pct >= 100 ? " full" : "");
+  bar.style.width = view.pct.toFixed(1) + "%";
+  track.appendChild(bar);
+  line.appendChild(track);
+}
+
+// fillAccountQuota 异步补账号的额度行：先给签到返回的余额兜底，再尝试读最近
+// 一次额度观测（带缓存）。节点已被下一次渲染替换时不再写入。
+async function fillAccountQuota(line, account, operation) {
+  if (!line) return;
+  const fallback = quotaViewForBalance(operation && operation.balance);
+  if (fallback) applyQuotaLine(line, fallback);
+  const providerId = account.target;
+  const accountKey = account.account_id || account.id || "";
+  if (!providerId || !accountKey) return;
+  const cacheKey = providerId + "|" + accountKey;
+  const cached = accountQuotaCache.get(cacheKey);
+  let reading = null;
+  if (cached && Date.now() - cached.at < ACCOUNT_QUOTA_CACHE_MS) {
+    reading = cached.reading;
+  } else {
+    try {
+      const page = asJSON(await Bound.ProvidersHistory(providerId, accountKey, 1));
+      reading = (page.quota || [])[0] || null;
+      accountQuotaCache.set(cacheKey, { at: Date.now(), reading: reading });
+    } catch (_) {
+      return;
+    }
+  }
+  if (!line.isConnected) return;
+  if (!reading) {
+    if (!fallback) applyQuotaLine(line, null);
+    return;
+  }
+  applyQuotaLine(line, quotaViewForReading(reading));
+}
+
 function accountNode(account) {
   const node = document.createElement("div");
   const operation = primaryOperation(account);
@@ -362,10 +416,13 @@ function accountNode(account) {
   } else {
     meta.textContent = "受管来源 · 待检查";
   }
-  if (operation && operation.balance != null) {
-    meta.textContent += " · 额度 " + quotaNumber(operation.balance);
-  }
   copy.appendChild(meta);
+  // 额度行：与主窗口同一套口径（剩余 / 总量）。先渲染账号卡，再异步补最近
+  // 一次额度观测；供应商只在用量窗口里给额度时也能显示出来。
+  const quotaLine = document.createElement("div");
+  quotaLine.className = "acct-quota";
+  quotaLine.hidden = true;
+  copy.appendChild(quotaLine);
   const operations = account.operations || [];
   if (operations.length) {
     const strip = document.createElement("div");
@@ -375,11 +432,14 @@ function accountNode(account) {
       chip.className = "op-chip " + stateClass(entry.state);
       chip.textContent = (opLabels[entry.operation] || "操作") + " · " +
         stateLabel(entry.state);
+      // 插件原文（英文实现细节）收进悬停提示，卡片上只说人话。
+      if (entry.message) chip.title = entry.message;
       strip.appendChild(chip);
     });
     copy.appendChild(strip);
   }
   node.appendChild(copy);
+  fillAccountQuota(quotaLine, account, operation);
 
   const action = document.createElement("button");
   action.className = "mini-action" + (stateClass(state) === "bad" ? " danger" : "");
@@ -1526,14 +1586,32 @@ function spawnPetEffect(pet, x, y, rect, options) {
   }, 760 + power * 110);
 }
 
-// 捕获交互：点击或按住蓄力后松手投出精灵球；技能改成自动释放。
+// 捕获交互（与 Windows 迷你伙伴同一套手势）：轻点放技能、按住 ≥620ms 蓄力
+// 松手投球；已捕获时点一下放出伙伴。结果用美漫风横幅给。
 // 已捕获状态按宠物 id 存在 localStorage，和主窗口共用同一份记录。
 const PET_CAUGHT_STORAGE_KEY = "qka.pet.caught.v1";
 let petPressStart = 0;
 let petChargeFrame = 0;
 let petCharging = false;
-// 捕获态下 pointerdown 只负责开球；同一次 pointerup 不能再补一记弱投。
-let petSuppressThrow = false;
+let petPopupTimer = 0;
+
+function showPetPopup(text, kind) {
+  const popup = document.getElementById("pet-popup");
+  const label = document.getElementById("pet-popup-text");
+  if (!popup || !label) return;
+  label.textContent = text;
+  popup.className = "pet-popup" + (kind === "miss" ? " miss" : "");
+  popup.hidden = false;
+  // 重播入场动画：先清掉再强制回流一次。
+  popup.style.animation = "none";
+  void popup.offsetWidth;
+  popup.style.animation = "";
+  if (petPopupTimer) window.clearTimeout(petPopupTimer);
+  petPopupTimer = window.setTimeout(function () {
+    popup.hidden = true;
+    petPopupTimer = 0;
+  }, 1600);
+}
 
 function readPetCaughtMap() {
   try {
@@ -1570,8 +1648,8 @@ function spawnPanelShockwave(count) {
   }
 }
 
-// 技能自动释放：随机挑一个目标点放 2D 技能层 + 3D 特效。
-function spawnPanelAutoSkill() {
+// 技能演出：轻点宠物与自动释放共用同一套（随机目标点 + 2D 技能层 + 3D 特效）。
+function playPanelSkill() {
   const pet = currentPet();
   const stage = document.getElementById("pet-stage");
   if (!stage) return;
@@ -1597,6 +1675,11 @@ function spawnPanelAutoSkill() {
   stage.classList.remove("playing");
   void stage.offsetWidth;
   stage.classList.add("playing");
+}
+
+// 自动释放（按 Token 档位定时）保留原入口名：轻点与自动走同一套演出。
+function spawnPanelAutoSkill() {
+  playPanelSkill();
 }
 
 function panelChargeUi(sweep) {
@@ -1640,12 +1723,9 @@ function panelChargeTick() {
 }
 
 function beginPanelPetPress() {
-  if (panelPetIsCaught()) {
-    petSuppressThrow = true;
-    releasePanelPetBall();
-    return;
-  }
   if (petViewer && (petViewer.isCapturing() || petViewer.isCharging())) return;
+  // 已捕获：按下不蓄力；松手时手势判为「放出」，不会误投第二球。
+  if (panelPetIsCaught()) return;
   stopPanelChargeLoop();
   petPressStart = performance.now();
   petCharging = true;
@@ -1670,11 +1750,26 @@ function endPanelPetPress(cancelled) {
   if (avatar) avatar.classList.remove("charge");
   if (petViewer) petViewer.setCharging(false);
   panelChargeUi({ position: 0, speed: CAPTURE_SWEEP.baseSpeed });
-  if (cancelled || !petViewer || petSuppressThrow) {
-    petSuppressThrow = false;
+  if (cancelled || !petViewer) return;
+  // 手势与 Windows 迷你伙伴共用同一套纯函数：短按放技能，按住 ≥620ms 才投球，
+  // 已捕获一律按「放出」处理，抓住演出中则忽略。
+  const gesture = resolvePetGesture({
+    heldMs: held,
+    caught: panelPetIsCaught(),
+    capturing: petViewer.isCapturing(),
+  });
+  if (gesture.action === "release") {
+    releasePanelPetBall();
     return;
   }
-  throwPanelBall(timingAccuracy(sweep.position));
+  if (gesture.action === "skill") {
+    playPanelSkill();
+    schedulePanelAutoSkill();
+    return;
+  }
+  if (gesture.action === "throw") {
+    throwPanelBall(timingAccuracy(sweep.position));
+  }
 }
 
 function throwPanelBall(accuracy) {
@@ -1697,12 +1792,16 @@ function throwPanelBall(accuracy) {
         writePanelPetCaught(pet.id, true);
         syncPanelTrayCaught();
         if (stageNode) stageNode.classList.add("is-caught");
-        if (bubble) bubble.textContent = "捕获成功！点精灵球放出伙伴";
+        showPetPopup("捕获成功！", "ok");
+        if (bubble) bubble.textContent = "点精灵球放出伙伴";
         spawnPanelShockwave(2);
-      } else if (bubble) {
-        bubble.textContent = result.dodged
-          ? "它躲开了！再来一球"
-          : "球晃了两下弹开了…卡准 PERFECT 更稳";
+      } else {
+        showPetPopup(result.dodged ? "躲开了！" : "捕获失败", "miss");
+        if (bubble) {
+          bubble.textContent = result.dodged
+            ? "它躲开了！再来一球"
+            : "球晃了两下弹开了…卡准 PERFECT 更稳";
+        }
       }
       schedulePanelAutoSkill();
     },
@@ -1728,6 +1827,7 @@ function releasePanelPetBall() {
   if (stage) stage.classList.remove("is-caught");
   const bubble = document.getElementById("pet-bubble");
   if (bubble) bubble.textContent = pet.name + "回来了！";
+  showPetPopup("回来了！", "ok");
   spawnPanelShockwave(1);
   schedulePanelAutoSkill();
 }
@@ -1902,9 +2002,11 @@ document.getElementById("quit").addEventListener("click", function () {
 });
 
 Events.On("accounts-updated", function () {
+  accountQuotaCache.clear();
   if (activeTab === "checkin") refresh();
 });
 Events.On("accounts-changed", function () {
+  accountQuotaCache.clear();
   if (activeTab === "checkin") refresh();
 });
 

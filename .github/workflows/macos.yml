@@ -1,0 +1,57 @@
+name: macos
+
+# macOS 单元测试闸门。
+# 背景：windows.yml 只在 Windows 上跑 GUI 测试，而 GUI 里有平台分支（悬浮球
+# 仅 Windows、菜单栏面板仅 macOS）。之前 `TestBallWindowOptionsKeepDragAndDockSizes`
+# 在 macOS 上一直是红的，却没有任何 CI 会跑到——平台相关的断言必须自己跳过，
+# 不能靠「没人跑」蒙混。这里在 macOS 上跑同一组 GUI/设置单测与前端用例，
+# 并顺带守住 gofmt。
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'packaging/**'
+      - 'scripts/**'
+      - 'build/**'
+      - 'VERSION'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - '.github/workflows/macos.yml'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Windows 专用的用例（安装探测、盘符 DSN 等）已按平台跳过；macOS 是
+      # POSIX，整包跑得起，能覆盖 cli/app 里那些「只在 macOS 上会踩」的分支
+      # （例如 GUI() 在零值 App 上起异步任务导致的胖 goroutine panic）。
+      - name: Unit tests
+        run: go test ./...
+
+      - name: gofmt check
+        run: test -z "$(gofmt -l ./cmd ./internal)"
+
+      - name: Setup Node for JS tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Frontend JS unit tests
+        run: node --test internal/gui/frontend-js-tests/*.test.mjs

@@ -134,9 +134,10 @@ func (s *BoundService) Run() error {
 	return s.deps.Run(context.Background())
 }
 
-// SettingsSchema 返回声明式设置 schema（用于生成表单）。
+// SettingsSchema 返回声明式设置 schema（用于生成表单）。按当前平台过滤：
+// 「显示悬浮球」这类只在特定平台有意义的项不会出现在其它平台。
 func (s *BoundService) SettingsSchema() (json.RawMessage, error) {
-	return json.Marshal(settings.Schema)
+	return json.Marshal(settings.FieldsForPlatform(goos))
 }
 
 // SettingsGet 返回当前设置值。

@@ -18,17 +18,23 @@ import (
 // opencode 两个数据源在 Windows 上因此从未读到任何记录，Token 速度恒为 0。
 func TestOpenCodeReadOnlyDSNIsValidFileURI(t *testing.T) {
 	cases := []struct {
-		name string
-		path string
-		want string
+		name        string
+		path        string
+		want        string
+		windowsOnly bool
 	}{
-		{"windows 绝对路径", `C:\Users\me\.zcode\cli\db\db.sqlite`, "file:///C:/Users/me/.zcode/cli/db/db.sqlite"},
-		{"windows 小写盘符", `d:\data\opencode.db`, "file:///d:/data/opencode.db"},
-		{"posix 绝对路径", "/home/me/.local/share/opencode/opencode.db", "file:///home/me/.local/share/opencode/opencode.db"},
-		{"相对路径", filepath.Join("cache", "db.sqlite"), "file:cache/db.sqlite"},
+		{"windows 绝对路径", `C:\Users\me\.zcode\cli\db\db.sqlite`, "file:///C:/Users/me/.zcode/cli/db/db.sqlite", true},
+		{"windows 小写盘符", `d:\data\opencode.db`, "file:///d:/data/opencode.db", true},
+		{"posix 绝对路径", "/home/me/.local/share/opencode/opencode.db", "file:///home/me/.local/share/opencode/opencode.db", false},
+		{"相对路径", filepath.Join("cache", "db.sqlite"), "file:cache/db.sqlite", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			// 盘符路径在 POSIX 上 filepath 不把 "\" 当分隔符，不在本条用例的
+			// 覆盖范围（Windows 那两例由 Windows CI 覆盖）。
+			if tc.windowsOnly && runtime.GOOS != "windows" {
+				t.Skip("Windows 盘符路径仅在 Windows 上是绝对路径")
+			}
 			dsn := openCodeReadOnlyDSN(tc.path)
 			base := dsn
 			if i := strings.IndexByte(dsn, '?'); i >= 0 {

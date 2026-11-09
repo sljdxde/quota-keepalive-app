@@ -2,6 +2,7 @@ package gui
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -298,6 +299,11 @@ func TestPetMiniAndMenuOptionsAreFixed(t *testing.T) {
 }
 
 func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
+	// 悬浮球窗口只在 Windows 创建：非 Windows 的 barWindowOptions 是空实现，
+	// 这里断言的是 Windows 窗口选项，别在 macOS/Linux 上误报。
+	if runtime.GOOS != "windows" {
+		t.Skip("悬浮球窗口选项仅在 Windows 生效")
+	}
 	opts := barWindowOptions("system")
 	if opts.Width != ballSize || opts.Height != ballSize {
 		t.Fatalf("悬浮球窗口应为 %d×%d，实际 %d×%d", ballSize, ballSize, opts.Width, opts.Height)
@@ -398,11 +404,11 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 		`runDuration`,
 		`shakeDuration`,
 		`shouldAutoRelease`,
-		} {
-			if !strings.Contains(face, want) {
-				t.Errorf("球面模式判定缺少 %q", want)
-			}
+	} {
+		if !strings.Contains(face, want) {
+			t.Errorf("球面模式判定缺少 %q", want)
 		}
+	}
 }
 
 // 蛙跳 + 速度特效（设计原型 v6 落地）：球面立绘水平翻转成 2D 侧视，

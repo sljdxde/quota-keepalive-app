@@ -30,6 +30,9 @@ type Field struct {
 	// Default 是默认值。bool 项为 bool，select 项为选项值。
 	Default any      `json:"default"`
 	Options []Option `json:"options,omitempty"`
+	// Platform 限定该设置项只在指定平台展示（"" 表示全平台）。取值同 runtime.GOOS：
+	// "windows" / "darwin" / "linux"。设置值本身仍全平台读写，只是表单不展示。
+	Platform string `json:"platform,omitempty"`
 }
 
 // DefaultBool 返回布尔项的默认值；非布尔项返回 false。
@@ -142,6 +145,7 @@ var Schema = []Field{
 		Label:       "显示悬浮球",
 		Description: "屏幕边缘的常驻速度球（仅 Windows）；不需要时可关掉，状态面板与托盘不受影响。",
 		Default:     true,
+		Platform:    "windows",
 	},
 	{
 		Key:         "launch_at_login",
@@ -157,4 +161,17 @@ var Schema = []Field{
 		Description: "执行完成后发送系统通知；默认关闭，不打扰。",
 		Default:     false,
 	},
+}
+
+// FieldsForPlatform 返回指定平台上应展示的设置项：Platform 为空表示全平台。
+// 取值与 runtime.GOOS 一致（windows / darwin / linux）。设置值本身仍全平台读写，
+// 这里只决定表单展示，避免 macOS 上出现「显示悬浮球」这类无效开关。
+func FieldsForPlatform(goos string) []Field {
+	fields := make([]Field, 0, len(Schema))
+	for _, field := range Schema {
+		if field.Platform == "" || field.Platform == goos {
+			fields = append(fields, field)
+		}
+	}
+	return fields
 }

@@ -337,6 +337,33 @@
   .dot.bad { color: var(--red); }
   .acct-meta { margin-top: 2px; color: var(--fg-2); font-size: var(--fs-2xs); }
   .account.bad .acct-meta { color: var(--red); }
+  /* 额度行：与主窗口同一套口径「剩余 / 总量」，只放第一个窗口 + 细条；
+     供应商只在用量窗口里给额度时也能显示出来，无读数时明确说没有。 */
+  .acct-quota {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 2px;
+    color: var(--fg-2);
+    font-size: var(--fs-3xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .acct-quota.none { color: var(--faint); }
+  .acct-quota .quota-track {
+    flex: none;
+    width: 40px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--pill);
+    overflow: hidden;
+  }
+  .acct-quota .quota-bar {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+  .acct-quota .quota-bar.full { background: var(--amber); }
   .acct-ops {
     display: flex;
     flex-wrap: wrap;
@@ -1362,6 +1389,42 @@
     line-height: 1.35;
     pointer-events: none;
   }
+  /* 捕获结果：美漫风斜切大字横幅，只在结果瞬间出现（取自 Windows 迷你伙伴）。 */
+  .pet-popup {
+    position: absolute;
+    z-index: 7;
+    left: 8px;
+    right: 8px;
+    top: 42%;
+    transform: translateY(-50%) rotate(-4deg);
+    padding: 4px 0;
+    text-align: center;
+    background: #ffd54a;
+    border-top: 2px solid #17191e;
+    border-bottom: 2px solid #17191e;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+    pointer-events: none;
+    animation: pet-popup-slam .3s cubic-bezier(.18, 1.4, .4, 1);
+  }
+  .pet-popup.miss { background: #f3f4f6; }
+  .pet-popup span {
+    display: inline-block;
+    font-size: var(--fs-sm);
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: .1em;
+    color: #17191e;
+    text-shadow: 1px 1px 0 #fff, 2px 2px 0 rgba(23, 25, 30, .22);
+    white-space: nowrap;
+  }
+  @keyframes pet-popup-slam {
+    0% { transform: translateY(-50%) rotate(-4deg) scale(1.4); opacity: 0; }
+    60% { transform: translateY(-50%) rotate(-4deg) scale(.96); opacity: 1; }
+    100% { transform: translateY(-50%) rotate(-4deg) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pet-popup { animation: none; }
+  }
   .pet-skill-layer {
     position: absolute;
     inset: 0;
@@ -1978,11 +2041,12 @@
 
         <div class="pet-stage" id="pet-stage" tabindex="0" role="application"
              data-pet="bulbasaur" data-evolution="1"
-             aria-label="宝可梦伙伴舞台：移动鼠标观察视线，点击或按住投出精灵球">
+             aria-label="宝可梦伙伴舞台：移动鼠标观察视线，轻点放技能，按住蓄力后松手投出精灵球">
           <span class="pet-ground" aria-hidden="true"></span>
           <div class="pet-skill-layer" id="pet-skill-layer" aria-hidden="true"></div>
           <div class="pet-avatar" id="pet-avatar"></div>
-          <div class="pet-bubble" id="pet-bubble">点击投球 · 按住蓄力更稳</div>
+          <div class="pet-bubble" id="pet-bubble">轻点放技能 · 按住蓄力投球</div>
+          <span class="pet-popup" id="pet-popup" role="status" aria-live="polite" hidden><span id="pet-popup-text">捕获成功！</span></span>
           <div class="pet-particles" id="pet-particles" aria-hidden="true"></div>
           <div class="pet-charge" id="pet-charge" aria-hidden="true">
             <div class="charge-gauge" id="pet-gauge">
@@ -1993,7 +2057,7 @@
               <span class="charge-max">PERFECT</span>
             </div>
           </div>
-          <div class="pet-stage-caption">技能自动释放 · 投球捕获后点精灵球放出</div>
+          <div class="pet-stage-caption">轻点放技能 · 按住蓄力投球，捕获后点精灵球放出</div>
         </div>
 
         <div class="pet-stats" aria-label="宝可梦技能统计">

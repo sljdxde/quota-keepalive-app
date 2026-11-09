@@ -302,6 +302,8 @@ func TestMenuPanelPetUnlocksPersistAndPlay(t *testing.T) {
 		`id="pet-charge"`,
 		`.pet-stage.is-caught`,
 		`.pet-stage.is-charging .pet-charge`,
+		`id="pet-popup"`,
+		`.pet-popup.miss`,
 	)
 	requireStrings(t, script, "宠物脚本",
 		`const petSelectedStorageKey = "qka.pet.selected"`,
@@ -335,7 +337,14 @@ func TestMenuPanelPetUnlocksPersistAndPlay(t *testing.T) {
 		`aria-pressed`,
 		`event.key !== "Enter"`,
 		`writeStoredValue(petSelectedStorageKey`,
-		// 捕获：点击/按住蓄力投球，技能改为自动释放。
+		// 捕获：轻点放技能、按住 ≥620ms 松手投球（手势与 Windows 迷你伙伴共用
+		// bar-gesture.js 的纯函数），结果用美漫风横幅给出。
+		`import { resolvePetGesture } from "./bar-gesture.js"`,
+		`resolvePetGesture({`,
+		`function playPanelSkill(`,
+		`function showPetPopup(`,
+		`showPetPopup("捕获成功！", "ok")`,
+		`showPetPopup(result.dodged ? "躲开了！" : "捕获失败", "miss")`,
 		`PET_CAUGHT_STORAGE_KEY`,
 		`petViewer.setCaught(panelPetIsCaught(pet.id) || petViewer.isCaught(), false)`,
 		`if (petViewer && !petViewer.isCapturing()) {`,
@@ -511,6 +520,24 @@ func TestCheckinPanelNavigationCollapseAndHiddenScrollbars(t *testing.T) {
 		`function syncPanelCollapseButton(`,
 		`currentTargets.every(function (target)`,
 		`function displayAccountIdentity(`,
+	)
+	// 额度行与状态文案向主窗口对齐：只报「剩余 / 总量」一套口径，窗口额度
+	// 异步补读（带缓存），插件英文原文收进悬停提示。
+	requireStrings(t, page, "菜单栏账号卡额度行",
+		`.acct-quota {`,
+		`.acct-quota .quota-track`,
+		`.acct-quota .quota-bar.full`,
+	)
+	requireStrings(t, script, "菜单栏额度与状态文案",
+		`function fillAccountQuota(`,
+		`Bound.ProvidersHistory(providerId, accountKey, 1)`,
+		`const ACCOUNT_QUOTA_CACHE_MS = 120000`,
+		`import { quotaViewForBalance, quotaViewForReading } from "./account-quota.js"`,
+		`quotaViewForBalance(operation && operation.balance)`,
+		`quotaViewForReading(reading)`,
+		`if (entry.message) chip.title = entry.message`,
+		`ineligible: "不符合活动资格"`,
+		`inactive: "活动未开始或已结束"`,
 	)
 
 	main, err := frontendFS.ReadFile("frontend/main.html")

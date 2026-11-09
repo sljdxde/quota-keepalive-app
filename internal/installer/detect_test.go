@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -32,6 +33,12 @@ func fixedPaths(paths ...string) func(string) bool {
 }
 
 func TestDetectInstall(t *testing.T) {
+	// 用例用的是 Windows 路径语义（盘符、反斜杠、App Paths、开始菜单 .lnk）。
+	// 在 POSIX 上 filepath 不把 "\" 当分隔符，大小写与 basename 判定都不成立，
+	// 这组用例只对 Windows 有意义。
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows 安装探测（App Paths / 开始菜单 / 盘符）")
+	}
 	localAppData := `/Users/me/AppData/Local`
 	defaultExe := filepath.Join(localAppData, "Programs", defaultDirName, ExeName)
 	appData := `/Users/me/AppData/Roaming`

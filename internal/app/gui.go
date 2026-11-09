@@ -60,6 +60,11 @@ func (a *App) GUI() *gui.App {
 // ensureDefaultSchedule 把内置自动执行收敛到产品默认：始终开启、每 2 小时
 // 签到一次。失败只记日志（下次启动再收敛），绝不阻塞启动。
 func (a *App) ensureDefaultSchedule() {
+	// GUI() 用 `go a.ensureDefaultSchedule()` 异步收敛计划；零值/测试里
+	// `a` 可能是 nil，这里显式兜住，避免 goroutine 把整个测试进程带崩。
+	if a == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	exe, err := appExecutable()
