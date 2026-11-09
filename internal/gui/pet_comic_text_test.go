@@ -26,6 +26,9 @@ func TestComicPetTextOnMainWindowAndMiniWindow(t *testing.T) {
 		`showMainPetPopup("捕获成功！", "ok")`,
 		`showMainPetPopup("捕获失败", "miss")`,
 		`border: 2px solid var(--fg);`,
+		`aimForClientPoint(clientX, clientY, stageRect, viewerRect)`,
+		`document.addEventListener("pointermove"`,
+		`window.addEventListener("pointerup"`,
 	)
 	if strings.Contains(mainPage, `result.dodged
             ? "它躲开了！再来一球"`) {

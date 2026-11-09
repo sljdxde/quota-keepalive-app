@@ -3090,7 +3090,7 @@
     evolutionStageForDailyTokens,
     pokemonById,
   } from "./assets/pokemon-art.js";
-  import { petAimPoint } from "./assets/pet-gaze.js";
+  import { aimForClientPoint } from "./assets/pet-gaze.js";
   import {
     CAPTURE_SWEEP,
     autoSkillDelay,
@@ -4265,7 +4265,9 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (!stage || !viewer || !mainPetViewer) return;
     const stageRect = stage.getBoundingClientRect();
     const viewerRect = viewer.getBoundingClientRect();
-    const aim = petAimPoint(clientX, clientY, stageRect, viewerRect);
+    // 舞台外钳到最近边缘：指针移到标题栏/统计区时头也朝那个方向看，
+    // 不会因为离开舞台突然回正（与小窗同一套逻辑）。
+    const aim = aimForClientPoint(clientX, clientY, stageRect, viewerRect);
     if (!aim) {
       resetMainPetGaze();
       return;
@@ -4298,10 +4300,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   const mainPetStageNode = document.getElementById("main-pet-stage");
-  mainPetStageNode.addEventListener("pointermove", function (event) {
+  // 指针监听挂到 document：主界面任意位置移动都能驱动眼神（舞台外钳到边缘）。
+  document.addEventListener("pointermove", function (event) {
+    if (!mainPetTabActive()) return;
     updateMainPetGaze(event.clientX, event.clientY);
   }, { passive: true });
-  mainPetStageNode.addEventListener("pointerleave", resetMainPetGaze);
+  document.documentElement.addEventListener("pointerleave", resetMainPetGaze);
   // 捕获交互：点击或按住蓄力后松手，投出精灵球；命中概率与宠物躲避都在
   // pet-motion.captureOutcome 里算好，这里只负责时长、UI 与持久化。
   // 每只宠物独立记住「已捕获」状态：切走再切回、重开窗口都保持原样。
@@ -4459,6 +4463,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     petChargeFrame = requestAnimationFrame(petChargeTick);
   }
 
+  let petPressActive = false;
+
   function beginMainPetPress() {
     if (mainPetIsCaught()) {
       petSuppressThrow = true;
@@ -4466,6 +4472,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       return;
     }
     if (mainPetViewer && (mainPetViewer.isCapturing() || mainPetViewer.isCharging())) return;
+    petPressActive = true;
     stopPetChargeLoop();
     petPressStart = performance.now();
     petCharging = true;
@@ -4481,6 +4488,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   function endMainPetPress(cancelled) {
+    // window 级 pointerup 会在页面任何位置触发，只有真正从宠物舞台按下
+    // 的那一次才结算，避免点其它按钮时误投一球。
+    if (!petPressActive) return;
+    petPressActive = false;
     const held = petPressStart ? performance.now() - petPressStart : 0;
     const sweep = sweepProgress(held);
     stopPetChargeLoop();
@@ -4588,12 +4599,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (event.button !== 0) return;
     beginMainPetPress();
   });
-  mainPetStageNode.addEventListener("pointerup", function (event) {
-    if (event.button !== 0) return;
+  // 松手/取消挂 window：长按后指针滑出舞台再松手也能正常结算。
+  window.addEventListener("pointerup", function (event) {
+    if (event.button !== undefined && event.button !== 0) return;
     endMainPetPress(false);
   });
-  mainPetStageNode.addEventListener("pointercancel", function () { endMainPetPress(true); });
-  mainPetStageNode.addEventListener("pointerleave", function () { endMainPetPress(true); });
+  window.addEventListener("pointercancel", function () { endMainPetPress(true); });
   mainPetStageNode.addEventListener("keydown", function (event) {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();

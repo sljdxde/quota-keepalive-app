@@ -244,7 +244,7 @@
     pokemonById,
   } from "./assets/pokemon-art.js";
   import { createPokemon3D } from "./assets/pokemon-3d.js";
-  import { petAimPoint } from "./assets/pet-gaze.js";
+  import { aimForClientPoint } from "./assets/pet-gaze.js";
   import { initPerformanceMode } from "./assets/perf-mode.js";
   import {
     sweepProgress,
@@ -648,7 +648,7 @@
 
   stage.addEventListener("pointermove", function (event) {
     if (!viewer) return;
-    const aim = petAimPoint(
+    const aim = aimForClientPoint(
       event.clientX, event.clientY,
       stage.getBoundingClientRect(),
       avatar.getBoundingClientRect()
