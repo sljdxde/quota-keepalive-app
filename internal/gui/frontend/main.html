@@ -2569,8 +2569,6 @@
           <span id="apps-activity">今日活跃 —</span>
           <span class="sep"></span>
           <span id="apps-last">—</span>
-          <span class="sp"></span>
-          <button class="btn" id="run-all" type="button">立即巡检</button>
         </div>
         <p class="muted" style="margin:-6px 0 10px;font-size:var(--fs-xs);line-height:1.5;">
           <b id="schedule-title">自动执行：读取中</b> · <span id="schedule-detail">正在读取 Quota Keepalive 内置周期计划</span>
@@ -3304,15 +3302,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       subtitle: "外观、启动、日志与软件更新",
       keywords: "settings preferences 设置 外观",
       run: function () { openTab("settings"); },
-    },
-    {
-      group: "操作", icon: "巡", title: "立即巡检",
-      subtitle: "执行当前已启用账号的签到",
-      keywords: "run checkin 巡检 执行",
-      run: function () {
-        openTab("apps");
-        document.getElementById("run-all").click();
-      },
     },
     {
       group: "操作", icon: "登", title: "登录 / 添加账号",
@@ -6704,21 +6693,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (text.length <= 4) return "****" + text;
     return "****" + text.slice(-4);
   }
-
-  document.getElementById("run-all").onclick = async function () {
-    const button = this;
-    button.disabled = true;
-    button.textContent = "正在巡检…";
-    try {
-      await Bound.Run();
-      await Promise.all([renderApps(), renderAccounts()]);
-    } catch (_) {
-      document.getElementById("apps-badge").textContent = "巡检失败";
-    } finally {
-      button.disabled = false;
-      button.textContent = "立即巡检";
-    }
-  };
 
   document.getElementById("refresh-all").onclick = function () {
     renderApps();

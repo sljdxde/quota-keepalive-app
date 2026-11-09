@@ -60,4 +60,12 @@ func TestAppsPageUsesAgentRowsAndModal(t *testing.T) {
 	if !strings.Contains(page, `document.getElementById("agent-modal").classList.remove("hidden")`) {
 		t.Error("openAgentModal 缺少显示弹层的语句，点行会没有反应")
 	}
+
+	// 「立即巡检」按钮已移除：自动执行每 2 小时跑一次，账号级也有立即签到/立即活跃，
+	// 全局手动巡检属于重复入口。
+	for _, forbidden := range []string{`id="run-all"`, `立即巡检`, `document.getElementById("run-all")`} {
+		if strings.Contains(page, forbidden) {
+			t.Errorf("应用管理页不应再保留立即巡检入口: %q", forbidden)
+		}
+	}
 }
