@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA 宠物技能特效原型 v3 · 周身融合</title>
+<style>
+:root{
+  --bg:#fafafa;--card:#fff;--ink:#111112;--ink2:#4a4a50;--ink3:#85858c;
+  --line:#e4e4e7;--shadow:0 1px 2px rgba(0,0,0,.04),0 12px 40px -12px rgba(0,0,0,.18);
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:400 13px/1.45 var(--font);padding:20px 20px 40px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.top h1{font-size:18px;font-weight:650;margin:0;letter-spacing:-.01em}
+.top .sub{color:var(--ink3);font-size:12px}
+.spacer{flex:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{border:0;border-right:1px solid var(--line);background:transparent;color:var(--ink2);font:inherit;font-size:12px;padding:6px 12px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);margin-bottom:14px}
+.card .hd{padding:12px 16px;border-bottom:1px solid var(--line);font-weight:600;font-size:13px}
+.card .bd{padding:16px}
+.muted{color:var(--ink3)}
+.tiny{font-size:11.5px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:760px){.grid4{grid-template-columns:repeat(2,1fr)}}
+.cell{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 8px}
+.cell .cap{font-size:12.5px;font-weight:600}
+.cell .fxname{font-size:11.5px;color:var(--ink3);text-align:center}
+
+.stage{
+  position:relative;width:100%;height:230px;border-radius:12px;overflow:hidden;
+  background:radial-gradient(circle at 50% 58%,#2a3040 0%,#161a24 62%,#0b0d13 100%);
+  box-shadow:0 3px 12px rgba(0,0,0,.08),inset 0 0 0 .5px var(--line);cursor:pointer;
+}
+.stage .hint{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);color:rgba(255,255,255,.4);font-size:10px;z-index:9;white-space:nowrap}
+.pet{position:absolute;left:50%;top:52%;width:172px;height:172px;transform:translate(-50%,-50%);object-fit:contain;z-index:4;pointer-events:none;
+  filter:drop-shadow(0 6px 12px rgba(0,0,0,.28))}
+.burst,.back,.front{position:absolute;inset:0;pointer-events:none;overflow:visible}
+.burst{z-index:1}.back{z-index:2}.front{z-index:5}
+.burst svg,.back svg,.front svg{display:block;width:100%;height:100%;overflow:visible}
+
+/* 整体光爆：放射星芒 + 中心辉光，把宠物与特效包成一张画面 */
+.burst .halo{fill:url(#grad-halo);animation:halo-pulse .7s ease-out both;transform-box:fill-box;transform-origin:center}
+.burst .rays{fill:url(#grad-rays);animation:ray-pop .62s cubic-bezier(.16,.8,.25,1) both;transform-box:fill-box;transform-origin:center}
+@keyframes halo-pulse{0%{opacity:0;transform:scale(.4)}35%{opacity:1;transform:scale(1.06)}100%{opacity:.55;transform:scale(1.2)}}
+@keyframes ray-pop{0%{opacity:0;transform:scale(.5) rotate(-12deg)}40%{opacity:1;transform:scale(1.04) rotate(0deg)}100%{opacity:.5;transform:scale(1.16) rotate(8deg)}}
+
+/* 统一的「周身漂浮」包络：半透明、向上飘、不遮挡立绘 */
+.float{animation:float-up 1.1s ease-out both;transform-box:fill-box;transform-origin:center}
+@keyframes float-up{
+  0%{opacity:0;transform:translate(0,6px) scale(.4)}
+  30%{opacity:.92;transform:translate(0,0) scale(1.05)}
+  100%{opacity:.3;transform:translate(var(--dx,0px),var(--dy,-26px)) scale(1.18)}
+}
+
+/* 小火龙：小簇火苗（半透明，不糊原图） */
+.flamelet .outer{fill:url(#grad-fire);opacity:.72}
+.flamelet .inner{fill:url(#grad-fire-inner);opacity:.85}
+/* 妙蛙种子：半透明小叶片（提亮，深色背景上要看得见） */
+.leaflet{fill:url(#grad-leaf);stroke:rgba(235,255,220,.8);stroke-width:.8;opacity:.95}
+.vein{fill:none;stroke:rgba(255,255,255,.7);stroke-width:.8}
+/* 杰尼龟：水泡（基准样式） */
+.bubble circle{fill:url(#grad-bubble);stroke:rgba(210,245,255,.85);stroke-width:1.2}
+.bubble .glint{fill:rgba(255,255,255,.9);stroke:none}
+/* 皮卡丘：周身电光 */
+.bolt{animation:bolt-flash .5s steps(3,end) both}
+@keyframes bolt-flash{0%,100%{opacity:1}30%{opacity:.45}60%{opacity:.9}}
+.bolt path{fill:none;stroke:#fff6b0;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 4px #ffe23d)}
+.bolt .glow{stroke:#ffe45f;stroke-width:6;opacity:.55}
+.bolt .core{stroke:#fffde7;stroke-width:2}
+.arc-ball{fill:url(#grad-bolt);animation:halo-pulse .6s ease-out both;transform-box:fill-box;transform-origin:center}
+
+.defs{position:absolute;width:0;height:0;overflow:hidden}
+body.paused .stage *{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){.stage *{animation:none!important}}
+</style>
+</head>
+<body>
+<svg class="defs" aria-hidden="true"><defs>
+  <radialGradient id="grad-halo"><stop offset="0" stop-color="rgba(255,255,255,.9)"/><stop offset=".45" stop-color="rgba(255,190,80,.55)"/><stop offset="1" stop-color="rgba(255,255,255,0)"/></radialGradient>
+  <linearGradient id="grad-rays" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="rgba(255,255,255,.85)"/><stop offset="1" stop-color="rgba(255,255,255,0)"/></linearGradient>
+  <linearGradient id="grad-fire" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff6a18"/><stop offset=".5" stop-color="#ffab35"/><stop offset="1" stop-color="#ffe799"/></linearGradient>
+  <linearGradient id="grad-fire-inner" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ffe07a"/><stop offset="1" stop-color="#fff8d8"/></linearGradient>
+  <linearGradient id="grad-leaf" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#79cf8c"/><stop offset="1" stop-color="#e6ffc0"/></linearGradient>
+  <radialGradient id="grad-bolt"><stop offset="0" stop-color="#fffde7"/><stop offset=".55" stop-color="#ffe45f"/><stop offset="1" stop-color="rgba(255,210,50,0)"/></radialGradient>
+  <radialGradient id="grad-bubble"><stop offset="0" stop-color="rgba(255,255,255,.5)"/><stop offset=".65" stop-color="rgba(140,220,250,.22)"/><stop offset="1" stop-color="rgba(210,245,255,.65)"/></radialGradient>
+</defs></svg>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>宠物技能特效原型 <span class="sub">v3 · 周身融合</span></h1>
+      <div class="sub">同样是半透明周身漂浮、不遮挡立绘，但内容各是各的：火苗 / 电光 / 水泡 / 树叶</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="seg" id="pause"><button type="button" aria-pressed="false">暂停动效</button></div>
+  </div>
+
+  <div class="card">
+    <div class="hd">融合版 <span class="muted tiny"> · 点击舞台重播；光爆 + 身后/身前两层把立绘包在中间</span></div>
+    <div class="bd grid4" id="grid"></div>
+  </div>
+
+  <div class="card">
+    <div class="hd">设计决策</div>
+    <div class="bd tiny" style="line-height:1.75">
+      <p style="margin:0 0 8px"><b>统一的是构图，不是内容</b>：杰尼龟的水泡是「半透明、周身环绕、不遮挡立绘」的基准样式；小火龙升起的是<b>小簇火苗</b>、妙蛙种子飘的是<b>半透明叶片</b>、皮卡丘是<b>周身电光</b>。四者共用同一个漂浮包络与分布算法，但形状/颜色各自独立，不是全变成气泡。</p>
+      <p style="margin:0 0 8px"><b>不遮挡</b>：火苗与叶片做小、半透明、分布在身体轮廓之外；只有少量飘到身前，主体始终清晰。小火龙不再用盖住原图的实心大火焰。</p>
+      <p style="margin:0 0 8px"><b>整体效果</b>：背景放射星芒 + 中心辉光把宠物与粒子包成一张画面，粒子分「身后 / 身前」两层穿插，立绘夹在中间（z-index 4）。</p>
+      <p style="margin:0"><b>动画</b>：一次爆发包络（光爆膨胀 → 粒子上飘 → 定格淡出），不用持续呼吸；尊重 <code>prefers-reduced-motion</code>。产品侧由 <code>clearPetSkill</code> 定时清 DOM。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var PETS=[
+    {id:"ember",name:"小火龙",desc:"周身升起小簇火苗"},
+    {id:"electric",name:"皮卡丘",desc:"身体周围释放电光"},
+    {id:"water",name:"杰尼龟",desc:"身体周围释放水泡"},
+    {id:"leaf",name:"妙蛙种子",desc:"周身飘起树叶"}
+  ];
+  var SRC={
+    ember:"http://127.0.0.1:8767/assets/pokemon/charmander.png",
+    electric:"http://127.0.0.1:8767/assets/pokemon/pikachu.png",
+    leaf:"http://127.0.0.1:8767/assets/pokemon/bulbasaur.png",
+    water:"http://127.0.0.1:8767/assets/pokemon/squirtle.png"
+  };
+  function f(n){return n.toFixed(1);}
+  function wrap(w,h,inner){
+    return '<svg viewBox="0 0 '+f(w)+' '+f(h)+'" preserveAspectRatio="none">'+inner+'</svg>';
+  }
+
+  /* 背景光爆 */
+  function burstSvg(cx,cy,r){
+    var rays="",n=12;
+    for(var i=0;i<n;i++){
+      var a=(i/n)*Math.PI*2, a2=a+Math.PI/n*.62, R=r*(i%2?0.78:1.12);
+      rays+='<path d="M'+f(cx)+' '+f(cy)+
+        ' L'+f(cx+Math.cos(a-.06)*R)+' '+f(cy+Math.sin(a-.06)*R)+
+        ' Q'+f(cx+Math.cos(a)*R*.72)+' '+f(cy+Math.sin(a)*R*.72)+
+        ' '+f(cx+Math.cos(a2)*R*.42)+' '+f(cy+Math.sin(a2)*R*.42)+' Z"/>';
+    }
+    return '<svg viewBox="0 0 300 230" preserveAspectRatio="none">'+
+      '<ellipse class="halo" cx="'+f(cx)+'" cy="'+f(cy)+'" rx="'+f(r*.92)+'" ry="'+f(r*.8)+'"/>'+
+      '<g class="rays">'+rays+'</g></svg>';
+  }
+
+  /* 小火龙：一簇小火苗（尖端朝上，两层半透明） */
+  function flamelet(x,y,s,delay){
+    var d='M'+f(x-s*.5)+' '+f(y)+
+      ' Q'+f(x-s*.55)+' '+f(y-s*.75)+' '+f(x-s*.1)+' '+f(y-s*1.25)+
+      ' Q'+f(x+s*.05)+' '+f(y-s*1.75)+' '+f(x+s*.16)+' '+f(y-s*2.1)+
+      ' Q'+f(x+s*.3)+' '+f(y-s*1.2)+' '+f(x+s*.42)+' '+f(y-s*.72)+
+      ' Q'+f(x+s*.55)+' '+f(y-s*.25)+' '+f(x+s*.5)+' '+f(y)+' Z';
+    var inner='M'+f(x-s*.24)+' '+f(y)+
+      ' Q'+f(x-s*.28)+' '+f(y-s*.6)+' '+f(x+s*.05)+' '+f(y-s*1.15)+
+      ' Q'+f(x+s*.3)+' '+f(y-s*.55)+' '+f(x+s*.24)+' '+f(y)+' Z';
+    return '<g class="float flamelet" style="--dx:'+(((delay*7)%14)-7)+'px;--dy:'+(-20-(delay%3)*6)+'px;animation-delay:'+delay+'ms">'+
+      '<path class="outer" d="'+d+'"/><path class="inner" d="'+inner+'"/></g>';
+  }
+
+  /* 妙蛙种子：一片半透明叶子。
+     外层 <g> 只做定位（SVG transform 属性），内层 .float 才做 CSS 动画：
+     否则 animation 的 transform 会覆盖 translate，叶子全堆在原点看不见。 */
+  function leaflet(x,y,s,rot,delay){
+    var d='M0 0 Q'+f(s*.6)+' '+f(-s*.85)+' '+f(s*1.35)+' '+f(-s*.15)+
+      ' Q'+f(s*.6)+' '+f(s*.7)+' 0 0 Z';
+    return '<g transform="translate('+f(x)+' '+f(y)+')">'+
+      '<g class="float" style="--dx:'+(((delay*5)%14)-7)+'px;--dy:'+(-18-(delay%3)*6)+'px;animation-delay:'+delay+'ms">'+
+      '<g transform="rotate('+rot+')">'+
+      '<path class="leaflet" d="'+d+'"/><path class="vein" d="M0 0 L'+f(s*1.1)+' '+f(-s*.2)+'"/>'+
+      '</g></g></g>';
+  }
+
+  /* 杰尼龟：水泡 */
+  function bubble(x,y,r,delay){
+    return '<g class="float bubble" style="--dx:'+(((delay*3)%12)-6)+'px;--dy:'+(-20-(delay%3)*8)+'px;animation-delay:'+delay+'ms">'+
+      '<circle cx="'+f(x)+'" cy="'+f(y)+'" r="'+f(r)+'"/>'+
+      '<circle class="glint" cx="'+f(x-r*.35)+'" cy="'+f(y-r*.38)+'" r="'+f(r*.22)+'"/></g>';
+  }
+
+  /* 周身分布：统一的环绕算法，内容由 part() 决定 */
+  function surround(w,h,part,count){
+    var cx=w/2,cy=h*.53,back='',front='';
+    for(var i=0;i<count;i++){
+      var a=i*2.399+.4, rad=48+(i%4)*16;
+      var x=cx+Math.cos(a)*rad*1.15, y=cy+Math.sin(a)*rad*.82;
+      var g=part(x,y,i,a);
+      if(i%3===0) front+=g; else back+=g;
+    }
+    return {back:wrap(w,h,back),front:wrap(w,h,front)};
+  }
+
+  function parts(pet,w,h){
+    if(pet.id==="ember"){
+      return surround(w,h,function(x,y,i){
+        return flamelet(x,y,7+(i%3)*2.2,i*52);
+      },12);
+    }
+    if(pet.id==="leaf"){
+      return surround(w,h,function(x,y,i){
+        return leaflet(x,y,13+(i%3)*3,i*37-20,i*40);
+      },16);
+    }
+    if(pet.id==="water"){
+      return surround(w,h,function(x,y,i){
+        return bubble(x,y,6+(i%4)*3.4,i*52);
+      },12);
+    }
+    // 皮卡丘：周身放射电光（单独构图）
+    var cx=w/2,cy=h*.52,back='',front='';
+    for(var i=0;i<8;i++){
+      var a=(i/8)*Math.PI*2+.2, R=95+(i%3)*14;
+      var ex=cx+Math.cos(a)*R, ey=cy+Math.sin(a)*R*.8;
+      var mx=cx+Math.cos(a)*R*.55+(i%2?12:-12), my=cy+Math.sin(a)*R*.44;
+      var d='M'+f(cx+Math.cos(a)*40)+' '+f(cy+Math.sin(a)*34)+
+        ' L'+f(mx)+' '+f(my)+' L'+f(ex)+' '+f(ey);
+      back+='<g class="bolt" style="animation-delay:'+(i*22)+'ms"><path class="glow" d="'+d+'"/><path class="core" d="'+d+'"/></g>';
+    }
+    front+='<circle class="arc-ball" cx="'+f(cx)+'" cy="'+f(cy)+'" r="62"/>';
+    for(var j=0;j<3;j++){
+      var sx=cx+(j-1)*44, sy=cy-52+j*8;
+      front+='<g class="bolt" style="animation-delay:'+(80+j*40)+'ms">'+
+        '<path class="core" d="M'+f(sx)+' '+f(sy)+' l8 -12 l-5 -4 l10 -14"/></g>';
+    }
+    return {back:wrap(w,h,back),front:wrap(w,h,front)};
+  }
+
+  function build(pet,stage){
+    var w=stage.clientWidth,h=stage.clientHeight;
+    var p=parts(pet,w,h);
+    stage.querySelector(".burst").innerHTML=burstSvg(w/2,h*.52,Math.min(w,h)*.42);
+    stage.querySelector(".back").innerHTML=p.back;
+    stage.querySelector(".front").innerHTML=p.front;
+  }
+
+  var grid=document.getElementById("grid"),replays=[];
+  PETS.forEach(function(p){
+    var cell=document.createElement("div");
+    cell.className="cell";
+    cell.innerHTML='<div class="stage">'+
+      '<div class="burst"></div><div class="back"></div>'+
+      '<img class="pet" src="'+SRC[p.id]+'" alt="">'+
+      '<div class="front"></div><div class="hint">点击重播</div></div>'+
+      '<div class="cap">'+p.name+'</div><div class="fxname">'+p.desc+'</div>';
+    grid.appendChild(cell);
+    var st=cell.querySelector(".stage");
+    build(p,st);
+    st.addEventListener("click",function(){build(p,st);});
+    replays.push(function(){build(p,st);});
+  });
+  setInterval(function(){if(!document.body.classList.contains("paused"))replays.forEach(function(f){f();});},1700);
+  document.querySelector("#pause button").addEventListener("click",function(){
+    var on=document.body.classList.toggle("paused");
+    this.setAttribute("aria-pressed",String(on));
+    this.textContent=on?"继续动效":"暂停动效";
+  });
+})();
+</script>
+</body>
+</html>

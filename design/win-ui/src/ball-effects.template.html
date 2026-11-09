@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA 悬浮球 · 2D 侧视蛙跳原型 v6</title>
+<style>
+/* ============================================================
+   设计令牌：沿用 magpie / qka-ui.css（近白中性底、1px 细线、扁平卡片）
+   本次只做「悬浮球侧视跑步」原型：产品前端一行未改。
+   ============================================================ */
+:root {
+  --bg: #fafafa; --bg2: #f1f1f2; --card: #fff; --card2: #f7f7f8;
+  --ink: #111112; --ink2: #4a4a50; --ink3: #85858c;
+  --line: #e4e4e7; --line2: #ececef; --track: #f1f1f4;
+  --accent: #1f7a8c; --gold: #c9962b; --warn: #b25000; --bad: #c4403d;
+  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px -12px rgba(0,0,0,.18);
+  --r-sm: 8px; --r-md: 10px; --r-lg: 12px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+:root[data-theme="dark"] {
+  --bg: #0b0b0c; --bg2: #121214; --card: #161618; --card2: #1b1b1e;
+  --ink: #f2f2f3; --ink2: #b3b3ba; --ink3: #7a7a82;
+  --line: #26262a; --line2: #202024; --track: #2d2d33;
+  --accent: #4aa3b5; --gold: #e0b256; --warn: #e0a24a; --bad: #e57370;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 20px 60px -20px rgba(0,0,0,.8);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  padding: 20px 20px 40px;
+}
+.wrap { max-width: 1040px; margin: 0 auto; }
+
+/* ---------- 顶栏 ---------- */
+.top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.top h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+.top .sub { color: var(--ink3); font-size: 12px; }
+.top .spacer { flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--card); }
+.seg button {
+  border: 0; border-right: 1px solid var(--line); background: transparent;
+  color: var(--ink2); font: inherit; font-size: 12px; padding: 6px 12px; cursor: pointer;
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--bg2); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* ---------- 卡片 ---------- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow); }
+.card .hd { padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13px; }
+.card .bd { padding: 16px; }
+.muted { color: var(--ink3); }
+.tiny { font-size: 11.5px; }
+
+/* ---------- 控制条 ---------- */
+.ctrl { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.ctrl .slider { flex: 1; min-width: 240px; display: flex; align-items: center; gap: 10px; }
+.ctrl input[type="range"] { flex: 1; accent-color: var(--accent); }
+.readout { display: flex; align-items: baseline; gap: 6px; min-width: 128px; }
+.readout b { font-size: 26px; font-weight: 680; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.readout span { color: var(--ink3); font-size: 11.5px; }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.presets button {
+  border: 1px solid var(--line); background: var(--card); color: var(--ink2);
+  font: inherit; font-size: 12px; padding: 5px 10px; border-radius: 7px; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.presets button:hover { background: var(--bg2); }
+.presets button.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.chk { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.chk input { accent-color: var(--accent); }
+
+/* ---------- 主区 ---------- */
+.main { display: grid; grid-template-columns: 300px 1fr; gap: 14px; margin-bottom: 14px; }
+@media (max-width: 780px) { .main { grid-template-columns: 1fr; } }
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.zoom { width: 240px; height: 216px; display: grid; place-items: center; }
+.zoom .ball { transform: scale(3.6); }
+.realrow { display: flex; align-items: center; gap: 14px; padding-top: 4px; border-top: 1px solid var(--line2); width: 100%; justify-content: center; }
+.realrow .lbl { color: var(--ink3); font-size: 11.5px; }
+
+.info { display: flex; flex-direction: column; gap: 10px; }
+.tier-badge { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+  padding: 5px 10px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  background: var(--bg2); border: 1px solid var(--line); }
+.tier-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink3); }
+.tier-badge[data-fx="1"] .dot { background: var(--gold); }
+.tier-badge[data-fx="2"] .dot { background: #ef6a2a; }
+.tier-badge[data-fx="2"] { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, var(--line)); }
+.kv { display: grid; grid-template-columns: 76px 1fr; gap: 6px 12px; font-size: 12.5px; }
+.kv dt { color: var(--ink3); }
+.kv dd { margin: 0; }
+.rules { border-top: 1px solid var(--line2); padding-top: 10px; margin-top: 2px; font-size: 12px; color: var(--ink2); }
+.rules table { width: 100%; border-collapse: collapse; }
+.rules th, .rules td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line2); font-weight: 400; }
+.rules th { color: var(--ink3); font-size: 11.5px; }
+.rules tr:last-child td { border-bottom: 0; }
+.rules code { font-size: 11.5px; color: var(--ink2); }
+
+/* ---------- 对比行 ---------- */
+.row { margin-bottom: 14px; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 720px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+.cell { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 8px 12px; }
+.cell .cap { font-size: 12.5px; font-weight: 600; }
+.cell .fxname { font-size: 11.5px; color: var(--ink3); min-height: 17px; }
+.mini { height: 126px; display: grid; place-items: center; }
+.mini .ball { transform: scale(2.2); }
+.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 620px) { .trio { grid-template-columns: 1fr; } }
+.trio .mini { height: 104px; }
+.trio .mini .ball { transform: scale(1.8); }
+.cell .tag { font-size: 11px; padding: 2px 8px; border-radius: 5px; background: var(--bg2); color: var(--ink2); font-variant-numeric: tabular-nums; }
+.cell .tag.hot { background: color-mix(in srgb, #ef6a2a 14%, transparent); color: var(--warn); }
+
+/* ============================================================
+   悬浮球：与 internal/gui/frontend/assets/ball.css 同构
+   52px 深色能量球 + 称号色双色渐变环 + 进度头部光点。
+   窗口被 SetWindowRgn 裁成正圆，所以 .fx 层同样圆形裁剪，
+   特效一律收在球内 —— 原型所见即落地所得。
+   ============================================================ */
+.ball {
+  --size: 52px; --ball-hue: 193; --beat: .5s;
+  position: relative; flex: none;
+  width: var(--size); height: var(--size);
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255,255,255,.18), transparent 44%),
+    radial-gradient(circle at 74% 86%,
+      color-mix(in srgb, hsl(var(--ball-hue) 92% 60%) 26%, transparent), transparent 64%),
+    linear-gradient(158deg, #2c3038 0%, #17191e 52%, #090a0d 100%);
+  border: 1px solid rgba(255,255,255,.11);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.2),
+    inset 0 -9px 20px rgba(0,0,0,.55),
+    0 12px 26px -10px rgba(0,0,0,.62);
+  color: #f4f7fb;
+  transition: box-shadow .25s ease;
+}
+.ball[data-pet="charmander"] { --pet: #ff9a3c; --pet2: #ffd45e; --glow: rgba(255,138,31,.55); }
+.ball[data-pet="pikachu"]    { --pet: #ffdf3d; --pet2: #fff7a8; --glow: rgba(255,213,45,.5); }
+.ball[data-pet="bulbasaur"]  { --pet: #7fd48a; --pet2: #c7ef9c; --glow: rgba(99,185,120,.5); }
+.ball[data-pet="squirtle"]   { --pet: #6ec8f0; --pet2: #c6ecff; --glow: rgba(78,169,215,.5); }
+.ball[data-fx="2"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.24),
+    inset 0 -9px 20px rgba(0,0,0,.5),
+    inset 0 0 12px var(--glow),
+    0 0 14px -2px var(--glow),
+    0 12px 26px -10px rgba(0,0,0,.62);
+}
+.ball .ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); z-index: 5; pointer-events: none; }
+.ball .ring circle { fill: none; stroke-linecap: round; }
+.ball .ring .track { stroke: rgba(255,255,255,.1); stroke-width: 1; }
+.ball .ring .bar { stroke: url(#ring-gradient); stroke-width: 2.4; filter: drop-shadow(0 0 2.5px hsl(var(--ball-hue) 95% 65% / .7)); transition: stroke-dashoffset .42s cubic-bezier(.22,.9,.24,1); }
+.ball .ring .spark { fill: #fff; filter: drop-shadow(0 0 4px hsl(var(--ball-hue) 95% 70%)); }
+.ball .core { position: relative; z-index: 3; display: grid; place-items: center; gap: 2px; text-align: center; line-height: 1; }
+.ball .core .pet-icon { position: relative; width: 26px; height: 26px; display: block; }
+/* ============================================================
+   2D 侧视小精灵：只用官方立绘本身，不加任何额外小腿、不做 mask 裁切、
+   不拼接。水平翻转 = 朝右的 2D 侧视感。
+   动作 = 青蛙式跳跃：蹲伏蓄力 → 蹬地前倾拉伸 → 向前上方抛物线跃出 →
+   顶点略悬停 → 落地压扁 → 收回重心再蹲伏。上下与前后同时发生，
+   一次一跳、跳间有停顿，不是机械的原地上下正弦抖动。
+   快慢只由周期 --beat 决定，幅度固定。
+   ============================================================ */
+.ball .core .side-run { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.ball .core .side-run .official {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; display: block;
+}
+/* 对照开关：原始正面立绘（不翻转），同样按 --beat 蛙跳 */
+.ball .core .sprite-front { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; }
+.ball[data-view="front"] .core .side-run { display: none; }
+.ball[data-view="front"] .core .sprite-front { display: block; }
+.ball[data-view="front"] .core .sprite-front.running { animation: frog-hop-front var(--beat,.5s) linear infinite; }
+
+.side-run .official {
+  transform-origin: 50% 90%;
+  /* linear：节奏由关键帧百分比分布控制（蹬地快、顶点悬停、跳间停顿），
+     不用整段 ease-in-out，否则会读成匀速上下颠。 */
+  animation: frog-hop var(--beat,.5s) linear infinite;
+}
+@keyframes frog-hop {
+  /* 0–14% 蹲伏蓄力：压扁、后坐、停留 → 一跳一跳的间隔感 */
+  0%, 14% {
+    transform: scaleX(-1) translate(-1.5px, 1px) rotate(-2deg) scaleY(.9) scaleX(1.06);
+  }
+  /* 蹬地：拉伸、前倾、向后蹬 */
+  22% {
+    transform: scaleX(-1) translate(-2px, 0) rotate(-10deg) scaleY(1.1) scaleX(.94);
+  }
+  /* 离地，向前上方跃出 */
+  34% {
+    transform: scaleX(-1) translate(.5px, -3.2px) rotate(-12deg) scaleY(1.04);
+  }
+  /* 顶点：略悬停（两个百分比拉开 = 空中停顿感） */
+  46%, 52% {
+    transform: scaleX(-1) translate(2.5px, -5px) rotate(-5deg) scaleY(1);
+  }
+  /* 下落：继续向前、向下 */
+  66% {
+    transform: scaleX(-1) translate(4px, -2px) rotate(3deg) scaleY(1.02);
+  }
+  /* 落地压扁 */
+  76% {
+    transform: scaleX(-1) translate(4.5px, 1px) rotate(7deg) scaleY(.84) scaleX(1.12);
+  }
+  /* 缓冲站起 */
+  85% {
+    transform: scaleX(-1) translate(3px, 0) rotate(0deg) scaleY(1.02);
+  }
+  /* 收回重心、重新蹲伏：这段慢，读作「准备下一跳」 */
+  100% {
+    transform: scaleX(-1) translate(-1.5px, 1px) rotate(-2deg) scaleY(.9) scaleX(1.06);
+  }
+}
+@keyframes frog-hop-front {
+  0%, 14% { transform: translate(-1.5px, 1px) rotate(-2deg) scaleY(.9) scaleX(1.06); }
+  22% { transform: translate(-2px, 0) rotate(-10deg) scaleY(1.1) scaleX(.94); }
+  34% { transform: translate(.5px, -3.2px) rotate(-12deg) scaleY(1.04); }
+  46%, 52% { transform: translate(2.5px, -5px) rotate(-5deg) scaleY(1); }
+  66% { transform: translate(4px, -2px) rotate(3deg) scaleY(1.02); }
+  76% { transform: translate(4.5px, 1px) rotate(7deg) scaleY(.84) scaleX(1.12); }
+  85% { transform: translate(3px, 0) rotate(0deg) scaleY(1.02); }
+  100% { transform: translate(-1.5px, 1px) rotate(-2deg) scaleY(.9) scaleX(1.06); }
+}
+/* 静止 / 收进球：不播放任何蛙跳 */
+.ball[data-stop="1"] .side-run .official,
+.ball[data-stop="1"] .sprite-front { animation: none; }
+
+.ball .core .ball-icon { width: 26px; height: 26px; display: none; color: #fff; }
+.ball.caught .core .pet-icon { display: none; }
+.ball.caught .core .ball-icon { display: block; animation: ball-shake var(--shake-duration,.6s) ease-in-out infinite; transform-origin: 50% 92%; }
+@keyframes ball-shake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-11deg)} 75%{transform:rotate(11deg)} }
+/* 数字滚动：class 用 odo-* 前缀，避免与页面其它 .strip/.cell 撞名 */
+.ball .roll { display: inline-flex; align-items: flex-start; overflow: hidden; line-height: 1; letter-spacing: 0; font-size: 13px; font-weight: 650; }
+.odo-cell { display: inline-block; width: .62em; height: 1em; overflow: hidden; text-align: center; position: relative; vertical-align: top; }
+.odo-reel { display: block; transform: translateY(0); transition: transform .42s cubic-bezier(.22,.9,.24,1); }
+.odo-reel > span { display: block; height: 1em; line-height: 1em; font-variant-numeric: tabular-nums; }
+.odo-fix { display: block; line-height: 1em; }
+
+/* ============================================================
+   跑步特效：全部从「身后」向左拖出，与蛙跳落地 --beat 同拍
+   朝右跑 → 身后在左。一档每步一团尘；二档再加沿身后的长拖尾
+   （火舌 / 大电弧 / 藤蔓 / 水枪）。中心数字保持干净。
+   ============================================================ */
+.fx { position: absolute; inset: 0; border-radius: 50%; overflow: hidden; pointer-events: none; }
+.fx-back { z-index: 1; }
+.fx-front { z-index: 4; }
+.fx > * { display: none; }
+.ball[data-fx="1"] .fx .t1 { display: block; }
+.ball[data-fx="2"] .fx .t1, .ball[data-fx="2"] .fx .t2 { display: block; }
+.ball.caught .fx { display: none; }
+
+/* 一跳一团：落地那一刻（蛙跳周期 76%）从身后扬起，向左后拖散。
+   前面 0–70% 完全不可见，读作「跳在空中 → 落地才起尘」。 */
+.puff {
+  position: absolute; left: var(--x, 20px); top: var(--y, 35px);
+  width: var(--sz, 7px); height: var(--sz, 7px); border-radius: 50%;
+  opacity: 0;
+  animation: puff-step var(--beat, .5s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+@keyframes puff-step {
+  0%, 70% { transform: translate(0,0) scale(.5); opacity: 0; }
+  76% { transform: translate(0,0) scale(.7); opacity: var(--op, .75); }
+  100% { transform: translate(var(--dx, -15px), var(--dy, -6px)) scale(1.4); opacity: 0; }
+}
+.trail {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+  animation: trail-beat calc(var(--beat, .5s) * 2) ease-in-out infinite;
+}
+@keyframes trail-beat { 0%,100% { opacity: .55; } 45% { opacity: 1; } }
+.trail path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+
+/* 小火龙：脚下扬尘 → 尾巴与脚下跑起火 */
+.puff.smoke {
+  background: radial-gradient(circle, rgba(228,230,236,.8), rgba(150,154,164,.22) 60%, transparent 74%);
+  filter: blur(.7px);
+}
+.puff.ember { background: var(--pet2); box-shadow: 0 0 4px var(--pet); }
+.flame { position: absolute; width: 8px; height: 12px; transform-origin: 50% 100%; opacity: .9;
+  animation: flame-sway var(--beat,.5s) ease-in-out infinite alternate; }
+.flame svg { width: 100%; height: 100%; display: block; }
+@keyframes flame-sway { 0% { transform: scaleY(.82) skewX(-6deg); } 100% { transform: scaleY(1.12) skewX(8deg); } }
+
+/* 皮卡丘：脚步电火花 → 身后拉出大电弧 */
+.puff.spark { background: var(--pet2); box-shadow: 0 0 4px var(--pet);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.trail.arc path { stroke: var(--pet2); stroke-width: 1.8; }
+
+/* 妙蛙种子：踢出种子 → 身后长出藤蔓 */
+.puff.seed {
+  background: linear-gradient(150deg, var(--pet2), var(--pet) 55%, #3d7d52);
+  border-radius: 60% 60% 55% 55% / 70% 70% 40% 40%;
+  box-shadow: inset 1px 1px 0 rgba(255,255,255,.45);
+}
+.trail.vine path.stem { stroke: var(--pet); stroke-width: 1.8;
+  stroke-dasharray: 40; animation: vine-grow calc(var(--beat,.5s) * 2) ease-in-out infinite; }
+@keyframes vine-grow {
+  0% { stroke-dashoffset: 40; opacity: .3; }
+  50%,80% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 40; opacity: .3; }
+}
+.trail.vine path.leaf { fill: var(--pet2); stroke: var(--pet); stroke-width: .5; opacity: .9; }
+
+/* 杰尼龟：溅起水滴 → 身后喷出水枪 */
+.puff.drop {
+  background: linear-gradient(160deg, var(--pet2), var(--pet) 60%, #2e7fae);
+  border-radius: 50% 50% 50% 50% / 65% 65% 40% 40%;
+  box-shadow: inset 1px 1px 0 rgba(255,255,255,.55);
+}
+.trail.jet path { stroke: url(#fx-water); stroke-width: 3;
+  stroke-dasharray: 34; animation: jet-flow calc(var(--beat,.5s) * 2) ease-out infinite; }
+@keyframes jet-flow {
+  0% { stroke-dashoffset: 34; opacity: .2; }
+  30% { opacity: .9; }
+  75% { stroke-dashoffset: 0; opacity: .8; }
+  100% { stroke-dashoffset: -10; opacity: .2; }
+}
+
+/* 暂停（方便逐帧对比两腿交替） */
+body.paused .ball *, body.paused .fx * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .ball *, .fx * { animation: none !important; transition: none !important; }
+  .fx .puff { opacity: .75; }
+  .trail.vine path.stem, .trail.jet path { stroke-dashoffset: 0; }
+  .fx .trail { opacity: .85; }
+}
+.defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+<svg class="defs" aria-hidden="true"><defs>
+  <linearGradient id="ring-gradient" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="hsl(193 92% 66%)"/><stop offset="1" stop-color="hsl(248 92% 70%)"/>
+  </linearGradient>
+  <linearGradient id="fx-fire" x1="0" y1="1" x2="0" y2="0">
+    <stop offset="0" stop-color="#ff6a12"/><stop offset=".5" stop-color="#ffab2e"/><stop offset="1" stop-color="#ffe784"/>
+  </linearGradient>
+  <linearGradient id="fx-water" x1="1" y1="1" x2="0" y2="0">
+    <stop offset="0" stop-color="#2e8fc4"/><stop offset="1" stop-color="#c6ecff"/>
+  </linearGradient>
+</defs></svg>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>悬浮球 · 2D 侧视蛙跳原型 <span class="sub">v6</span></h1>
+      <div class="sub">官方立绘 2D 侧视 · 不加额外小腿 · 青蛙式「上下 + 前后」跳跃 · 跳的频率随速度变化</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="seg" id="theme-seg">
+      <button type="button" data-theme="light" aria-pressed="true">浅色</button>
+      <button type="button" data-theme="dark" aria-pressed="false">深色</button>
+    </div>
+    <div class="seg" id="pause-seg">
+      <button type="button" aria-pressed="false">暂停动效</button>
+    </div>
+  </div>
+
+  <!-- 控制条 -->
+  <div class="card ctrl">
+    <div class="slider">
+      <span class="muted tiny">速度</span>
+      <input type="range" id="speed" min="0" max="500" step="1" value="320" aria-label="token 速度">
+      <div class="readout"><b id="speed-num">320</b><span>tok/s</span></div>
+    </div>
+    <div class="presets" id="presets"></div>
+    <label class="chk"><input type="checkbox" id="caught"> 收进精灵球</label>
+    <label class="chk"><input type="checkbox" id="view-front"> 对照：现有正面立绘（蹦跳）</label>
+  </div>
+
+  <!-- 伙伴切换 -->
+  <div class="card ctrl">
+    <span class="muted tiny">切换伙伴</span>
+    <div class="presets" id="pet-presets"></div>
+    <span class="muted tiny">主舞台与三档演变跟随切换 · 四宠对比固定展示全部</span>
+  </div>
+
+  <!-- 主舞台 + 说明 -->
+  <div class="main">
+    <div class="card stage">
+      <div class="hd" style="width:100%">主舞台 <span class="muted tiny">（放大 3.6× 看两腿交替）</span></div>
+      <div class="zoom" id="zoom-stage"></div>
+      <div class="realrow">
+        <span class="lbl">真实 52px</span>
+        <div id="real-stage"></div>
+      </div>
+    </div>
+    <div class="card info">
+      <div class="hd">当前状态</div>
+      <div class="bd">
+        <div class="tier-badge" id="tier-badge"><span class="dot"></span><span id="tier-name">—</span></div>
+        <dl class="kv">
+          <dt>伙伴</dt><dd id="info-pet">—</dd>
+          <dt>视角</dt><dd id="info-view">—</dd>
+          <dt>蛙跳频率</dt><dd id="info-beat">—</dd>
+          <dt>动作</dt><dd id="info-legs">—</dd>
+          <dt>身后拖尾</dt><dd id="info-fx">—</dd>
+          <dt>环进度</dt><dd id="info-ring">—</dd>
+        </dl>
+        <div class="rules">
+          <table>
+            <thead><tr><th>速度区间</th><th>侧视跑步</th><th>脚下 / 身后</th></tr></thead>
+            <tbody>
+              <tr><td><code>0 – 99</code></td><td>慢蛙跳，一跳一停顿</td><td class="muted">无</td></tr>
+              <tr><td><code>100 – 299</code></td><td>蛙跳频率明显加快</td><td>轻：扬尘 / 电火花 / 种子 / 水滴</td></tr>
+              <tr><td><code>300 – 399</code></td><td>快速连续蛙跳</td><td>重：着火 / 大电弧 / 藤蔓 / 水枪</td></tr>
+              <tr><td><code>≥ 400</code></td><td colspan="2">称号环满环 → 精灵球自动放出（沿用现有行为）</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 频率对比：同一伙伴、四个固定速度，直接看蛙跳快慢 -->
+  <div class="card row">
+    <div class="hd">蛙跳频率对比 <span class="muted tiny">同一伙伴 · 四个固定速度并排，看「跳得快慢」差别</span></div>
+    <div class="bd grid4" id="pace"></div>
+  </div>
+
+  <!-- 同宠不同速 -->
+  <div class="card row">
+    <div class="hd" id="trio-hd">同一伙伴 · 三档演变</div>
+    <div class="bd trio" id="trio"></div>
+  </div>
+
+  <!-- 同速不同宠 -->
+  <div class="card row">
+    <div class="hd">同一速度 · 四种伙伴 <span class="muted tiny" id="grid-hd-speed"></span></div>
+    <div class="bd grid4" id="grid4"></div>
+  </div>
+
+  <!-- 设计说明 -->
+  <div class="card row">
+    <div class="hd">设计决策（落地前请确认）</div>
+    <div class="bd rules" style="border:0;padding-top:0">
+      <table>
+        <thead><tr><th style="width:150px">项</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>2D 侧视小精灵</td><td><b>只用官方立绘本身</b>：水平翻转 + 轻微前倾 = 朝右的 2D 侧视图。<b>不加任何额外小腿、不做 mask 裁切、不拼接</b>，形象就是完整的一张立绘。</td></tr>
+          <tr><td>青蛙式跳跃</td><td>不是机械的上下颠。一个周期 = <b>蹲伏蓄力（压扁后坐）→ 蹬地前倾拉伸 → 向前上方抛物线跃出 → 顶点略悬停 → 下落 → 落地压扁 → 站起收重心 → 再蹲伏</b>。<b>上下 + 前后同时发生</b>，一次一跳、跳间有停顿，用关键帧段落（linear）而不是整段正弦。不摆动任何肢体。</td></tr>
+          <tr><td>速度表现</td><td>快慢<b>只由蛙跳频率</b>决定：0.84s/跳（约 71 跳/分，慢）→ 0.20s/跳（约 300 跳/分，快），约 4.2 倍差距。幅度固定（跳起约 5px、前移约 4.5px）。页面「蛙跳频率对比」把 20 / 120 / 240 / 420 四个速度并排，可直接比。落地尘团只在周期 76% 落地那一刻扬起，与跳跃同拍。<b>待确认</b>：落地时是否沿用产品现版 0.14s 的冲刺周期。</td></tr>
+          <tr><td>方向</td><td>朝右跑 → 身后在左。尘 / 火 / 电 / 水一律从身后向左拖出，二档长拖尾（火舌、大电弧、藤蔓、水枪）也沿这个方向，不铺满球面。</td></tr>
+          <tr><td>形象资源</td><td>沿用现有 4 张官方 2D 立绘，<b>不新增任何图片或 SVG 部件</b>——落地时几乎不用改资源，只需给球面立绘加一个随速度变周期的 <code>animation</code>。</td></tr>
+          <tr><td>阈值</td><td>100 / 300 两档；400 是现有称号环满环与「精灵球自动放出」阈值，保持不变，重拖尾延续到 400 以上。</td></tr>
+          <tr><td>环的颜色</td><td>进度环仍用称号色（与整体 UI 同语言）；宠物主题色只用于拖尾粒子与二档内发光，不改环色。</td></tr>
+          <tr><td>闪屏风险</td><td><b>待确认</b>：跑步是连续动画，与「不要持续动画」的旧约束冲突（0.1.34 曾因 drop-shadow 呼吸带闪整屏）。本版只用 <code>transform / opacity / stroke-dashoffset</code>，不碰 filter 与 box-shadow 动画，落地前仍需在真机置顶小窗上验一次。</td></tr>
+          <tr><td>数字 / 贴边</td><td>沿用现有 odometer 滚动数字，中心保持干净；36px 贴边半圆本次未演示。</td></tr>
+          <tr><td>减少动效</td><td>尊重 <code>prefers-reduced-motion</code>：保留静止侧视姿态，不播放动画。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SPRITES = {
+    charmander: "__SPRITE_CHARMANDER__",
+    pikachu:    "__SPRITE_PIKACHU__",
+    bulbasaur:  "__SPRITE_BULBASAUR__",
+    squirtle:   "__SPRITE_SQUIRTLE__"
+  };
+  var PETS = [
+    { id: "charmander", name: "小火龙",   fx1: "脚下扬尘", fx2: "跑起火来 · 着火" },
+    { id: "pikachu",    name: "皮卡丘",   fx1: "脚步电火花", fx2: "身后大电弧" },
+    { id: "bulbasaur",  name: "妙蛙种子", fx1: "踢出种子", fx2: "身后藤蔓" },
+    { id: "squirtle",   name: "杰尼龟",   fx1: "溅起水滴", fx2: "身后水枪" }
+  ];
+  var THRESHOLDS = [0.5, 8, 12, 16, 24, 32, 48, 68, 96, 136, 200, 280, 400];
+  var RING_LENGTH = 191.6, SPARK_RADIUS = 28.6;
+
+  function petById(id) { return PETS.find(function (p) { return p.id === id; }) || PETS[0]; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function compact(v) {
+    if (!(v > 0)) return "0";
+    if (v < 10) { var r = Math.round(v * 10) / 10; return r >= 10 ? "10" : r.toFixed(1); }
+    if (v < 1000) return String(Math.round(v));
+    return (v / 1000).toFixed(1) + "k";
+  }
+  function fxTier(v) { return v >= 300 ? 2 : v >= 100 ? 1 : 0; }
+  // 蛙跳频率是「跑起来的速度」的唯一表现：0.84s/跳（慢）→ 0.20s/跳（快），
+  // 约 4.2 倍差距。幅度固定，快慢全靠周期，一次一跳有停顿。
+  function beatFor(v) {
+    if (!(v > 0)) return 0.84;
+    var t = Math.min(1, Math.sqrt(v / 400));
+    return Math.round((0.84 - 0.64 * t) * 100) / 100;
+  }
+  function ringProgress(v) {
+    if (v < THRESHOLDS[0]) return 0;
+    var level = 0;
+    THRESHOLDS.forEach(function (t, i) { if (v >= t) level = i + 1; });
+    if (level >= THRESHOLDS.length) return 100;
+    var lo = THRESHOLDS[level - 1], hi = THRESHOLDS[level];
+    var within = hi > lo ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : 1;
+    return ((level - 1 + within) / THRESHOLDS.length) * 100;
+  }
+
+  /* ============================================================
+     2D 侧视小精灵：只用官方立绘本身，不附加任何腿、不裁切、不拼接。
+     水平翻转由 CSS 完成；青蛙式跳跃与频率由 --beat / frog-hop 决定。
+     ============================================================ */
+  function sideArt(petId) {
+    return '' +
+      '<div class="side-run">' +
+        '<img class="official" src="' + SPRITES[petId] + '" alt="" draggable="false">' +
+      '</div>';
+  }
+
+  // ---------- 蛙跳落地尘：每次落地扬起一团，向左后拖散 ----------
+  // 所有粒子同拍（--delay 全 0），只在蛙跳周期的 76% 落地那一刻出现；
+  // c[6] 只是让尘团大小/透明度略有差异，不再错开相位。
+  function puffs(cls, tier, cfg) {
+    return cfg.map(function (c) {
+      return '<i class="puff ' + cls + ' ' + tier + '" style="--x:' + c[0] + 'px;--y:' + c[1] +
+        'px;--sz:' + c[2] + 'px;--dx:' + c[3] + 'px;--dy:' + c[4] + 'px;--op:' + c[5] +
+        ';--delay:0s"></i>';
+    }).join("");
+  }
+  var STEP_LIGHT = [
+    [20, 35, 7, -16, -6, ".7"],
+    [18, 34, 6, -14, -8, ".6"],
+    [16, 36, 5, -12, -5, ".5"]
+  ];
+  var STEP_HEAVY = [
+    [22, 36, 9, -20, -9, ".9"],
+    [19, 34, 8, -18, -11, ".8"]
+  ];
+  var FLAME_PATH = "M7 0 C10 6 14 10 14 16 A7 7 0 0 1 0 16 C0 10 4 6 7 0 Z";
+
+  function fxMarkup(petId) {
+    var back = "", front = "";
+    if (petId === "charmander") {
+      back = puffs("smoke", "t1", STEP_LIGHT) +
+             puffs("smoke", "t2", STEP_HEAVY) +
+             puffs("ember", "t2", [[21, 36, 3, -19, -10, ".95", "-0.1"],
+                                   [17, 34, 3, -16, -12, ".9", "-0.45"]]);
+      // 二档火苗沿身后（左）与脚下，随步伐摆
+      [[4, 30], [9, 34], [14, 37]].forEach(function (c, i) {
+        back += '<span class="flame t2" style="left:' + c[0] + 'px;top:' + c[1] +
+          'px;animation-delay:0s">' +
+          '<svg viewBox="0 0 14 24" preserveAspectRatio="xMidYMax meet">' +
+          '<path d="' + FLAME_PATH + '" fill="url(#fx-fire)"/></svg></span>';
+      });
+    } else if (petId === "pikachu") {
+      front = puffs("spark", "t1", STEP_LIGHT) +
+              puffs("spark", "t2", STEP_HEAVY) +
+              '<svg class="trail arc t2" viewBox="0 0 52 52">' +
+                '<path d="M40 14 L31 17 L35 23 L24 26 L28 33 L17 36 L20 43 L9 44"/>' +
+                '<path d="M43 30 L34 31 L37 37 L26 39"/>' +
+              '</svg>';
+    } else if (petId === "bulbasaur") {
+      front = puffs("seed", "t1", STEP_LIGHT) +
+              puffs("seed", "t2", STEP_HEAVY) +
+              '<svg class="trail vine t2" viewBox="0 0 52 52">' +
+                '<path class="stem" d="M6 49 C7 39 14 36 20 32 C27 28 30 22 34 16"/>' +
+                '<path class="stem" d="M4 38 C9 33 12 28 18 26" style="animation-delay:0s"/>' +
+                '<path class="leaf" d="M20 32 C14 29 13 24 18 23 C22 25 23 30 20 32 Z"/>' +
+                '<path class="leaf" d="M9 26 C4 23 4 18 9 18 C12 20 12 24 9 26 Z"/>' +
+                '<path class="leaf" d="M31 20 C26 16 27 12 31 12 C34 15 34 18 31 20 Z"/>' +
+              '</svg>';
+    } else if (petId === "squirtle") {
+      front = puffs("drop", "t1", STEP_LIGHT) +
+              puffs("drop", "t2", STEP_HEAVY) +
+              '<svg class="trail jet t2" viewBox="0 0 52 52">' +
+                '<path d="M7 45 Q22 40 38 26"/>' +
+                '<path d="M4 34 Q18 32 32 20" style="animation-delay:0s"/>' +
+              '</svg>';
+    }
+    return { back: back, front: front };
+  }
+
+  // ---------- 球的 DOM（与 bar.html 同构） ----------
+  function ballMarkup(petId) {
+    var fx = fxMarkup(petId);
+    return '' +
+      '<svg class="ring" viewBox="0 0 64 64" aria-hidden="true">' +
+        '<circle class="track" cx="32" cy="32" r="30.5"></circle>' +
+        '<circle class="bar" cx="32" cy="32" r="30.5" stroke-dasharray="' + RING_LENGTH + '" stroke-dashoffset="' + RING_LENGTH + '"></circle>' +
+        '<circle class="spark" cx="32" cy="3.4" r="2.2"></circle>' +
+      '</svg>' +
+      '<div class="fx fx-back">' + fx.back + '</div>' +
+      '<div class="core">' +
+        '<div class="pet-icon">' +
+          sideArt(petId) +
+          '<img class="sprite-front" src="' + SPRITES[petId] + '" alt="" draggable="false">' +
+        '</div>' +
+        '<svg class="ball-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+          '<circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>' +
+          '<path d="M2.5 12h19" stroke="currentColor" stroke-width="1.8"/>' +
+          '<circle cx="12" cy="12" r="3.2" fill="#fff" stroke="currentColor" stroke-width="1.6"/>' +
+        '</svg>' +
+        '<b class="roll"></b>' +
+      '</div>' +
+      '<div class="fx fx-front">' + fx.front + '</div>';
+  }
+
+  function makeBall(petId) {
+    var el = document.createElement("div");
+    el.className = "ball";
+    el.dataset.pet = petId;
+    el.innerHTML = ballMarkup(petId);
+    return el;
+  }
+
+  // ---------- 数字滚动 ----------
+  function setOdo(node, text) {
+    var s = String(text);
+    if (node.dataset.text === s) return;
+    if ((node.dataset.text || "").length !== s.length) {
+      node.innerHTML = s.split("").map(function (ch) {
+        if (!/[0-9]/.test(ch)) return '<span class="odo-cell"><span class="odo-fix">' + esc(ch) + '</span></span>';
+        var reel = "";
+        for (var d = 0; d < 10; d++) reel += "<span>" + d + "</span>";
+        return '<span class="odo-cell"><span class="odo-reel">' + reel + '</span></span>';
+      }).join("");
+    }
+    var cells = node.querySelectorAll(".odo-cell");
+    s.split("").forEach(function (ch, i) {
+      var reel = cells[i] && cells[i].querySelector(".odo-reel");
+      if (reel) reel.style.transform = "translateY(-" + (Number(ch) * 10) + "%)";
+    });
+    node.dataset.text = s;
+  }
+
+  // ---------- 应用状态到单个球 ----------
+  function applyBall(rec, speed, caught, frontView) {
+    var el = rec.el;
+    var fx = fxTier(speed), beat = beatFor(speed);
+    el.dataset.fx = String(fx);
+    el.dataset.view = frontView ? "front" : "side";
+    el.dataset.stop = (speed <= 0 || caught) ? "1" : "0";
+    el.classList.toggle("caught", !!caught);
+    // 立绘蛙跳与落地尘共用同一个节拍：快慢只由周期决定
+    el.style.setProperty("--beat", beat + "s");
+
+    var front = el.querySelector(".sprite-front");
+    front.classList.toggle("running", speed > 0 && !caught && frontView);
+    if (caught) {
+      var t = speed > 0 ? Math.min(1, Math.sqrt(speed / 400)) : 0;
+      el.style.setProperty("--shake-duration", Math.round((0.8 - 0.58 * t) * 1000) / 1000 + "s");
+    }
+    setOdo(el.querySelector(".roll"), compact(speed));
+
+    var prog = ringProgress(speed);
+    el.querySelector(".ring .bar").setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - prog / 100)));
+    var spark = el.querySelector(".ring .spark");
+    var a = (prog / 100) * Math.PI * 2;
+    spark.setAttribute("cx", String(32 + SPARK_RADIUS * Math.cos(a)));
+    spark.setAttribute("cy", String(32 + SPARK_RADIUS * Math.sin(a)));
+    spark.style.opacity = prog > 0 ? "" : "0";
+  }
+
+  // ---------- 构建页面 ----------
+  var currentPet = "charmander";
+  var PRESETS = [0, 60, 120, 200, 320, 400, 500];
+  var PRESET_LABEL = { 0: "0 静止", 60: "60", 120: "120", 200: "200", 320: "320 着火档", 400: "400 满环", 500: "500" };
+  var groups = { hero: [], pace: [], trio: [], grid: [] };
+
+  function applyAll() {
+    var speed = Number(document.getElementById("speed").value) || 0;
+    var caught = document.getElementById("caught").checked;
+    var frontView = document.getElementById("view-front").checked;
+    Object.keys(groups).forEach(function (key) {
+      groups[key].forEach(function (rec) {
+        var v = rec.lockSpeed == null ? speed : rec.lockSpeed;
+        applyBall(rec, v, caught, frontView);
+      });
+    });
+    updateInfo(speed, caught, frontView);
+  }
+
+  var TIER_NAME = ["慢蛙跳", "蛙跳 · 轻拖尾", "快蛙跳 · 重拖尾"];
+  function updateInfo(speed, caught, frontView) {
+    var pet = petById(currentPet), fx = fxTier(speed), beat = beatFor(speed);
+    document.getElementById("speed-num").textContent = String(speed);
+    var badge = document.getElementById("tier-badge");
+    badge.dataset.fx = String(fx);
+    document.getElementById("tier-name").textContent =
+      (caught ? "精灵球模式 · " : "") + TIER_NAME[fx] + "  ·  " + speed + " tok/s";
+    document.getElementById("info-pet").textContent = pet.name + "（官方立绘 · 2D 侧视）";
+    document.getElementById("info-view").textContent = frontView ? "对照：原始正面立绘" : "侧视 · 朝右跑";
+    document.getElementById("info-beat").textContent = beat + "s / 跳（约 " + Math.round(60 / beat) + " 跳/分）· 上下 5px + 前移 4.5px";
+    document.getElementById("info-legs").textContent = caught ? "收进精灵球" :
+      speed <= 0 ? "静止站立" : "青蛙式上下+前后跳跃 · 一跳一停顿 · 无额外腿部";
+    document.getElementById("info-fx").textContent = caught ? "无（收进球里）" :
+      fx === 0 ? "无" : fx === 1 ? pet.fx1 + "（每步一团）" : pet.fx2 + " + 主题色内发光";
+    document.getElementById("info-ring").textContent = Math.round(ringProgress(speed)) + "%" + (speed >= 400 ? "（满环 → 自动放出）" : "");
+    document.getElementById("grid-hd-speed").textContent = "· 当前 " + speed + " tok/s";
+    document.getElementById("trio-hd").textContent = "同一伙伴（" + pet.name + "）· 三档演变";
+    PETS.forEach(function (p) {
+      var label = document.querySelector('[data-cell="' + p.id + '"] .fxname');
+      if (label) label.textContent = caught ? "（收进球里）" : fx === 0 ? "无拖尾" : fx === 1 ? p.fx1 : p.fx2;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("#presets button"), function (b) {
+      b.classList.toggle("on", Number(b.dataset.v) === speed);
+    });
+  }
+
+  document.getElementById("presets").innerHTML = PRESETS.map(function (v) {
+    return '<button type="button" data-v="' + v + '">' + PRESET_LABEL[v] + '</button>';
+  }).join("");
+  document.getElementById("presets").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-v]");
+    if (!b) return;
+    document.getElementById("speed").value = b.dataset.v;
+    applyAll();
+  });
+  document.getElementById("speed").addEventListener("input", applyAll);
+  document.getElementById("caught").addEventListener("change", applyAll);
+  document.getElementById("view-front").addEventListener("change", applyAll);
+
+  document.getElementById("theme-seg").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-theme]");
+    if (!b) return;
+    document.documentElement.dataset.theme = b.dataset.theme;
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (x) {
+      x.setAttribute("aria-pressed", String(x === b));
+    });
+  });
+  var pauseBtn = document.querySelector("#pause-seg button");
+  pauseBtn.addEventListener("click", function () {
+    var on = document.body.classList.toggle("paused");
+    this.setAttribute("aria-pressed", String(on));
+    this.textContent = on ? "继续动效" : "暂停动效";
+  });
+
+  function register(el, host, group, lockSpeed) {
+    host.appendChild(el);
+    groups[group].push({ el: el, lockSpeed: lockSpeed == null ? null : lockSpeed });
+  }
+
+  function buildHero() {
+    groups.hero = [];
+    var zh = document.getElementById("zoom-stage"), rh = document.getElementById("real-stage");
+    zh.innerHTML = ""; rh.innerHTML = "";
+    register(makeBall(currentPet), zh, "hero");
+    register(makeBall(currentPet), rh, "hero");
+  }
+
+  // 频率对比：四个固定速度并排，只改蛙跳周期，一眼看出快慢差别。
+  var PACE = [20, 120, 240, 420];
+  function buildPace() {
+    groups.pace = [];
+    var host = document.getElementById("pace");
+    host.innerHTML = PACE.map(function (v) {
+      var b = beatFor(v);
+      return '<div class="cell"><div class="mini"></div><div class="cap">' + v + ' tok/s</div>' +
+        '<div class="fxname">' + b + 's / 跳 · 约 ' + Math.round(60 / b) + ' 跳/分</div></div>';
+    }).join("");
+    var minis = host.querySelectorAll(".mini");
+    PACE.forEach(function (v, i) {
+      register(makeBall(currentPet), minis[i], "pace", v);
+    });
+  }
+
+  var TRIO = [{ v: 60, tag: "0 – 99", cap: "慢蛙跳", hot: false },
+              { v: 200, tag: "100 – 299", cap: "蛙跳 · 轻拖尾", hot: false },
+              { v: 350, tag: "300 +", cap: "快蛙跳 · 重拖尾", hot: true }];
+  function buildTrio() {
+    groups.trio = [];
+    var host = document.getElementById("trio");
+    host.innerHTML = TRIO.map(function (item) {
+      return '<div class="cell"><div class="mini"></div><div class="cap">' + item.cap +
+        '</div><div class="tag' + (item.hot ? " hot" : "") + '">' + item.tag + ' · ' + item.v + '</div></div>';
+    }).join("");
+    var minis = host.querySelectorAll(".mini");
+    TRIO.forEach(function (item, i) {
+      register(makeBall(currentPet), minis[i], "trio", item.v);
+    });
+  }
+
+  document.getElementById("grid4").innerHTML = PETS.map(function (p) {
+    return '<div class="cell" data-cell="' + p.id + '">' +
+      '<div class="mini"></div><div class="cap">' + p.name + '</div>' +
+      '<div class="fxname"></div></div>';
+  }).join("");
+  PETS.forEach(function (p) {
+    var host = document.querySelector('[data-cell="' + p.id + '"] .mini');
+    register(makeBall(p.id), host, "grid");
+  });
+
+  document.getElementById("pet-presets").innerHTML = PETS.map(function (p) {
+    return '<button type="button" data-p="' + p.id + '">' + p.name + '</button>';
+  }).join("");
+  document.getElementById("pet-presets").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-p]");
+    if (!b) return;
+    currentPet = b.dataset.p;
+    Array.prototype.forEach.call(this.querySelectorAll("button"), function (x) {
+      x.classList.toggle("on", x === b);
+    });
+    buildHero();
+    buildPace();
+    buildTrio();
+    applyAll();
+  });
+  document.querySelector('#pet-presets button[data-p="charmander"]').classList.add("on");
+
+  buildHero();
+  buildPace();
+  buildTrio();
+  applyAll();
+})();
+</script>
+</body>
+</html>
