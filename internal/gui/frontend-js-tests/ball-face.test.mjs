@@ -55,9 +55,12 @@ test("ballFaceState: 宠物模式有速度才跑，速度越快周期越短", fu
   assert.equal(fast.running, true);
   assert.ok(slow.runSeconds > mid.runSeconds);
   assert.ok(mid.runSeconds > fast.runSeconds);
-  assert.deepEqual(slow.amplitude, { bob: 2.1, tilt: 4.4, stride: 0.8 });
-  assert.deepEqual(fast.amplitude, { bob: 5, tilt: 12, stride: 2.5 });
-  assert.equal(fast.runSeconds, 0.2);
+  assert.equal(slow.runTier, 2);
+  assert.equal(mid.runTier, 3);
+  assert.equal(fast.runTier, 4);
+  assert.deepEqual(slow.amplitude, { bob: 2.2, tilt: 6, stride: 1.2 });
+  assert.deepEqual(fast.amplitude, { bob: 7, tilt: 20, stride: 4.2 });
+  assert.equal(fast.runSeconds, 0.14);
   // 封顶后不再变快。
   const capped = ballFaceState({ speed: 5000, speedText: "5.0k", caught: false });
   assert.equal(capped.runSeconds, fast.runSeconds);
@@ -95,8 +98,9 @@ test("ballFaceState: reduced-motion 只停动画，不隐藏主体、不改速�
   });
   assert.equal(pet.petVisible, true);
   assert.equal(pet.running, false);
-  assert.equal(pet.runSeconds, 0.562);
-  assert.equal(pet.speedFontPx, 13);
+  assert.equal(pet.runSeconds, 0.3);
+  assert.equal(pet.runTier, 3);
+  assert.equal(pet.speedFontPx, 11);
 
   const ball = ballFaceState({
     speed: 800, speedText: "800", caught: true, reducedMotion: true,
@@ -126,6 +130,7 @@ test("ballFaceState: 非法输入退回安全默认值", function () {
   for (const input of [undefined, null, {}]) {
     const face = ballFaceState(input);
     assert.deepEqual(face.amplitude, { bob: 0, tilt: 0, stride: 0 });
+    assert.equal(face.runTier, 0);
     assert.equal(face.petVisible, true);
     assert.equal(face.ballVisible, false);
     assert.equal(face.running, false);
@@ -140,14 +145,17 @@ test("ballFaceState: 非法输入退回安全默认值", function () {
   assert.equal(textual.running, true);
 });
 
-test("ballSpeedFontPx: 3 位以内 13、4 位 12、5 位以上 10", function () {
-  assert.equal(ballSpeedFontPx("0"), 13);
-  assert.equal(ballSpeedFontPx("18"), 13);
-  assert.equal(ballSpeedFontPx("999"), 13);
-  assert.equal(ballSpeedFontPx("1.2k"), 12);
-  assert.equal(ballSpeedFontPx("18.3k"), 10);
-  assert.equal(ballSpeedFontPx("123M"), 12);
-  assert.equal(ballSpeedFontPx(undefined), 13);
-  assert.equal(BALL_SPEED_FONT_PX, 13);
+test("ballSpeedFontPx: 3 位以内 11、4 位 10、5 位以上 9", function () {
+  assert.equal(ballSpeedFontPx("0"), 11);
+  assert.equal(ballSpeedFontPx("18"), 11);
+  assert.equal(ballSpeedFontPx("999"), 11);
+  // 1000+ 实际是 "1.2k"/"9.9k" 这类带小数点与 k 的 4 字符形态，
+  // 按字符数（不是纯数字位数）分档，等宽字体下每字符 1ch 仍放得下。
+  assert.equal(ballSpeedFontPx("1.2k"), 10);
+  assert.equal(ballSpeedFontPx("9.9k"), 10);
+  assert.equal(ballSpeedFontPx("123M"), 10);
+  assert.equal(ballSpeedFontPx("18.3k"), 9);
+  assert.equal(ballSpeedFontPx(undefined), 11);
+  assert.equal(BALL_SPEED_FONT_PX, 11);
   assert.equal(BALL_PET_SIZE, 26);
 });

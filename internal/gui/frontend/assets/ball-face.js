@@ -4,24 +4,26 @@
 import {
   runAmplitude,
   runDuration,
+  runTier,
   shakeDuration,
   shouldAutoRelease,
 } from "./bar-gesture.js";
 
-// 与 ball.css 对齐：球面宠物/精灵球 26px，速度基准字号 13px。
-// 球本身缩到 52px 后，宠物反而稍大、数字更小，主体更突出。
+// 与 ball.css 对齐：球面宠物/精灵球 26px，速度基准字号 11px。
+// 球缩到 52px 后数字用等宽字体且再收一档：2/3 位 11px、4 位 10px、5 位以上 9px，
+// 4 位数（如 "1200"/"1.2k"）在 44px 可用宽度内仍留足余量。
 export const BALL_PET_SIZE = 26;
-export const BALL_SPEED_FONT_PX = 13;
+export const BALL_SPEED_FONT_PX = 11;
 
 /**
- * 速度数字的字号：3 位以内 13px，4 位 12px，5 位以上 10px。
+ * 速度数字的字号：3 位以内 11px，4 位 10px，5 位以上 9px。
  * @param {string|number} text 已格式化的速度文本（如 "18" / "1.2k" / "18.3k"）
  * @returns {number} 像素字号
  */
 export function ballSpeedFontPx(text) {
   const length = String(text == null ? "" : text).length;
-  if (length >= 5) return 10;
-  if (length === 4) return 12;
+  if (length >= 5) return 9;
+  if (length === 4) return 10;
   return BALL_SPEED_FONT_PX;
 }
 
@@ -36,6 +38,7 @@ export function ballSpeedFontPx(text) {
  *   petVisible: boolean, ballVisible: boolean,
  *   running: boolean, shaking: boolean,
  *   runSeconds: number, shakeSeconds: number,
+ *   runTier: number,
  *   amplitude: {bob: number, tilt: number, stride: number},
  *   autoRelease: boolean, speedFontPx: number,
  * }}
@@ -54,7 +57,8 @@ export function ballFaceState(input) {
     shaking: !reducedMotion && shakeSeconds > 0,
     runSeconds: runSeconds,
     shakeSeconds: shakeSeconds,
-    // 幅度随速度增大：慢速只是轻轻颠，满环速度大幅前倾 + 跨步。
+    // 档位驱动不同跑姿 + 速度线：比连续幅度更容易一眼看出快慢。
+    runTier: runTier(speed),
     amplitude: runAmplitude(speed),
     // 只有精灵球模式才有「被挣开」：普通宠物模式不写回状态、不广播事件。
     autoRelease: caught && shouldAutoRelease(speed),

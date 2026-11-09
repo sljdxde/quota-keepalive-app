@@ -10,6 +10,7 @@ import {
   resolvePetGesture,
   runAmplitude,
   runDuration,
+  runTier,
   shakeDuration,
   shouldAutoRelease,
   shouldStartDrag,
@@ -119,38 +120,57 @@ test("chargeProgress: clamps between 0 and 1 and tracks time linearly", function
   assert.equal(chargeProgress(-100), 0);
 });
 
-// runDuration / shakeDuration：速度越快，动画一步越短（跑得/晃得越快）。
-// 用 sqrt 曲线：常见速度（10~120）能拉开更明显的节奏差，而不是只看周期。
-test("runDuration: idle means no animation, faster speed means shorter cycle", function () {
+// runTier / runDuration / runAmplitude：分档驱动不同跑姿，档间跳变明显。
+// 连续插值在 26px 宠物上肉眼分辨不出，分档后每档周期差约 2 倍。
+test("runTier: 静止 / 踱步 / 小跑 / 快跑 / 冲刺 五档边界", function () {
+  const cases = [
+    [0, 0], [-5, 0], [NaN, 0],
+    [1, 1], [7, 1],
+    [8, 2], [18, 2], [31, 2],
+    [32, 3], [120, 3], [135, 3],
+    [136, 4], [399, 4], [400, 4], [5000, 4],
+  ];
+  for (const [speed, want] of cases) {
+    assert.equal(runTier(speed), want, `speed=${speed}`);
+  }
+});
+
+test("runDuration: 每档一步时长，静止→冲刺差近 10 倍", function () {
   assert.equal(runDuration(0), 0);
   assert.equal(runDuration(-5), 0);
   assert.equal(runDuration(NaN), 0);
-  const slow = runDuration(10);
-  const mid = runDuration(120);
-  const fast = runDuration(400);
-  assert.ok(slow > mid && mid > fast, `应随速度单调变快: ${slow}/${mid}/${fast}`);
-  assert.equal(slow, 0.874);
-  assert.equal(mid, 0.562);
-  assert.equal(fast, 0.2);
-  // 封顶后不再变快。
-  assert.equal(runDuration(5000), 0.2);
+  const tiers = [runDuration(1), runDuration(8), runDuration(32), runDuration(136)];
+  assert.deepEqual(tiers, [1.15, 0.6, 0.3, 0.14]);
+  for (let i = 1; i < tiers.length; i++) {
+    assert.ok(tiers[i - 1] > tiers[i] * 1.7, `相邻档差应明显: ${tiers}`);
+  }
+  // 同一档内周期不变；封顶后也不再变快。
+  assert.equal(runDuration(18), runDuration(8));
+  assert.equal(runDuration(5000), runDuration(136));
 });
 
-test("runAmplitude: 慢速轻颠，越接近满环速度幅度越大", function () {
+test("runAmplitude: 各档幅度跳变，冲刺档远大于踱步档", function () {
   assert.deepEqual(runAmplitude(0), { bob: 0, tilt: 0, stride: 0 });
   assert.deepEqual(runAmplitude(-5), { bob: 0, tilt: 0, stride: 0 });
   assert.deepEqual(runAmplitude(NaN), { bob: 0, tilt: 0, stride: 0 });
-  const slow = runAmplitude(10);
-  const mid = runAmplitude(120);
-  const fast = runAmplitude(400);
-  assert.deepEqual(slow, { bob: 2.1, tilt: 4.4, stride: 0.8 });
-  assert.deepEqual(mid, { bob: 3.4, tilt: 7.9, stride: 1.6 });
-  assert.deepEqual(fast, { bob: 5, tilt: 12, stride: 2.5 });
-  assert.ok(fast.bob > mid.bob && mid.bob > slow.bob);
-  assert.ok(fast.tilt > mid.tilt && mid.tilt > slow.tilt);
-  assert.ok(fast.stride > mid.stride && mid.stride > slow.stride);
-  // 满环速度封顶后幅度不再变大。
-  assert.deepEqual(runAmplitude(5000), fast);
+  const stroll = runAmplitude(1);
+  const jog = runAmplitude(18);
+  const fast = runAmplitude(120);
+  const sprint = runAmplitude(400);
+  assert.deepEqual(stroll, { bob: 0.6, tilt: 1.5, stride: 0.2 });
+  assert.deepEqual(jog, { bob: 2.2, tilt: 6, stride: 1.2 });
+  assert.deepEqual(fast, { bob: 4.2, tilt: 13, stride: 2.6 });
+  assert.deepEqual(sprint, { bob: 7, tilt: 20, stride: 4.2 });
+  const ordered = [stroll, jog, fast, sprint];
+  for (const key of ["bob", "tilt", "stride"]) {
+    for (let i = 1; i < ordered.length; i++) {
+      assert.ok(ordered[i][key] > ordered[i - 1][key] * 1.5,
+        `${key} 档间应有明显跳变: ${JSON.stringify(ordered)}`);
+    }
+  }
+  // 满环速度封顶后幅度不再变大；同档内幅度相同。
+  assert.deepEqual(runAmplitude(5000), sprint);
+  assert.deepEqual(runAmplitude(31), runAmplitude(18));
 });
 
 test("shakeDuration: idle means still, faster speed shakes faster and is capped", function () {

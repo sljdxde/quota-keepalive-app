@@ -49,6 +49,33 @@ func TestSetBallPreferenceOffHidesEverything(t *testing.T) {
 	app.hideBar()
 }
 
+// TestBarRedockStateMachine 锁定「贴边弹回后点空白再收起」的登记状态机：
+// 弹回时登记原贴边侧与位置 → 失焦原子取出并清空 → 收回；再点/拖动/右键
+// 会取消登记。takeBarRedock 未登记或重复调用都必须是幂等的一次性语义。
+func TestBarRedockStateMachine(t *testing.T) {
+	app := &App{}
+	// 未登记：失焦什么都不该发生。
+	if _, _, _, ok := app.takeBarRedock(); ok {
+		t.Fatal("未登记时 takeBarRedock 不应返回 ok")
+	}
+	// 弹回时登记。
+	app.armBarRedock("right", 900, 300)
+	side, rx, ry, ok := app.takeBarRedock()
+	if !ok || side != "right" || rx != 900 || ry != 300 {
+		t.Fatalf("登记后应原样取出，得到 %q %d %d ok=%v", side, rx, ry, ok)
+	}
+	// 取用即清空：第二次没有待收起的事。
+	if _, _, _, ok := app.takeBarRedock(); ok {
+		t.Fatal("takeBarRedock 必须是一次性，第二次不应 ok")
+	}
+	// 登记后被取消（模拟拖动/再点），失焦就不该再收回。
+	app.armBarRedock("left", 40, 200)
+	app.clearBarRedock()
+	if _, _, _, ok := app.takeBarRedock(); ok {
+		t.Fatal("clearBarRedock 后不应仍有待收起登记")
+	}
+}
+
 // TestSetBallPreferenceOnKeepsSetting 锁定「重新打开」时设置位为 true；
 // 主窗口可见时不让球抢位置（判定由 ballShouldShow 决定，已在真值表用例覆盖）。
 func TestSetBallPreferenceOnKeepsSetting(t *testing.T) {

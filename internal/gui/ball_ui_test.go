@@ -24,7 +24,13 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 		`id="ball-pet-img"`,
 		`id="ball-ball"`,
 		`assets/ball-face.js`,
+		`assets/ball-effects.js`,
 		`ballFaceState`,
+		`ballEffectsState`,
+		`id="ball-fx"`,
+		`ball.dataset.fxTier`,
+		`ball.dataset.effect`,
+		`--hop-duration`,
 		`face.petVisible`,
 		`face.ballVisible`,
 		`face.autoRelease`,
@@ -321,8 +327,9 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	}
 }
 
-// 球面比例：球缩到 52px 后，宠物反而稍大（26px）、数字更小（13px），
-// 跑动幅度用 CSS 变量按速度放大。宠物用 2D 立绘，不依赖 WebGL 就绪——
+// 球面比例：球缩到 52px 后，宠物反而稍大（26px）、数字换成等宽字体且再收一档
+// （11px 基准）；4 位（"1.2k"）10px、5 位（"18.3k"）9px 都能在 44px 球面内放下。
+// 跑动按档位切换跑姿 + 速度线。宠物用 2D 立绘，不依赖 WebGL 就绪——
 // 这是「宠物根本显示不出来」的回归保护。
 func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/assets/ball.css")
@@ -333,7 +340,11 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 	for _, want := range []string{
 		`.ball .core .pet-icon`,
 		`width: 26px; height: 26px`,
-		`.ball.has-pet .core b { font-size: 13px; }`,
+		// 球面数字 = 等宽字体 + 11px 基准 + 1ch 列宽（与 ".fix" 固定字符等宽，
+		// "1.2k" 这类 4 字符形态不会串位）。
+		`font-family: ui-monospace,`,
+		`font-size: 11px;`,
+		`.ball .core .roll .cell { width: 1ch; }`,
 		`.ball .core .pet-icon.running`,
 		`@keyframes pet-run`,
 		`@keyframes ball-shake`,
@@ -342,6 +353,13 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 		`--run-tilt`,
 		`--run-stride`,
 		`--shake-duration`,
+		// 分档跑姿：踱步/快跑/冲刺各有不同 keyframes 与速度线，
+		// 这是「速度变化不大、看不出区别」的回归保护。
+		`@keyframes pet-stroll`,
+		`@keyframes pet-sprint`,
+		`.ball[data-run-tier="1"]`,
+		`.ball[data-run-tier="3"]`,
+		`.ball[data-run-tier="4"]`,
 		// hidden 必须真正不占位：作者样式的 display 会压过 UA 规则。
 		`.ball [hidden] { display: none !important; }`,
 	} {
@@ -376,12 +394,86 @@ func TestBallFaceKeepsPetSmallAndSpeedVisible(t *testing.T) {
 		`autoRelease: caught && shouldAutoRelease(speed)`,
 		`speedFontPx: ballSpeedFontPx(source.speedText)`,
 		`amplitude: runAmplitude(speed)`,
+		`runTier: runTier(speed)`,
 		`runDuration`,
 		`shakeDuration`,
 		`shouldAutoRelease`,
+		} {
+			if !strings.Contains(face, want) {
+				t.Errorf("球面模式判定缺少 %q", want)
+			}
+		}
+}
+
+// 蛙跳 + 速度特效（设计原型 v6 落地）：球面立绘水平翻转成 2D 侧视，
+// 用青蛙式「上下 + 前后」跳跃表现速度，100/300 两档四宠特效收在圆内。
+// 静止、精灵球、减少动效、贴边态都不播放连续动画（置顶小窗闪屏教训）。
+func TestBallFrogHopAndSpeedEffects(t *testing.T) {
+	cssData, err := frontendFS.ReadFile("frontend/assets/ball.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		// 2D 侧视：只翻转立绘，不裁切、不拼接额外腿部
+		`transform: scaleX(-1);`,
+		// 青蛙式跳跃：一个周期含蹲伏/蹬地/顶点悬停/落地压扁/收重心
+		`@keyframes frog-hop`,
+		`animation: frog-hop var(--hop-duration, .5s) linear infinite;`,
+		`46%, 52%`,
+		`76% { transform: translate(4.5px, 1px) rotate(7deg) scaleY(.84)`,
+		// 特效层圆形裁剪 = 复刻 SetWindowRgn 的正圆窗口
+		`border-radius: 50%; overflow: hidden;`,
+		`.ball[data-fx-tier="0"] .fx`,
+		// 落地那一刻才扬尘（周期 76%）
+		`@keyframes fx-puff`,
+		`0%, 70% { transform: translate(0, 0) scale(.5); opacity: 0; }`,
+		`76% { transform: translate(0, 0) scale(.7); opacity: .78; }`,
+		// 四宠两档特效
+		`.ball[data-effect="smoke"]`,
+		`.ball[data-effect="flame"]`,
+		`.ball[data-effect="spark"]`,
+		`.ball[data-effect="arc"]`,
+		`.ball[data-effect="seed"]`,
+		`.ball[data-effect="vine"]`,
+		`.ball[data-effect="drop"]`,
+		`.ball[data-effect="jet"]`,
+		// 贴边 / 减少动效都不播连续动画
+		`.ball.docked .fx { display: none; }`,
+		`@media (prefers-reduced-motion: reduce)`,
 	} {
-		if !strings.Contains(face, want) {
-			t.Errorf("球面模式判定缺少 %q", want)
+		if !strings.Contains(css, want) {
+			t.Errorf("球面蛙跳/特效样式缺少 %q", want)
+		}
+	}
+
+	// 防回归：翻转只能由 .pet-fallback 做一次。frog-hop 里若再写 scaleX(-1)，
+	// 会和立绘自身的翻转抵消 —— 表现为「静止朝右、跑起来朝左」。
+	if start := strings.Index(css, "@keyframes frog-hop {"); start >= 0 {
+		if end := strings.Index(css[start:], "\n}"); end >= 0 {
+			if block := css[start : start+end]; strings.Contains(block, "scaleX(-1)") {
+				t.Error("frog-hop 不应再包含 scaleX(-1)（会与立绘翻转叠加成朝左）")
+			}
+		}
+	}
+
+	// 判定必须落在可单测的纯函数模块里。
+	effectsData, err := frontendFS.ReadFile("frontend/assets/ball-effects.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	effects := string(effectsData)
+	for _, want := range []string{
+		`export function hopDuration`,
+		`export function effectTierForSpeed`,
+		`export function ballEffectsState`,
+		`export const PET_EFFECTS`,
+		`EFFECT_TIER_STARTS = [0, 100, 300]`,
+		`0.84 - 0.64 * t`,
+		`!caught && !reducedMotion && seconds > 0`,
+	} {
+		if !strings.Contains(effects, want) {
+			t.Errorf("速度特效判定缺少 %q", want)
 		}
 	}
 }
@@ -403,6 +495,8 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
 		`ball.style.setProperty("--dock-y"`,
+		// 档位必须真的写到 DOM 上，CSS 的 [data-run-tier] 才生效。
+		`ball.dataset.runTier = String(face.runTier)`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("贴边态页面缺少 %q", want)

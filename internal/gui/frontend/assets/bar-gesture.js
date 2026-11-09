@@ -75,38 +75,55 @@ export function chargeProgress(heldMs) {
   return Math.min(1, Math.max(0, (Number(heldMs) || 0) / CHARGE_THROW_MS));
 }
 
+// 跑动分档的下界：0 静止 / 1 踱步 / 2 小跑 / 3 快跑 / 4 冲刺。
+// 用跳跃式分档而不是连续插值——26px 的小宠物上，1~3px 的连续幅度差
+// 肉眼根本看不出来；分档后每档有不同跑姿、周期和速度线，一眼可分。
+export const RUN_TIER_STARTS = [0, 8, 32, 136];
+
 /**
- * 宠物奔跑动画的一步时长（秒）：速度越快越短（跑得越快）。
- * 0 速度返回 0（不跑）；1..400 tok/s 从 1.00s 收敛到 0.20s。
- * 用 sqrt 曲线而不是线性：常见速度（10~120）能拉开更明显的节奏差，
- * 不再是「18 和 120 几乎一样快」。
+ * 把速度映射成跑动档位（0..4）。分界取称号体系的 8 / 32 / 136 三档，
+ * 常见速度 18→小跑、120→快跑、400→冲刺，能明确落在相邻三档里。
+ * @param {number} speed tok/s
+ * @returns {number} 0 静止 / 1 踱步 / 2 小跑 / 3 快跑 / 4 冲刺
+ */
+export function runTier(speed) {
+  const value = Math.max(0, Number(speed) || 0);
+  if (value <= 0) return 0;
+  if (value < RUN_TIER_STARTS[1]) return 1;
+  if (value < RUN_TIER_STARTS[2]) return 2;
+  if (value < RUN_TIER_STARTS[3]) return 3;
+  return 4;
+}
+
+// 每档一步的时长（秒）：相邻档差约 2 倍，静止→冲刺差近 10 倍。
+const RUN_DURATION_BY_TIER = [0, 1.15, 0.6, 0.3, 0.14];
+// 每档的抬腿 / 前倾 / 跨步幅度：档位间是跳变，不是细碎插值。
+const RUN_AMPLITUDE_BY_TIER = [
+  { bob: 0, tilt: 0, stride: 0 },
+  { bob: 0.6, tilt: 1.5, stride: 0.2 },
+  { bob: 2.2, tilt: 6, stride: 1.2 },
+  { bob: 4.2, tilt: 13, stride: 2.6 },
+  { bob: 7, tilt: 20, stride: 4.2 },
+];
+
+/**
+ * 宠物奔跑动画的一步时长（秒）：按档位给，档间差约 2 倍。
+ * 0 速度返回 0（不跑）。
  * @param {number} speed
  * @returns {number} 秒；0 表示不播放
  */
 export function runDuration(speed) {
-  const value = Math.max(0, Number(speed) || 0);
-  if (value <= 0) return 0;
-  const t = Math.min(1, Math.sqrt(value / 400));
-  return Math.round((1 - 0.8 * t) * 1000) / 1000;
+  return RUN_DURATION_BY_TIER[runTier(speed)];
 }
 
 /**
- * 宠物奔跑的幅度：速度越快，抬腿、前倾、摆幅越大。只靠周期长短，
- * 在 64px 以下的小球里肉眼很难分辨；幅度是第二个、更直观的速度信号。
- * 页面把这三个值写成 CSS 变量给 @keyframes pet-run 用。
+ * 宠物奔跑的幅度：按档位跳变。页面把这三个值写成 CSS 变量给
+ * @keyframes 用，并按档位切换不同的跑姿 keyframes + 速度线。
  * @param {number} speed tok/s
  * @returns {{bob: number, tilt: number, stride: number}} px / deg / px
  */
 export function runAmplitude(speed) {
-  const value = Math.max(0, Number(speed) || 0);
-  if (value <= 0) return { bob: 0, tilt: 0, stride: 0 };
-  const t = Math.min(1, Math.sqrt(value / 400));
-  const round = function (n) { return Math.round(n * 10) / 10; };
-  return {
-    bob: round(1.5 + 3.5 * t),
-    tilt: round(3 + 9 * t),
-    stride: round(0.5 + 2 * t),
-  };
+  return RUN_AMPLITUDE_BY_TIER[runTier(speed)];
 }
 
 /**

@@ -119,13 +119,15 @@ html, body {
   width: 100%; height: 100%;
   display: block;
   object-fit: contain;
+  /* 水平翻转 = 朝右的 2D 侧视；不加任何额外腿部部件、不做 mask 裁切。 */
+  transform: scaleX(-1);
 }
 .ball .core .pet-icon.running {
   animation: pet-run var(--run-duration, .6s) ease-in-out infinite;
   transform-origin: 50% 88%;
 }
-/* 幅度由页面按速度写进 --run-bob/--run-tilt/--run-stride：
-   慢速轻轻颠，越接近满环速度越明显地抬腿、前倾、跨步。 */
+/* 每档跑姿不同：踱步只是轻轻点头；小跑上下颠；快跑前倾跨步；
+   冲刺大幅前倾 + 左右冲。幅度/周期由页面按速度写进 CSS 变量。 */
 @keyframes pet-run {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
   25% {
@@ -136,6 +138,45 @@ html, body {
     transform: translate(var(--run-stride, 1px), calc(var(--run-bob, 2px) * -0.4))
       rotate(var(--run-tilt, 4deg));
   }
+}
+/* 踱步（1）：不要大幅跨步，改成轻微点头，避免和真正跑步混淆。 */
+.ball[data-run-tier="1"] .core .pet-icon.running {
+  animation-name: pet-stroll;
+}
+@keyframes pet-stroll {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-1px) rotate(1.5deg); }
+}
+/* 快跑（3）：一层轻微拖影，速度感更强，但不在小窗里堆残影。 */
+.ball[data-run-tier="3"] .core .pet-icon.running {
+  filter: drop-shadow(2px 0 0 rgba(255, 255, 255, .12));
+}
+/* 冲刺（4）：前倾 + skew 的独立跑姿，只用一层薄残影。 */
+.ball[data-run-tier="4"] .core .pet-icon.running {
+  animation-name: pet-sprint;
+  filter: drop-shadow(3px 0 0 rgba(255, 255, 255, .16));
+}
+@keyframes pet-sprint {
+  0%, 100% { transform: translate(-1px, 0) rotate(6deg) skewX(-5deg); }
+  25% { transform: translate(-3px, -5px) rotate(16deg) skewX(-9deg); }
+  50% { transform: translate(2px, -1px) rotate(6deg) skewX(-5deg); }
+  75% { transform: translate(-3px, -3px) rotate(16deg) skewX(-9deg); }
+}
+/* 速度线：只在快跑/冲刺出现，静态两条斜线，不做 60fps 连续动画。 */
+.ball[data-run-tier="3"] .core::before,
+.ball[data-run-tier="4"] .core::before {
+  content: "";
+  position: absolute;
+  left: 3px; top: 8px;
+  width: 12px; height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55));
+  box-shadow: -3px 5px 0 rgba(255, 255, 255, .3);
+  pointer-events: none;
+}
+.ball[data-run-tier="4"] .core::before {
+  width: 16px;
+  box-shadow: -4px 5px 0 rgba(255, 255, 255, .38), -8px 10px 0 rgba(255, 255, 255, .18);
 }
 /* 精灵球：被捕获时占宠物位置；速度越快晃得越快（晃幅很小，不抢数字）。 */
 .ball .core .ball-icon {
@@ -154,10 +195,181 @@ html, body {
   25% { transform: rotate(-11deg); }
   75% { transform: rotate(11deg); }
 }
-/* 有宠物：Q 水印退场；速度数字用 13px 基准（页面按位数再收到 12/10px），
-   不再显示单位，避免拥挤。 */
+/* 有宠物：Q 水印退场；速度数字换成等宽字体、字号再收一档（11px 基准，
+   页面按位数再收到 10/9px），不再显示单位，避免拥挤。
+   等宽字体里数字与 "."、"k"、"M"、"B" 都是同一推进宽度 = 1ch（实测 0.55em），
+   所以 .cell 列宽从通用 .62em 改成 1ch：每列恰好一个字符宽，固定字符（.fix）
+   自然宽也是 1ch，两者严格对齐、滚动不串位；4 位的 "1.2k" / 5 位的
+   "18.3k" 在 44px 球面内都放得下。只覆盖球面，精简面板大数字仍用 .62em。 */
 .ball.has-pet .core .q { display: none; }
-.ball.has-pet .core b { font-size: 13px; }
+.ball.has-pet .core b {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+.ball .core .roll .cell { width: 1ch; }
+
+/* ============================================================ 蛙跳 + 速度特效
+   设计原型 v6（design/win-ui/ball-effects.html）落地：
+   - 动作 = 青蛙式跳跃：蹲伏蓄力 → 蹬地前倾 → 向前上方抛物线跃出 →
+     顶点略悬停 → 下落 → 落地压扁 → 站起收重心 → 再蹲伏。
+     上下 + 前后同时发生，一次一跳、跳间有停顿，不是原地上下正弦抖动。
+   - 快慢只由周期 --hop-duration 决定（0.84s → 0.20s），幅度固定。
+   - 特效全部收在圆内：窗口由 SetWindowRgn 裁成正圆，超出会被切掉；
+     .fx 层同样圆形裁剪。只用 transform / opacity / stroke-dashoffset，
+     不碰 filter / box-shadow 动画（置顶小窗持续重绘曾带闪整屏）。
+   ============================================================ */
+/* 蛙跳覆盖既有跑姿：更高权重 + 更靠后，分档 keyframes 保留作兼容/回归。
+   --hop-duration 只在 hopping 时由页面写入，静止即移除，不写就没有动画。 */
+.ball .core .pet-icon.running {
+  animation: frog-hop var(--hop-duration, .5s) linear infinite;
+  transform-origin: 50% 90%;
+}
+@keyframes frog-hop {
+  /* 注意：水平翻转只由 .pet-fallback 承担一次，这里不要再写翻转，
+     否则两次翻转抵消，表现为「静止朝右、跑起来朝左」。 */
+  /* 0–14% 蹲伏蓄力：压扁、后坐、停留 → 一跳一跳的间隔感 */
+  0%, 14% {
+    transform: translate(-1.5px, 1px) rotate(-2deg) scaleY(.9) scaleX(1.06);
+  }
+  /* 蹬地：拉伸、前倾 */
+  22% { transform: translate(-2px, 0) rotate(-10deg) scaleY(1.1) scaleX(.94); }
+  /* 离地，向前上方跃出 */
+  34% { transform: translate(.5px, -3.2px) rotate(-12deg) scaleY(1.04); }
+  /* 顶点：略悬停 */
+  46%, 52% { transform: translate(2.5px, -5px) rotate(-5deg) scaleY(1); }
+  /* 下落：继续向前、向下 */
+  66% { transform: translate(4px, -2px) rotate(3deg) scaleY(1.02); }
+  /* 落地压扁 */
+  76% { transform: translate(4.5px, 1px) rotate(7deg) scaleY(.84) scaleX(1.12); }
+  /* 缓冲站起 */
+  85% { transform: translate(3px, 0) rotate(0deg) scaleY(1.02); }
+  /* 收回重心、重新蹲伏：这段慢，读作「准备下一跳」 */
+  100% { transform: translate(-1.5px, 1px) rotate(-2deg) scaleY(.9) scaleX(1.06); }
+}
+/* 分档 keyframes 仍保留（Go/JS 回归断言），但蛙跳模式下统一用上面这套。 */
+.ball[data-run-tier="1"] .core .pet-icon.running,
+.ball[data-run-tier="3"] .core .pet-icon.running,
+.ball[data-run-tier="4"] .core .pet-icon.running {
+  animation-name: frog-hop;
+  filter: none;
+}
+.ball[data-run-tier="3"] .core::before,
+.ball[data-run-tier="4"] .core::before { display: none; }
+
+/* 主题色：只用于特效粒子与二档内发光，进度环仍用称号色。 */
+.ball[data-effect="smoke"], .ball[data-effect="flame"] { --pet: #ff9a3c; --pet2: #ffd45e; --glow: rgba(255, 138, 31, .55); }
+.ball[data-effect="spark"], .ball[data-effect="arc"]  { --pet: #ffdf3d; --pet2: #fff7a8; --glow: rgba(255, 213, 45, .5); }
+.ball[data-effect="seed"],  .ball[data-effect="vine"]  { --pet: #7fd48a; --pet2: #c7ef9c; --glow: rgba(99, 185, 120, .5); }
+.ball[data-effect="drop"],  .ball[data-effect="jet"]   { --pet: #6ec8f0; --pet2: #c6ecff; --glow: rgba(78, 169, 215, .5); }
+/* 二档：静止内发光，随数值变化，不做持续呼吸动画。 */
+.ball[data-fx-tier="2"] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .24),
+    inset 0 -9px 20px rgba(0, 0, 0, .5),
+    inset 0 0 12px var(--glow),
+    0 0 14px -2px var(--glow),
+    0 12px 26px -10px rgba(0, 0, 0, .62);
+}
+/* 特效层：圆形裁剪，粒子由 ::before/::after 按 data-effect 生成 */
+.ball .fx {
+  position: absolute; inset: 0;
+  /* 显式宽高兜底：某些 WebView 里绝对定位的 grid 项只写 inset:0 会塌成 0×0 */
+  width: 100%; height: 100%;
+  top: 0; left: 0;
+  border-radius: 50%; overflow: hidden;
+  pointer-events: none; z-index: 2;
+}
+.ball .fx::before, .ball .fx::after { content: ""; position: absolute; display: none; }
+.ball[data-fx-tier="0"] .fx, .ball.caught .fx { display: none; }
+
+/* 一跳一团：落地那一刻（周期 76%）从身后向左后扬起，之前完全不可见。 */
+@keyframes fx-puff {
+  0%, 70% { transform: translate(0, 0) scale(.5); opacity: 0; }
+  76% { transform: translate(0, 0) scale(.7); opacity: .78; }
+  100% { transform: translate(-14px, -7px) scale(1.4); opacity: 0; }
+}
+/* 二档长拖尾：沿身后方向，亮度随跳跃起伏（不闪、不跳帧） */
+@keyframes fx-trail { 0%, 100% { opacity: .55; } 45% { opacity: 1; } }
+
+/* 轻档：三团错开位置、同一落地时刻 */
+.ball[data-fx-tier="1"] .fx::before,
+.ball[data-fx-tier="2"] .fx::before {
+  display: block;
+  left: 20px; top: 35px;
+  width: 7px; height: 7px; border-radius: 50%;
+  animation: fx-puff var(--hop-duration, .5s) linear infinite;
+  box-shadow: -4px -2px 0 -1px currentColor, -9px 1px 0 -2px currentColor;
+  color: var(--pet2);
+  background: currentColor;
+}
+/* 小火龙：脚下扬尘 → 跑起火来 */
+.ball[data-effect="smoke"] .fx::before,
+.ball[data-effect="flame"] .fx::before {
+  background: radial-gradient(circle, rgba(228, 230, 236, .8), rgba(150, 154, 164, .22) 60%, transparent 74%);
+  color: transparent;
+  box-shadow: none;
+  filter: blur(.7px);
+}
+.ball[data-effect="flame"] .fx::after {
+  display: block;
+  left: 3px; top: 30px; width: 26px; height: 16px;
+  background: radial-gradient(ellipse at 20% 100%, #ff6a12, rgba(255, 171, 46, .7) 45%, transparent 72%);
+  clip-path: polygon(0 100%, 18% 40%, 30% 78%, 48% 12%, 62% 70%, 80% 30%, 100% 100%);
+  animation: fx-trail calc(var(--hop-duration, .5s) * 2) ease-in-out infinite;
+}
+/* 皮卡丘：脚步电火花 → 身后大电弧 */
+.ball[data-effect="spark"] .fx::before {
+  background: var(--pet2); box-shadow: 0 0 4px var(--pet), -6px -2px 0 -2px var(--pet2), -11px 2px 0 -2px var(--pet2);
+  color: transparent;
+}
+.ball[data-effect="arc"] .fx::after {
+  display: block;
+  left: 2px; top: 6px; width: 30px; height: 30px;
+  background:
+    linear-gradient(56deg, transparent 46%, var(--pet2) 47%, var(--pet2) 50%, transparent 51%),
+    linear-gradient(-56deg, transparent 46%, var(--pet2) 47%, var(--pet2) 50%, transparent 51%);
+  clip-path: polygon(0 0, 100% 20%, 62% 38%, 100% 62%, 12% 100%, 30% 60%, 0 44%);
+  filter: drop-shadow(0 0 2px var(--pet));
+  animation: fx-trail var(--hop-duration, .5s) linear infinite;
+}
+/* 妙蛙种子：踢出种子 → 身后藤蔓 */
+.ball[data-effect="seed"] .fx::before,
+.ball[data-effect="vine"] .fx::before {
+  background: linear-gradient(150deg, var(--pet2), var(--pet) 55%, #3d7d52);
+  border-radius: 60% 60% 55% 55% / 70% 70% 40% 40%;
+  color: transparent;
+  box-shadow: -5px -3px 0 -2px var(--pet), -10px 1px 0 -2px var(--pet2);
+}
+.ball[data-effect="vine"] .fx::after {
+  display: block;
+  left: 2px; top: 8px; width: 22px; height: 34px;
+  background: linear-gradient(160deg, transparent 38%, var(--pet) 40%, var(--pet) 45%, transparent 47%);
+  border-left: 2px solid var(--pet);
+  border-radius: 50% 0 0 50%;
+  animation: fx-trail calc(var(--hop-duration, .5s) * 2) ease-in-out infinite;
+}
+/* 杰尼龟：溅起水滴 → 身后水枪 */
+.ball[data-effect="drop"] .fx::before,
+.ball[data-effect="jet"] .fx::before {
+  background: linear-gradient(160deg, var(--pet2), var(--pet) 60%, #2e7fae);
+  border-radius: 50% 50% 50% 50% / 65% 65% 40% 40%;
+  color: transparent;
+  box-shadow: -5px -3px 0 -1px var(--pet2), -10px 1px 0 -2px var(--pet2);
+}
+.ball[data-effect="jet"] .fx::after {
+  display: block;
+  left: 2px; top: 30px; width: 28px; height: 12px;
+  background: linear-gradient(250deg, var(--pet2), var(--pet) 55%, transparent);
+  clip-path: polygon(100% 0, 100% 100%, 0 60%, 22% 40%);
+  animation: fx-trail var(--hop-duration, .5s) linear infinite;
+}
+/* 尊重系统减少动效：不播放动画，也不显示特效层 */
+@media (prefers-reduced-motion: reduce) {
+  .ball .fx { display: none; }
+  .ball .core .pet-icon.running { animation: none; }
+}
+
 /* 贴边态：窗口 36px、一半在屏幕外，只留 16px 宠物/精灵球。
    主体往屏幕内偏移半宽（--dock-x/--dock-y 由 bar.html 依窗口与工作区推断），
    否则内容正好被窗口边界切成一半。 */
@@ -165,6 +377,8 @@ html, body {
   transform: translate(var(--dock-x, 0px), var(--dock-y, 0px));
 }
 .ball.docked .core b { display: none; }
+/* 36px 半圆装不下特效粒子：贴边时只保留 16px 主体。 */
+.ball.docked .fx { display: none; }
 .ball.docked .core .pet-icon,
 .ball.docked .core .ball-icon { width: 16px; height: 16px; }
 .ball.docked .core .q {

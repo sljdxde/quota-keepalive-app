@@ -22,7 +22,8 @@
 </head>
 <body>
   <!-- 常驻悬浮球：Windows 上等价于 macOS 菜单栏上的 QKA 状态项。
-       球面 = 26px 小宠物（有速度时跑动，越快越快、幅度越大）+ 纯数字速度（无单位）；
+       球面 = 26px 2D 侧视小宠物（有速度时青蛙式跳跃，越快跳得越急）+ 纯数字速度；
+       ≥100 tok/s 出轻特效、≥300 出重特效（四宠各不相同），全部收在圆内。
        伙伴被收进精灵球时换成精灵球（速度越快晃得越快，达到 400 满环速度自动放出）。
        按住可拖动；左键单击打开迷你宠物窗口；右键出菜单。
        拖到屏幕边缘会收成 36px 半圆（Go 侧 SetSize），此时只显示宠物/精灵球。 -->
@@ -39,10 +40,13 @@
               stroke-dashoffset="191.6"></circle>
       <circle class="spark" id="ball-spark" cx="32" cy="3.4" r="2.2"></circle>
     </svg>
+    <!-- 特效层：圆形裁剪，复刻 SetWindowRgn 的正圆窗口。粒子由 CSS 按
+         data-effect 生成，容器本身不含内容，切换伙伴不用重建 DOM。 -->
+    <div class="fx" id="ball-fx" aria-hidden="true"></div>
     <div class="core">
       <!-- 球面宠物：始终用 2D 立绘。64px 窗口里的 3D 全身体积太小、
            模型加载失败时还会留下空白，所以球面不再创建 WebGL 舞台；
-           3D 只留在迷你宠物窗口里。 -->
+           3D 只留在迷你宠物窗口里。立绘水平翻转 = 朝右的 2D 侧视。 -->
       <div class="pet-icon" id="ball-pet">
         <img class="pet-fallback" id="ball-pet-img" alt="" draggable="false">
       </div>
@@ -74,6 +78,7 @@
   } from "./assets/title-system.js";
   import { POKEMON_CATALOG, pokemonById } from "./assets/pokemon-art.js";
   import { ballFaceState } from "./assets/ball-face.js";
+  import { ballEffectsState } from "./assets/ball-effects.js";
   import { dockSideForWindow, dockContentShift } from "./assets/ball-dock.js";
   import {
     shouldStartDrag,
@@ -225,7 +230,8 @@
   }
 
   // 球面的两种模式只在 paintFace 里切换：宠物可见 / 精灵球可见、跑动 / 晃动、
-  // 速度字号，全部由 ball-face.js 的纯函数判定，页面只负责落 DOM。
+  // 速度字号，全部由 ball-face.js 的纯函数判定；蛙跳周期与速度特效由
+  // ball-effects.js 判定。页面只负责把结果落到 DOM / CSS 变量。
   function paintFace() {
     const caught = isCaught(pet.id);
     const face = ballFaceState({
@@ -233,6 +239,12 @@
       speed: currentSpeed,
       speedText: currentText,
       reducedMotion: reducedMotion,
+    });
+    const effects = ballEffectsState({
+      speed: currentSpeed,
+      caught: caught,
+      reducedMotion: reducedMotion,
+      effect: pet.effect,
     });
     ball.classList.add("has-pet");
     ball.classList.toggle("caught", caught);
@@ -244,6 +256,8 @@
 
     petNode.classList.toggle("running", face.running);
     ball.classList.toggle("shaking", face.shaking);
+    // 档位写成 data 属性：CSS 按档位换不同跑姿 keyframes / 速度线。
+    ball.dataset.runTier = String(face.runTier);
     if (face.running) {
       petNode.style.setProperty("--run-duration", face.runSeconds + "s");
       petNode.style.setProperty("--run-bob", face.amplitude.bob + "px");
@@ -255,12 +269,21 @@
       petNode.style.removeProperty("--run-tilt");
       petNode.style.removeProperty("--run-stride");
     }
+    // 蛙跳：一次一跳的周期由速度决定，幅度固定。静止/精灵球/减少动效时
+    // 不写周期、不播动画（置顶小窗连续重绘曾带闪整屏）。
+    if (effects.hopping) {
+      ball.style.setProperty("--hop-duration", effects.hopSeconds + "s");
+    } else {
+      ball.style.removeProperty("--hop-duration");
+    }
+    ball.dataset.fxTier = String(effects.tier);
+    ball.dataset.effect = effects.effect;
     if (face.shaking) {
       ball.style.setProperty("--shake-duration", face.shakeSeconds + "s");
     } else {
       ball.style.removeProperty("--shake-duration");
     }
-    // 字号跟着数字长度走：3 位以内 16px、4 位 14px、5 位以上 12px。
+    // 字号跟着数字长度走：3 位以内 11px、4 位（如 "1.2k"）10px、5 位以上 9px。
     valueNode.style.fontSize = face.speedFontPx + "px";
     return face;
   }

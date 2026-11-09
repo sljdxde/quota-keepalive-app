@@ -56,6 +56,13 @@ type App struct {
 	barDocked   string
 	barRestoreX int
 	barRestoreY int
+	// 贴边弹回后「点空白再收起」：点球把球从贴边弹成浮动时登记原贴边侧与贴边前
+	// 位置（armed），用户随即点桌面/空白使球窗失焦 → 收回贴边。期间任何对球的
+	// 正式操作（再点开宠物窗、拖动、右键菜单）都取消登记，避免误收。
+	barRedockArmed bool
+	barRedockSide  string
+	barRedockResX  int
+	barRedockResY  int
 	// barShaped 记录上一次 SetWindowRgn 的尺寸与贴边侧：resize 事件反复到
 	// 达时，同形状直接跳过，避免 SetWindowRgn 被连续调用带着屏幕闪。
 	barShapedW    int
@@ -314,6 +321,11 @@ func (a *App) ensureBar() *application.WebviewWindow {
 	onBarDragEnd := func(*application.WindowEvent) { a.onBarMoveEnd(bar) }
 	bar.OnWindowEvent(events.Windows.WindowEndMove, onBarDragEnd)
 	bar.OnWindowEvent(events.Windows.WindowEndResize, onBarDragEnd)
+	// 失焦即「用户点了桌面/别处」：若此前刚把球从贴边弹成浮动（待收起登记在），
+	// 就把它收回贴边。只在登记状态下动作，普通浮动态失焦不受影响。
+	bar.OnWindowEvent(events.Common.WindowLostFocus, func(*application.WindowEvent) {
+		a.onBarBlur()
+	})
 	return bar
 }
 
@@ -566,13 +578,99 @@ func (a *App) BarToggle() {
 		return
 	}
 	if side, rx, ry := a.barDockState(); side != "" {
-		// 贴边态点击只把球弹回浮动态；再点一次才开宠物窗口。
+		// 贴边态点击只把球弹回浮动态；再点一次才开宠物窗口。登记「待收起」，
+		// 让用户点桌面/空白（球窗失焦）时球自动收回贴边。
+		a.armBarRedock(side, rx, ry)
 		a.undockBar(rx, ry)
+		// 主动聚焦球窗：无边框置顶球点击后若未获焦，「点别处」不会产生失焦事件，
+		// 收回就不会触发。用户既然点了球，聚焦它是符合预期的。
+		a.focusBar()
 		return
 	}
+	// 浮动态点击是打开宠物窗口，取消任何待收起登记。
+	a.clearBarRedock()
 	a.hideBallPanel()
 	a.hideBallMenu()
 	a.togglePetMini()
+}
+
+// armBarRedock / clearBarRedock / takeBarRedock 管理「贴边弹回后待重新收起」的
+// 一次性登记，读写都在 barStateMu 下串行，避免失焦事件与点击互相抢。
+func (a *App) armBarRedock(side string, rx, ry int) {
+	a.barStateMu.Lock()
+	defer a.barStateMu.Unlock()
+	a.barRedockArmed = true
+	a.barRedockSide = side
+	a.barRedockResX = rx
+	a.barRedockResY = ry
+}
+
+func (a *App) clearBarRedock() {
+	a.barStateMu.Lock()
+	defer a.barStateMu.Unlock()
+	a.barRedockArmed = false
+	a.barRedockSide = ""
+}
+
+// takeBarRedock 原子地取出并清空登记；未登记时 ok=false。
+func (a *App) takeBarRedock() (side string, rx, ry int, ok bool) {
+	a.barStateMu.Lock()
+	defer a.barStateMu.Unlock()
+	if !a.barRedockArmed {
+		return "", 0, 0, false
+	}
+	side, rx, ry = a.barRedockSide, a.barRedockResX, a.barRedockResY
+	a.barRedockArmed = false
+	a.barRedockSide = ""
+	return side, rx, ry, true
+}
+
+// onBarBlur 是球窗失焦处理：只有处于「刚弹回待收起」状态才把球收回贴边，
+// 普通浮动态失焦（例如去用主窗口）不改变球的位置。
+func (a *App) onBarBlur() {
+	side, rx, ry, ok := a.takeBarRedock()
+	if !ok || side == "" {
+		return
+	}
+	a.dockBarNow(side, rx, ry)
+}
+
+// dockBarNow 把球按指定侧吸附成 36px 半圆，供失焦收回复用（等价于
+// onBarMoveEnd 的 dock 分支，但吸附侧是弹回前那一侧，位置用贴边前坐标）。
+func (a *App) dockBarNow(side string, restoreX, restoreY int) {
+	a.windowMu.Lock()
+	bar := a.bar
+	a.windowMu.Unlock()
+	if bar == nil || side == "" {
+		return
+	}
+	area := a.workAreaForPoint(restoreX, restoreY)
+	if area.Width <= 0 || area.Height <= 0 {
+		return
+	}
+	a.hideBallPanel()
+	a.hidePetMini()
+	a.hideBallMenu()
+	if w, _ := bar.Size(); w != ballDockSize {
+		bar.SetSize(ballDockSize, ballDockSize)
+	}
+	x, y := ballDockedPosition(area, side, restoreX, restoreY)
+	bar.SetPosition(x, y)
+	a.rememberBarState(barWindowState{
+		X: x, Y: y, Docked: side, RestoreX: restoreX, RestoreY: restoreY,
+	})
+	a.shapeBall(bar)
+}
+
+// focusBar 把球窗带到前台并聚焦，让随后的「点桌面/别处」能触发失焦收回。
+func (a *App) focusBar() {
+	a.windowMu.Lock()
+	bar := a.bar
+	a.windowMu.Unlock()
+	if bar == nil {
+		return
+	}
+	bar.Focus()
 }
 
 // BarStartDrag 让悬浮球进入系统原生移动循环（页面在「按住并移动超过
@@ -589,6 +687,9 @@ func (a *App) BarStartDrag() {
 	if bar == nil {
 		return
 	}
+	// 拖动是对球的正式操作：取消「点空白收回贴边」的一次性登记，
+	// 否则拖到半路失焦会被强行吸回原来的边。
+	a.clearBarRedock()
 	bar.HandleMessage("wails:drag")
 }
 
@@ -604,6 +705,8 @@ func (a *App) BarMenu() {
 	if bar == nil {
 		return
 	}
+	// 右键菜单是对球的正式操作：取消待收起登记，交给菜单自身的失焦收起。
+	a.clearBarRedock()
 	a.hideBallPanel()
 	a.hidePetMini()
 	a.toggleBallMenu()
