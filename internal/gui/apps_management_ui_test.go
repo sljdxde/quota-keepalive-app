@@ -43,9 +43,21 @@ func TestAppsPageUsesAgentRowsAndModal(t *testing.T) {
 	for _, gone := range []string{
 		`item.className = "app-item"`,
 		`appsDisabledOpen = disabledGroup.open`,
+		// 0.1.36「模型区去二级折叠」删掉了折叠实现，却漏删了这个调用点：
+		// providerModelPanel 里调用未定义函数会抛 ReferenceError，而
+		// openAgentModal 是 async 且没有 catch，异常静默变成 rejected
+		// promise，`remove("hidden")` 永远执行不到 —— 用户侧表现为
+		// 「点 Agent 行没反应」。保留此断言防止同类悬空调用再次出现。
+		`syncPanelCollapsed()`,
 	} {
 		if strings.Contains(page, gone) {
 			t.Errorf("应用管理不应再保留旧折叠卡片实现 %q", gone)
 		}
+	}
+	// 点行的链路是「先填充、后移除 hidden」：填充里任何未定义调用都会让
+	// 显示语句执行不到。这里断言显示语句仍是单行写法（不做跨行匹配，
+	// 避免缩进/CRLF 变化导致假失败）。
+	if !strings.Contains(page, `document.getElementById("agent-modal").classList.remove("hidden")`) {
+		t.Error("openAgentModal 缺少显示弹层的语句，点行会没有反应")
 	}
 }

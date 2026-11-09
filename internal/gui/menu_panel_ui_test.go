@@ -524,9 +524,11 @@ func TestCheckinPanelNavigationCollapseAndHiddenScrollbars(t *testing.T) {
 		`openAgentModal(`,
 		`agentModalProvider`,
 		`card.scrollIntoView(`,
-		// 账号层默认折叠，状态由纯函数模块判定。
-		`const expandedAccounts = new Set()`,
-		`shouldCollapseAccount(expandedAccounts, accountState)`,
+		// 账号卡照 mac 版行式布局：签到结果 + 额度常驻首屏，不再需要点头部展开。
+		`title.className = "acct-title"`,
+		`meta.className = "acct-meta"`,
+		`links.className = "acct-links"`,
+		`trigger.className = "mini-action"`,
 		`function displayAccountIdentity(`,
 		`scrollbar-width: none`,
 	)

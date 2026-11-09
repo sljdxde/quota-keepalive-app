@@ -59,16 +59,61 @@ func TestCheckinManagementUsesGenericProviderLifecycle(t *testing.T) {
 		`applyModelStatus(model.id, "fail", detail)`,
 		`function renderTestSummary(rows)`,
 		`悬停模型名查看原因`,
-		`const expandedAccounts = new Set()`,
-		`body.className = "account-body"`,
-		`box.classList.toggle("collapsed", collapsed)`,
-		`top.classList.add("account-collapse-head")`,
-		`chevron.className = "account-collapse"`,
-		`if (event.target.closest(".switch")) return`,
-		`expandedAccounts.add(accountStateKey(provider.id, accountKey))`,
+		`copy.className = "account-body"`,
+		`title.className = "acct-title"`,
+		`meta.className = "acct-meta"`,
+		`links.className = "acct-links"`,
+		`trigger.className = "mini-action"`,
+		`resultText.textContent = "今日尚未执行"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("签到管理页缺少通用供应商行为 %q", want)
+		}
+	}
+}
+
+// TestAccountCardLeadsWithCheckinAndQuota 锁定账号卡的 mac 行式结构：
+// 标题（acct-title）→ 签到结果+额度摘要（acct-meta）→ 状态 chips（acct-ops）
+// → 轻量文字操作（acct-links）；旧的「点账号头部展开」实现已移除。
+func TestAccountCardLeadsWithCheckinAndQuota(t *testing.T) {
+	page := accountPage(t)
+	order := []string{
+		`title.className = "acct-title"`,
+		`meta.className = "acct-meta"`,
+		`ops.className = "acct-ops"`,
+		`links.className = "acct-links"`,
+	}
+	last := -1
+	for _, want := range order {
+		at := strings.Index(page, want)
+		if at < 0 {
+			t.Fatalf("账号卡缺少 %q", want)
+		}
+		if at <= last {
+			t.Errorf("账号卡顺序错误：%q 应出现在上一段之后", want)
+		}
+		last = at
+	}
+	// mac 的轻量语言：额度内联在摘要行、操作是文字链接、按钮是 mini-action。
+	for _, want := range []string{
+		`.account-card .acct-meta .account-quota {`,
+		`.acct-link {`,
+		`.mini-action {`,
+		`.op-chip {`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("账号卡缺少 mac 风格样式 %q", want)
+		}
+	}
+	for _, gone := range []string{
+		`account-collapse-head`,
+		`account-collapse`,
+		`box.classList.toggle("collapsed"`,
+		`shouldCollapseAccount`,
+		`nextAccountExpansion`,
+	} {
+		if strings.Contains(page, gone) {
+			t.Errorf("账号卡不应再依赖折叠 %q（签到结果与额度需常驻可见）", gone)
 		}
 	}
 }
@@ -114,7 +159,7 @@ func TestCheckinManagementDoesNotExposeUnsafeCredentialInputs(t *testing.T) {
 func TestCheckinManagementHasPerTaskActionsAndQuotaHistory(t *testing.T) {
 	page := accountPage(t)
 	for _, want := range []string{
-		`const ops = provider.checkin ? ["checkin"] : []`,
+		`const checkinOps = provider.checkin ? ["checkin"] : []`,
 		"立即签到",
 		"今日已完成",
 		"今日无需签到",

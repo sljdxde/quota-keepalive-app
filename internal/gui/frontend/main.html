@@ -559,47 +559,84 @@
   .account-group-body { min-width: 0; }
   .account-group.collapsed .account-group-body { display: none; }
   .account-card { padding: 11px 13px; }
-  /* 账号层折叠：头部常驻可点，body 收起后只留一行账号摘要。 */
-  .account-collapse-head {
-    cursor: pointer;
-    user-select: none;
-    margin: -11px -13px 0;
-    padding: 11px 13px;
-    border-radius: 10px 10px 0 0;
+  /* 账号行照 mac 版（panel.html 的 .account / .acct-* / .op-chip / .mini-action）：
+     左列三行小字（标题 / 签到结果+额度 / chips + 轻量文字操作），
+     右列迷你按钮 + 启用开关。不放带边框的额度盒、不放一排大按钮。 */
+  .account-card {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; gap: 10px;
   }
-  .account-collapse-head:hover { background: color-mix(in srgb, var(--card-2) 55%, transparent); }
-  .account-collapse-head:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
+  .acct-title {
+    display: flex; align-items: center; gap: 7px;
+    font-size: var(--fs-sm); font-weight: 560;
   }
-  .account-card.collapsed .account-collapse-head { border-radius: 10px; }
-  .account-card.collapsed .account-body { display: none; }
-  .account-collapse {
-    flex: none;
-    display: inline-grid;
-    place-items: center;
-    width: 18px;
-    height: 18px;
-    margin-left: 2px;
-    color: var(--muted);
-    transition: transform .18s ease, color .18s ease;
+  .acct-title .dot {
+    width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--faint);
   }
-  .account-collapse svg { width: 14px; height: 14px; }
-  .account-collapse-head:hover .account-collapse { color: var(--fg-2); }
-  .account-card.collapsed .account-collapse { transform: rotate(-90deg); }
-  @media (prefers-reduced-motion: reduce) {
-    .account-collapse { transition: none; }
+  .acct-title .dot.good { background: var(--green); }
+  .acct-title .dot.warn { background: var(--amber); }
+  .acct-title .dot.bad { background: var(--red); }
+  .acct-meta {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+    margin-top: 3px; color: var(--fg-2); font-size: var(--fs-2xs);
+  }
+  .acct-meta b { font-weight: 600; color: var(--fg); }
+  /* 额度在摘要行内联（mac 的小字语言），去掉共享样式的盒子、边框与缩进。
+     qka-ui.css 在本页内联样式之后加载，所以用更高优先级覆盖。 */
+  .account-card .acct-meta .account-quota {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin: 0; padding: 0; border: 0; background: transparent;
+    color: var(--fg-2); font-size: var(--fs-2xs);
+  }
+  .account-card .acct-meta .quota-track { width: 52px; height: 3px; }
+  .acct-ops { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .op-chip {
+    padding: 2px 6px; border-radius: 4px; border: 0;
+    color: var(--muted); background: var(--card-2);
+    font-size: var(--fs-3xs); line-height: 1.25;
+  }
+  .op-chip.good { color: var(--green); background: var(--green-soft); }
+  .op-chip.warn { color: var(--amber); background: var(--amber-soft); }
+  .op-chip.bad { color: var(--red); background: var(--red-soft); }
+  .op-chip.mode { cursor: pointer; }
+  .op-chip.mode:hover { color: var(--fg); }
+  .op-chip.quota { font-variant-numeric: tabular-nums; }
+  .acct-hint { margin-top: 4px; color: var(--fg-2); font-size: var(--fs-2xs); line-height: 1.45; }
+  .acct-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 6px; }
+  /* 文字操作：彻底重置按钮外观（全局 .danger/.secondary 会带高度、内边距、
+     圆角与 inset 描边，不重置的话「删除」会显示成一个红框按钮）。 */
+  .acct-link {
+    border: 0; background: transparent; padding: 0; margin: 0;
+    height: auto; min-height: 0; border-radius: 0; box-shadow: none;
+    color: var(--muted); font: inherit; font-size: var(--fs-2xs);
+    line-height: 1.4; cursor: pointer;
+  }
+  .acct-link:hover { color: var(--fg); text-decoration: underline; }
+  .acct-link.danger { color: var(--red); }
+  .acct-link:disabled { opacity: .5; cursor: default; }
+  /* 右侧操作与标题行对齐，不跟着左列变高而沉到中间。 */
+  .acct-right { display: flex; align-items: center; gap: 8px; flex: none; align-self: start; }
+  /* mac 的 mini-action：小、无边框、pill 底。 */
+  .mini-action {
+    min-height: 25px; padding: 0 10px;
+    border: 0; border-radius: 6px;
+    color: var(--fg-2); background: var(--bg2);
+    box-shadow: inset 0 0 0 .5px var(--line);
+    font: inherit; font-size: var(--fs-2xs); cursor: pointer;
+  }
+  .mini-action:hover { background: var(--card-2); color: var(--fg); }
+  .mini-action:disabled { opacity: .55; cursor: default; }
+  /* 窄弹层：右列操作换到下一行，左列保持整宽。 */
+  @media (max-width: 720px) {
+    .account-card { grid-template-columns: minmax(0, 1fr); }
+    .acct-right { flex-wrap: wrap; }
   }
   .account-card + .account-card { border-top: .5px solid var(--line-2); }
   .account-card.bad { background: var(--red-soft); }
-  .account-top { display: flex; align-items: flex-start; gap: 10px; }
-  .account-title { display: flex; align-items: center; gap: 7px; font-size: var(--fs-lg); font-weight: 600; }
   .status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
   .status-dot.good { background: var(--green); }
   .status-dot.warn { background: var(--amber); }
   .status-dot.bad { background: var(--red); }
-  .account-sub { margin-top: 2px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
-  .account-card.bad .account-sub { color: var(--red); }
   .account-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
   .switch {
     position: relative; width: 34px; height: 20px; border: 0; border-radius: 999px;
@@ -2918,11 +2955,6 @@
     UI_SCALE_SETTING,
     UI_SCALE_STORAGE_KEY,
   } from "./assets/ui-scale.js";
-  import {
-  accountStateKey,
-  nextAccountExpansion,
-  shouldCollapseAccount,
-} from "./assets/account-collapse.js"
 import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.js";
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
   import { Events } from "/wails/runtime.js";
@@ -2958,7 +2990,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   //
   // 供应商组默认折叠（先看供应商列表，点开谁就看谁的账号），账号卡片默认折叠。
   const expandedProviderGroups = new Set();
-  const expandedAccounts = new Set();
 
   function customBackgroundData() {
     try {
@@ -3424,7 +3455,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
     if (!provider) provider = providers[0] || null;
     if (!provider) { showAccountsMessage("还没有可展示的 Agent。"); return; }
-    if (accountKey) expandedAccounts.add(accountStateKey(provider.id, accountKey));
     await openAgentModal(provider);
     if (accountKey) {
       requestAnimationFrame(function () {
@@ -5620,45 +5650,75 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       syncSelection();
     };
     syncSelection();
-    syncPanelCollapsed();
     return panel;
   }
 
   function providerAccountCard(provider, account) {
-    const box = document.createElement("div");
+    const accountKey = account.key || account.id || "";
     const failed = accountHealth(account);
+    const identity = displayAccountIdentity(account.masked_identity);
+    // 账号状态一句话：停用 > 异常 > 正常。
+    const accountStateText = !account.enabled
+      ? "账号已停用"
+      : (failed ? (opStateLabel[failed.state] || failed.state) : "已启用 · 按签到开关执行");
+
+    const box = document.createElement("div");
     box.className = "account-card" + (failed ? " bad" : "");
     box.dataset.provider = provider.id;
-    box.dataset.accountKey = account.key || account.id || "";
+    box.dataset.accountKey = accountKey;
     box.dataset.attention = failed ? "true" : "false";
     box.dataset.done = accountHasCompleted(account) ? "true" : "false";
-    const top = document.createElement("div");
-    top.className = "account-top";
+
+    // ---- 左列（mac 版行式）：标题 / 签到结果+额度摘要 / 额度窗口 / 轻量操作 ----
     const copy = document.createElement("div");
+    copy.className = "account-body";
+
     const title = document.createElement("div");
-    title.className = "account-title";
+    title.className = "acct-title";
     const dot = document.createElement("i");
-    dot.className = "status-dot " + stateClass(failed ? failed.state : "");
+    dot.className = "dot " + stateClass(failed ? failed.state : "");
     title.appendChild(dot);
-    title.appendChild(document.createTextNode(displayAccountIdentity(account.masked_identity)));
+    title.appendChild(document.createTextNode(identity));
     copy.appendChild(title);
-    const sub = document.createElement("div");
-    sub.className = "account-sub";
-    if (!account.enabled) sub.textContent = "账号已停用";
-    else if (failed) sub.textContent = opStateLabel[failed.state] || failed.state;
-    else sub.textContent = "已启用 · 按签到开关执行";
-    copy.appendChild(sub);
-    top.appendChild(copy);
+
+    // 一行摘要：签到结果（首要）+ 主额度。只报一套口径（剩余/总量）。
     const meta = document.createElement("div");
-    meta.className = "account-meta";
-    if (!account.enabled) meta.appendChild(makePill("已停用"));
+    meta.className = "acct-meta";
+    const resultText = document.createElement("b");
+    resultText.textContent = "今日尚未执行";
+    // 不签到的供应商（provider.checkin=false）没有签到结果，显示「仅额度」。
+    if (!provider.checkin) resultText.textContent = "仅额度";
+    meta.appendChild(resultText);
+    const quotaLine = document.createElement("span");
+    quotaLine.className = "account-quota";
+    quotaLine.textContent = "额度 读取中…";
+    meta.appendChild(quotaLine);
+    copy.appendChild(meta);
+
+    // 状态 + 模式：mac 的 op-chip 语言（小而轻）。
+    const ops = document.createElement("div");
+    ops.className = "acct-ops";
+    const stateChip = document.createElement("span");
+    stateChip.className = "op-chip " + stateClass(failed ? failed.state : "");
+    stateChip.textContent = accountStateText;
+    ops.appendChild(stateChip);
+    copy.appendChild(ops);
+
+    // 轻量操作：mac 里是文字/迷你按钮，不再用一排大按钮。
+    const links = document.createElement("div");
+    links.className = "acct-links";
+    copy.appendChild(links);
+
+    // ---- 右列：立即签到（mini-action）+ 启用开关 ----
+    const right = document.createElement("div");
+    right.className = "acct-right";
+
     const sw = document.createElement("button");
     sw.type = "button";
     sw.className = "switch";
     sw.setAttribute("role", "switch");
     sw.setAttribute("aria-checked", account.enabled ? "true" : "false");
-    sw.setAttribute("aria-label", (account.enabled ? "停用" : "启用") + "账号 " +
-      displayAccountIdentity(account.masked_identity));
+    sw.setAttribute("aria-label", (account.enabled ? "停用" : "启用") + "账号 " + identity);
     sw.onclick = async function () {
       sw.disabled = true;
       showAccountsMessage(account.enabled ? "正在停用账号…" : "正在启用账号…", "pending");
@@ -5673,151 +5733,56 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         showAccountsMessage(accountErrorMessage(err, "账号设置保存失败，请重试。"));
       }
     };
-    meta.appendChild(sw);
-    top.appendChild(meta);
-    box.appendChild(top);
+    right.appendChild(sw);
 
-    // 额度行：账号卡不再只看 op.balance（不少供应商只在用量窗口里给额度，
-    // 比如 Qoder CN 的 "900 / 900 credits"）。异步取最近一次读数并画出来。
-    const accountKey = account.key || account.id || "";
-    const quotaLine = document.createElement("div");
-    quotaLine.className = "account-quota";
-    quotaLine.textContent = "额度 读取中…";
-    box.appendChild(quotaLine);
-    if (accountKey) {
-      (async function () {
-        try {
-          const page = asJSON(await Bound.ProvidersHistory(provider.id, accountKey, 1));
-          const reading = (page.quota || [])[0];
-          quotaLine.textContent = "";
-          const windows = ((reading && reading.windows) || []).filter(function (w) { return !w.aside; });
-          const label = document.createElement("span");
-          label.className = "quota-label";
-          label.textContent = "额度";
-          quotaLine.appendChild(label);
-          const body = document.createElement("div");
-          body.className = "quota-body";
-          quotaLine.appendChild(body);
-          if (windows.length) {
-            const multi = windows.length > 1;
-            windows.forEach(function (w) {
-              // 统一语义：只说「剩余 / 总量」。amount 是已用量，
-              // 剩余 = limit - amount；供应商没给数值窗口时才退回它的原文。
-              let text = "";
-              let hasBar = false;
-              if (w.limit > 0 && w.amount >= 0) {
-                const remaining = Math.max(0, w.limit - w.amount);
-                text = "剩余 " + formatQuota(remaining) + " / 总量 " + formatQuota(w.limit) +
-                  (w.unit ? " " + w.unit : "");
-                hasBar = true;
-              } else if (w.balance != null) {
-                text = "剩余 " + formatQuota(Number(w.balance));
-              } else if (w.display) {
-                text = w.display;
-              }
-              if (!text && !hasBar) return;
-              const row = document.createElement("div");
-              row.className = "quota-window";
-              const span = document.createElement("span");
-              span.className = "quota-text";
-              span.textContent = (multi && w.name ? w.name + " · " : "") + text;
-              row.appendChild(span);
-              if (hasBar) {
-                const pct = Math.max(0, Math.min(100, (w.amount / w.limit) * 100));
-                const track = document.createElement("span");
-                track.className = "quota-track";
-                const bar = document.createElement("i");
-                bar.className = "quota-bar" + (pct >= 100 ? " full" : "");
-                bar.style.width = pct.toFixed(1) + "%";
-                track.appendChild(bar);
-                row.appendChild(track);
-              }
-              body.appendChild(row);
-            });
-          } else if (reading && reading.balance) {
-            body.textContent = reading.balance;
-          } else {
-            body.textContent = "暂无额度读数；点「刷新额度」后再看。";
-          }
-        } catch (_) {
-          quotaLine.textContent = "额度 暂不可读";
-        }
-      })();
-    }
-
-    const taskList = document.createElement("div");
-    taskList.className = "task-list";
-    const ops = provider.checkin ? ["checkin"] : [];
-    ops.forEach(function (operation) {
+    // 签到任务：结果进摘要行，开关与「立即签到」进右列。
+    const checkinOps = provider.checkin ? ["checkin"] : [];
+    checkinOps.forEach(function (operation) {
       const op = operationFor(account, operation);
       const taskOn = taskEnabledFor(account, operation);
       const terminal = taskTerminal(operation, op);
-      const row = document.createElement("div");
-      row.className = "task-row" + (taskOn ? "" : " off") +
-        (taskOn && op && (op.state === "failed_retryable" || op.state === "failed_final") ? " bad" : "");
-      const taskCopy = document.createElement("div");
-      taskCopy.className = "task-copy";
-      const taskTitle = document.createElement("div");
-      taskTitle.className = "task-title";
-      taskTitle.appendChild(document.createTextNode(opLabel[operation]));
-      const mode = document.createElement("span");
-      mode.className = "tag";
-      mode.textContent = taskOn ? "自动执行" : "仅手动";
-      taskTitle.appendChild(mode);
-      taskCopy.appendChild(taskTitle);
-      const stateText = document.createElement("div");
-      stateText.className = "task-state";
       const growth = op ? claimGrowth(op) : null;
-      if (!op || !op.state) stateText.textContent = "今日尚未执行";
-      else {
-        // 额度统一在上方「额度」行展示（剩余 / 总量）；这里只说签到结果本身，
-        // 不再追加「当前额度」，避免同屏出现两套口径的第三个数字。
-        stateText.textContent = growth == null
+      // 只报签到结果本身（额度在额度行），避免同屏两套口径。
+      resultText.textContent = !op || !op.state
+        ? "今日尚未执行"
+        : (growth == null
           ? (opStateLabel[op.state] || op.state)
-          : "今日已领取 +" + formatQuota(growth);
-      }
-      taskCopy.appendChild(stateText);
+          : "今日已领取 +" + formatQuota(growth));
+      // 自动/手动模式：mac 的 chip 语言，点击切换。
+      const modeChip = document.createElement("button");
+      modeChip.type = "button";
+      modeChip.className = "op-chip mode";
+      modeChip.textContent = taskOn ? "自动执行" : "仅手动";
+      modeChip.title = taskOn ? "点击改为仅手动" : "点击改为自动执行";
+      modeChip.onclick = async function () {
+        modeChip.disabled = true;
+        try {
+          await Bound.ProvidersSetTaskEnabled(provider.id, account.key, operation, !taskOn);
+          await renderAccounts();
+          showAccountsMessage(opLabel[operation] + (taskOn ? "自动执行已关闭" : "自动执行已开启"), "success");
+        } catch (err) {
+          modeChip.disabled = false;
+          showAccountsMessage(accountErrorMessage(err, "任务偏好保存失败，请重试。"));
+        }
+      };
+      ops.appendChild(modeChip);
       if (op && op.message &&
           !(growth != null && /^今天?已领取/.test(op.message.trim()))) {
         const hint = document.createElement("div");
-        hint.className = "task-hint";
+        hint.className = "acct-hint";
         if (op.state === "inactive") {
-          // 插件的原始说明是一段英文实现细节（设备身份 / runtime-info），
-          // 用户只需要「今天没有可领的活动」这一个事实；原文收进悬停提示。
+          // 插件原文是英文实现细节；用户只需要「今天没有可领的活动」这一个事实。
           hint.textContent = "供应商今天没有可领取的签到活动，明天会自动再试；" +
             "若其官方客户端显示今日额度，请在那里领取。";
           hint.title = op.message;
         } else {
           hint.textContent = op.message;
         }
-        taskCopy.appendChild(hint);
+        copy.insertBefore(hint, links);
       }
-      row.appendChild(taskCopy);
-      const taskSwitch = document.createElement("button");
-      taskSwitch.type = "button";
-      taskSwitch.className = "switch";
-      taskSwitch.setAttribute("role", "switch");
-      taskSwitch.setAttribute("aria-checked", taskOn ? "true" : "false");
-      taskSwitch.setAttribute("aria-label", (taskOn ? "关闭" : "开启") + opLabel[operation] + "自动执行");
-      taskSwitch.onclick = async function () {
-        taskSwitch.disabled = true;
-        try {
-          await Bound.ProvidersSetTaskEnabled(provider.id, account.key, operation, !taskOn);
-          await renderAccounts();
-          showAccountsMessage(opLabel[operation] + (taskOn ? "自动执行已关闭" : "自动执行已开启"), "success");
-        } catch (err) {
-          taskSwitch.setAttribute("aria-checked", taskOn ? "true" : "false");
-          taskSwitch.disabled = false;
-          showAccountsMessage(accountErrorMessage(err, "任务偏好保存失败，请重试。"));
-        }
-      };
-      row.appendChild(taskSwitch);
-      const actions = document.createElement("div");
-      actions.className = "task-actions";
       const trigger = document.createElement("button");
-      trigger.className = "primary";
-      // 没有可领活动（inactive/ineligible）不是"完成"：按钮文案照实说，
-      // 避免用户把「今天没活动」读成签到失败或已到账。
+      trigger.className = "mini-action";
+      // 没有可领活动（inactive/ineligible）不是"完成"：文案照实说。
       trigger.textContent = terminal
         ? (op && (op.state === "inactive" || op.state === "ineligible")
           ? "今日无需签到"
@@ -5838,18 +5803,69 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
             opLabel[operation] + "执行失败；本次未宣称成功。"));
         }
       };
-      actions.appendChild(trigger);
-      row.appendChild(actions);
-      taskList.appendChild(row);
+      right.appendChild(trigger);
     });
-    const body = document.createElement("div");
-    body.className = "account-body";
-    body.appendChild(taskList);
 
-    const actions = document.createElement("div");
-    actions.className = "account-actions";
+    // 额度读取：账号卡不只看 op.balance（不少供应商只在用量窗口里给额度）。
+    if (accountKey) {
+      (async function () {
+        try {
+          const page = asJSON(await Bound.ProvidersHistory(provider.id, accountKey, 1));
+          const reading = (page.quota || [])[0];
+          const windows = ((reading && reading.windows) || []).filter(function (w) { return !w.aside; });
+          quotaLine.textContent = "";
+          if (windows.length) {
+            // 摘要行只放第一个窗口；其余窗口按 mac 的 chip 语言排到 acct-ops 下面。
+            windows.forEach(function (w, index) {
+              // 统一语义：只说「剩余 / 总量」。amount 是已用量，剩余 = limit - amount。
+              let text = "";
+              let hasBar = false;
+              if (w.limit > 0 && w.amount >= 0) {
+                const remaining = Math.max(0, w.limit - w.amount);
+                text = "剩余 " + formatQuota(remaining) + " / 总量 " + formatQuota(w.limit) +
+                  (w.unit ? " " + w.unit : "");
+                hasBar = true;
+              } else if (w.balance != null) {
+                text = "剩余 " + formatQuota(Number(w.balance));
+              } else if (w.display) {
+                text = w.display;
+              }
+              if (!text && !hasBar) return;
+              const prefix = w.name ? w.name + " · " : "";
+              if (index === 0) {
+                quotaLine.textContent = " · " + prefix + text;
+                if (hasBar) {
+                  const track = document.createElement("span");
+                  track.className = "quota-track";
+                  const bar = document.createElement("i");
+                  const pct = Math.max(0, Math.min(100, (w.amount / w.limit) * 100));
+                  bar.className = "quota-bar" + (pct >= 100 ? " full" : "");
+                  bar.style.width = pct.toFixed(1) + "%";
+                  track.appendChild(bar);
+                  quotaLine.appendChild(track);
+                }
+              } else {
+                const chip = document.createElement("span");
+                chip.className = "op-chip quota";
+                chip.textContent = prefix + text;
+                ops.appendChild(chip);
+              }
+            });
+          } else if (reading && reading.balance) {
+            quotaLine.textContent = " · 剩余 " + reading.balance;
+          } else {
+            quotaLine.textContent = " · 暂无额度读数";
+          }
+        } catch (_) {
+          quotaLine.textContent = " · 额度暂不可读";
+        }
+      })();
+    }
+
+    // 轻量文字操作：刷新状态 / 刷新额度 / 历史 / 重新登录 / 删除。
     const refreshStatus = document.createElement("button");
-    refreshStatus.className = "secondary";
+    refreshStatus.type = "button";
+    refreshStatus.className = "acct-link";
     refreshStatus.textContent = "刷新状态";
     refreshStatus.onclick = async function () {
       refreshStatus.disabled = true;
@@ -5865,37 +5881,41 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         refreshStatus.disabled = false;
       }
     };
-    actions.appendChild(refreshStatus);
-    const refresh = document.createElement("button");
-    refresh.className = "secondary";
-    refresh.textContent = "刷新额度";
-    refresh.onclick = async function () {
-      refresh.disabled = true;
+    links.appendChild(refreshStatus);
+    const refreshQuota = document.createElement("button");
+    refreshQuota.type = "button";
+    refreshQuota.className = "acct-link";
+    refreshQuota.textContent = "刷新额度";
+    refreshQuota.onclick = async function () {
+      refreshQuota.disabled = true;
       showAccountsMessage("正在读取供应商额度…", "pending");
       try {
         await Bound.ProvidersRun(provider.id, account.key, "refresh");
         await renderAccounts();
         showAccountsMessage("额度已刷新", "success");
       } catch (err) {
-        refresh.disabled = false;
+        refreshQuota.disabled = false;
         showAccountsMessage(accountErrorMessage(err, "额度读取失败，请稍后重试。"));
       }
     };
-    actions.appendChild(refresh);
+    links.appendChild(refreshQuota);
     const history = document.createElement("button");
-    history.className = "secondary";
+    history.type = "button";
+    history.className = "acct-link";
     history.textContent = "历史 / 额度";
     history.onclick = function () {
       toggleProviderHistory(box, history, provider, account);
     };
-    actions.appendChild(history);
+    links.appendChild(history);
     const relogin = document.createElement("button");
-    relogin.className = "secondary";
+    relogin.type = "button";
+    relogin.className = "acct-link";
     relogin.textContent = "重新登录";
     relogin.onclick = function () { openProviderLogin(provider); };
-    actions.appendChild(relogin);
+    links.appendChild(relogin);
     const del = document.createElement("button");
-    del.className = "danger";
+    del.type = "button";
+    del.className = "acct-link danger";
     del.textContent = "删除";
     del.onclick = async function () {
       del.disabled = true;
@@ -5910,45 +5930,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         showAccountsMessage(accountErrorMessage(err, "删除失败，请稍后重试。"));
       }
     };
-    actions.appendChild(del);
-    body.appendChild(actions);
-    box.appendChild(body);
+    links.appendChild(del);
 
-    // 账号层折叠：头部常驻（身份、状态、启用开关），签到行与操作按钮收进 body。
-    // 供应商下账号多时，先看到整齐的一列账号，需要哪个再展开哪个。
-    const accountState = accountStateKey(provider.id, account.key || account.id || "");
-    const collapsed = shouldCollapseAccount(expandedAccounts, accountState);
-    box.classList.toggle("collapsed", collapsed);
-    top.classList.add("account-collapse-head");
-    top.setAttribute("role", "button");
-    top.setAttribute("tabindex", "0");
-    top.setAttribute("aria-expanded", collapsed ? "false" : "true");
-    const chevron = document.createElement("span");
-    chevron.className = "account-collapse";
-    chevron.setAttribute("aria-hidden", "true");
-    chevron.innerHTML = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
-      '<path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.5" ' +
-      'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    top.appendChild(chevron);
-    const toggleAccount = function () {
-      // next=true 表示展开；集合语义与判定都走同一个纯函数，避免两边写反。
-      const next = nextAccountExpansion(expandedAccounts, accountState);
-      if (next) expandedAccounts.add(accountState);
-      else expandedAccounts.delete(accountState);
-      box.classList.toggle("collapsed", !next);
-      top.setAttribute("aria-expanded", next ? "true" : "false");
-    };
-    top.onclick = function (event) {
-      // 启用开关自己处理点击，不应连带折叠整张卡；其余区域都是折叠热区。
-      if (event.target.closest(".switch")) return;
-      toggleAccount();
-    };
-    top.onkeydown = function (event) {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      if (event.target !== top) return;
-      event.preventDefault();
-      toggleAccount();
-    };
+    box.appendChild(copy);
+    box.appendChild(right);
     return box;
   }
 
