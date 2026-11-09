@@ -206,8 +206,10 @@ else
   build_arch "$goarch" "$BIN_OUT"
 fi
 
+# lipo 对 Intel 二进制输出的是 "x86_64"；脚本与 Go 侧统一用 amd64 命名，
+# 这里做一次归一化，否则 ARCH=amd64 会被误判成「Bun 不含 amd64」。
 bun_archs() {
-  lipo -archs "$1" 2>/dev/null | tr ' ' '\n'
+  lipo -archs "$1" 2>/dev/null | tr ' ' '\n' | sed -e 's/^x86_64$/amd64/' -e 's/^aarch64$/arm64/'
 }
 
 resolve_single_bun() {

@@ -17,6 +17,7 @@ func TestMainUsesFiveTabProductShell(t *testing.T) {
 	orderedTabs := []string{
 		`data-tab="apps"`,
 		`data-tab="speed"`,
+		`data-tab="freetokens"`,
 		`data-tab="pet"`,
 		`data-tab="logs"`,
 		`data-tab="settings"`,
@@ -38,6 +39,7 @@ func TestMainUsesFiveTabProductShell(t *testing.T) {
 		`data-tab="logs"`,
 		`data-tab="pet"`,
 		`data-tab="settings"`,
+		`data-tab="freetokens"`,
 		`id="pet"`,
 		`id="settings"`,
 		`id="settings-body"`,

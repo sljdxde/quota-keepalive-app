@@ -101,7 +101,7 @@ func TestMenuPanelCheckinUsesProviderNamesAndIconsSafely(t *testing.T) {
 		`provider.name || provider.id || target`,
 		`function summaryFor(accounts)`,
 		`account.source_health === "reauth_required"`,
-		`if (expanded[target] === undefined) expanded[target] = true`,
+		`if (expanded[target] === undefined) expanded[target] = false`,
 		`pending++`,
 		`return;`,
 		`function accountNode(account)`,

@@ -11,6 +11,7 @@ import (
 	"qka/internal/applog"
 	"qka/internal/autostart"
 	"qka/internal/capabilities"
+	"qka/internal/freetokens"
 	"qka/internal/gui"
 	"qka/internal/install"
 	"qka/internal/logtail"
@@ -109,6 +110,7 @@ func (a *App) guiDeps() gui.Deps {
 	exe, _ := appExecutable()
 	scheduleManager := schedule.NewManager(a.cfg.ConfigDir, exe, scheduler.New(), a.now)
 	tokenSpeed := tokenspeed.New(tokenspeed.DefaultConfig())
+	freeTokensService := freetokens.NewService()
 	tokenSpeed.SetTitleTheme(st.GetString("title_theme"))
 	updateService := a.updateService()
 
@@ -174,7 +176,33 @@ func (a *App) guiDeps() gui.Deps {
 			return tokenSpeed.Snapshot(), nil
 		},
 		TokenSpeed: tokenSpeed,
-		Accounts:   bridge,
+		// AIHOT 免费额度：按需拉一次（10 分钟内存缓存），再与 QKA 现场
+		// provider 状态合成三档；拉取失败时返回上次快照并带错误给页面。
+		FreeTokens: func(ctx context.Context, force bool) (freetokens.View, error) {
+			var snapshot freetokens.Snapshot
+			var fetchErr error
+			if force {
+				snapshot, fetchErr = freeTokensService.Refresh(ctx)
+			} else {
+				snapshot, _, fetchErr = freeTokensService.Get(ctx)
+			}
+			states := make([]freetokens.ProviderState, 0, 16)
+			if view, err := a.providers.CachedListView(ctx); err == nil {
+				for _, provider := range view.Providers {
+					states = append(states, freetokens.ProviderState{
+						ID:       provider.ID,
+						Name:     provider.Name,
+						Enabled:  provider.Enabled,
+						SignedIn: provider.SignedIn,
+						Accounts: len(provider.Accounts),
+						Checkin:  provider.Checkin,
+					})
+				}
+			}
+			return freetokens.Classify(snapshot, states, fetchErr), nil
+		},
+		OpenURL:  openBrowser,
+		Accounts: bridge,
 		// 页面打开走缓存投影（秒开），过期后在后台刷新；写操作会立即失效缓存。
 		ProvidersList: a.providers.CachedListView,
 		ProvidersWarm: func(ctx context.Context) error {

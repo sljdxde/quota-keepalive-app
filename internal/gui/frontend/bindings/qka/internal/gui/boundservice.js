@@ -185,6 +185,16 @@ export function DiagnosticsOpenLogDir() {
 }
 
 /**
+ * FreeTokensGet 返回 AIHOT 免费额度（Token 羊毛）与三档分类：
+ * 已配置可用 / 有插件待配置 / 暂无插件。force=true 时绕过缓存。
+ * @param {boolean} force
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function FreeTokensGet(force) {
+    return $Call.ByID(3050685063, force);
+}
+
+/**
  * LogsTail 按四类筛选查询日志（有界、游标）。
  * @param {string} target
  * @param {string} accountID
@@ -196,6 +206,16 @@ export function DiagnosticsOpenLogDir() {
  */
 export function LogsTail(target, accountID, operation, state, limit, cursor) {
     return $Call.ByID(4160601372, target, accountID, operation, state, limit, cursor);
+}
+
+
+/**
+ * OpenURL 用系统浏览器打开外部链接（仅允许 http/https，非法链接返回错误）。
+ * @param {string} raw
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenURL(raw) {
+    return $Call.ByID(3465478630, raw);
 }
 
 /**

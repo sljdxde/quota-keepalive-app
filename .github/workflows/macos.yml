@@ -39,6 +39,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # adapterhost / adapterwiring 的用例会真的拉起随包 Bun 运行时；runner
+      # 默认没有 bun，先装与发行物一致的版本再跑全量单测。
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+
       # Windows 专用的用例（安装探测、盘符 DSN 等）已按平台跳过；macOS 是
       # POSIX，整包跑得起，能覆盖 cli/app 里那些「只在 macOS 上会踩」的分支
       # （例如 GUI() 在零值 App 上起异步任务导致的胖 goroutine panic）。

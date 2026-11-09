@@ -8,6 +8,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"qka/internal/features"
+	"qka/internal/freetokens"
 	"qka/internal/providers"
 	"qka/internal/schedule"
 	"qka/internal/selfupdate"
@@ -66,6 +67,11 @@ type Deps struct {
 	BallVisible func(visible bool)
 	// TokenSpeedGet 返回本机 Agent 日志的实时 token 吞吐快照。
 	TokenSpeedGet func(ctx context.Context) (tokenspeed.Snapshot, error)
+	// FreeTokens 返回 AIHOT 免费额度（Token 羊毛）的三档视图；为空时页面不可用。
+	// force=true 时绕过内存缓存强制拉取。
+	FreeTokens func(ctx context.Context, force bool) (freetokens.View, error)
+	// OpenURL 用系统浏览器打开一个已校验的 http(s) 链接。
+	OpenURL func(url string) error
 	// TokenSpeed 是本机 Agent 日志速度服务；为空时不启动菜单栏实时标签。
 	TokenSpeed *tokenspeed.Service
 	// Accounts 是账号管理桥接。
@@ -336,6 +342,27 @@ func (s *BoundService) TokenSpeedGet() (json.RawMessage, error) {
 		return nil, err
 	}
 	return json.Marshal(snapshot)
+}
+
+// FreeTokensGet 返回 AIHOT 免费额度（Token 羊毛）与三档分类：
+// 已配置可用 / 有插件待配置 / 暂无插件。
+func (s *BoundService) FreeTokensGet(force bool) (json.RawMessage, error) {
+	if s.deps.FreeTokens == nil {
+		return nil, errNotWired
+	}
+	view, err := s.deps.FreeTokens(context.Background(), force)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(view)
+}
+
+// OpenURL 用系统浏览器打开外部链接（仅允许 http/https，非法链接返回错误）。
+func (s *BoundService) OpenURL(raw string) error {
+	if s.deps.OpenURL == nil {
+		return errNotWired
+	}
+	return s.deps.OpenURL(raw)
 }
 
 // AppsList 返回应用管理页聚合行。

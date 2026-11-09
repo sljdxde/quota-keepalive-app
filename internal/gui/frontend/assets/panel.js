@@ -537,7 +537,8 @@ function render(view) {
   currentTargets.forEach(function (target) {
     const group = grouped[target];
     const provider = providerForTarget(target);
-    if (expanded[target] === undefined) expanded[target] = true;
+    // 默认收起：面板只展示到供应商层级，账号详情要手动展开。
+    if (expanded[target] === undefined) expanded[target] = false;
     const app = document.createElement("section");
     app.className = "app" + (expanded[target] ? " open" : "");
     app.dataset.target = target;
