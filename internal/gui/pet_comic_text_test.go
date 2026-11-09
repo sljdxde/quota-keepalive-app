@@ -47,5 +47,7 @@ func TestComicPetTextOnMainWindowAndMiniWindow(t *testing.T) {
 		`function speak(`,
 		`function scheduleTalk(`,
 		`showPopup("捕获失败", "miss")`,
+		`speak("点一下精灵球把它放出来")`,
+		`scheduleTalk()`,
 	)
 }

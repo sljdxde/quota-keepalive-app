@@ -585,9 +585,12 @@
             Events.Emit("pet-caught", { caught: true, petId: pet.id });
           } catch (_) {}
           showPopup("捕获成功！", "ok");
+          stopTalk();
+          speak("点一下精灵球把它放出来");
         } else {
           // 失败统一用「捕获失败」横幅，与「捕获成功！」同一种美漫风格。
           showPopup("捕获失败", "miss");
+          scheduleTalk();
         }
       },
     });

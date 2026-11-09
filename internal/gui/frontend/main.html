@@ -4188,8 +4188,9 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         ? "点击精灵球放出伙伴"
         : "点击投球 · 按住蓄力，指针进 PERFECT 再松手";
     }
+    // 恢复存档里的捕获态时只更新提示，不弹横幅：横幅只属于「这一次」捕获结果，
+    // 否则每次打开应用都会再放一遍「捕获成功」。
     if (caught && !wasCaught) {
-      showMainPetPopup("捕获成功！", "ok");
       const bubbleNode = mainPetBubbleNode();
       if (bubbleNode) bubbleNode.textContent = "点一下精灵球把它放出来";
       stopMainPetTalk();
@@ -4235,6 +4236,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       compactTokenCount(to) + " Token";
     renderMainPetOptions();
     scheduleMainPetAutoSkill();
+    if (mainPetTabActive() && !caught) scheduleMainPetTalk();
     syncMainPetTrayIcon();
     syncMainPetTrayCaught();
   }
