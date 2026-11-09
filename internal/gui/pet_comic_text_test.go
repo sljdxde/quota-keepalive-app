@@ -29,6 +29,7 @@ func TestComicPetTextOnMainWindowAndMiniWindow(t *testing.T) {
 		`aimForClientPoint(clientX, clientY, stageRect, viewerRect)`,
 		`document.addEventListener("pointermove"`,
 		`window.addEventListener("pointerup"`,
+		`if (!petPressActive) return;`,
 	)
 	if strings.Contains(mainPage, `result.dodged
             ? "它躲开了！再来一球"`) {

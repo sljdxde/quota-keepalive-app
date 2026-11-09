@@ -4316,7 +4316,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   let petChargeFrame = 0;
   let petCharging = false;
   // 捕获态下 pointerdown 只负责开球；同一次 pointerup 不能再补一记弱投。
-  let petSuppressThrow = false;
 
   function mainPetViewerNode() {
     return document.getElementById("main-pet-viewer");
@@ -4469,7 +4468,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function beginMainPetPress() {
     if (mainPetIsCaught()) {
-      petSuppressThrow = true;
       releaseMainPetBall();
       return;
     }
@@ -4505,10 +4503,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (viewerNode) viewerNode.classList.remove("is-charging");
     if (mainPetViewer) mainPetViewer.setCharging(false);
     mainPetChargeUi({ position: 0, speed: CAPTURE_SWEEP.baseSpeed });
-    if (cancelled || !mainPetViewer || petSuppressThrow) {
-      petSuppressThrow = false;
-      return;
-    }
+    if (cancelled || !mainPetViewer) return;
     // 音游判定：指针离 PERFECT 中心越近，命中质量越高。
     const accuracy = timingAccuracy(sweep.position);
     throwMainPetBall(accuracy);
