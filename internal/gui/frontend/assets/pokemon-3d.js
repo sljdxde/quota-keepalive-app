@@ -438,7 +438,7 @@ function createSkillEffects(scene, camera, options) {
       transparent: true,
       opacity: 0,
       depthWrite: false,
-      depthTest: false,
+      depthTest: true,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
     });
@@ -449,22 +449,23 @@ function createSkillEffects(scene, camera, options) {
     rings.push({ mesh, material: ringMaterial, active: false, age: 0, delay: 0, life: 0.66, from: 0.5, to: 2.6 });
   }
 
-  // 屏幕闪光：宠物前方一片柔光亮面，强度随档位与 release 包络衰减。
+  // 整体光爆：居中、缩小、半透明，且开启深度测试（被宠物挡住的部分不绘制）。
+  // 作为「把宠物与粒子包成一张画面」的背景亮面，不盖住本体。
   const flashMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
     opacity: 0,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     blending: THREE.AdditiveBlending,
   });
-  const flash = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 4.6), flashMaterial);
-  flash.position.set(0, 0.55, 1.55);
+  const flash = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.6), flashMaterial);
+  flash.position.set(0, 0.55, 0.5);
   flash.renderOrder = 8;
   scene.add(flash);
 
   const light = new THREE.PointLight(0xffffff, 0, 0, 7, 2);
-  light.position.set(0, 0.8, 1.7);
+  light.position.set(0, 0.8, 1.1);
   scene.add(light);
 
   let flashAge = 0;
@@ -498,18 +499,18 @@ function createSkillEffects(scene, camera, options) {
       const slot = cursor % VFX_MAX_PARTICLES;
       cursor += 1;
       const base = slot * 3;
-      // 起点在头部附近的小球内，避免所有粒子都从一个点冒出来。
-      positions[base] = origin.x + (Math.random() - 0.5) * 0.34;
-      positions[base + 1] = origin.y + (Math.random() - 0.5) * 0.26;
-      positions[base + 2] = origin.z + (Math.random() - 0.5) * 0.24;
+      // 起点在身体中心附近的小球内，范围收窄，避免粒子回糊到宠物脸上。
+      positions[base] = origin.x + (Math.random() - 0.5) * 0.24;
+      positions[base + 1] = origin.y + (Math.random() - 0.5) * 0.22;
+      positions[base + 2] = origin.z + (Math.random() - 0.5) * 0.18;
       const speed = profile.speed * (0.55 + Math.random() * 0.9);
       const theta = Math.random() * Math.PI * 2;
       const radius = Math.random() * spread;
-      const vx = Math.cos(theta) * radius * speed + aimRight * speed * 0.4;
-      const vy = Math.sin(theta) * radius * speed * 0.85 + aimUp * speed * 0.34 +
-        (profile.yAccel > 0 ? speed * 0.5 : 0);
-      // 朝摄像机方向喷出：观众看到的是「冲着自己来」的爆发。
-      const vz = profile.forward * speed * (0.35 + Math.random() * 0.5);
+      // 向四周放射 + 缓慢上飘（周身释放），不再朝单一方向冲镜头。
+      const vx = Math.cos(theta) * radius * speed + aimRight * speed * 0.22;
+      const vy = Math.sin(theta) * radius * speed * .7 + aimUp * speed * .2 +
+        (profile.yAccel > 0 ? speed * 0.3 : 0);
+      const vz = profile.forward * speed * (0.1 + Math.random() * 0.16);
       velocity[base] = vx;
       velocity[base + 1] = vy;
       velocity[base + 2] = vz;
@@ -544,8 +545,8 @@ function createSkillEffects(scene, camera, options) {
       ring.age = 0;
       ring.delay = index * 0.075;
       ring.life = 0.56 + index * 0.06;
-      ring.from = 0.42 * scale;
-      ring.to = (2.1 + profile.power * 0.45) * scale;
+      ring.from = 0.32 * scale;
+      ring.to = (1.35 + profile.power * 0.28) * scale;
       ring.mesh.position.set(origin.x, origin.y + 0.02, origin.z + 0.12);
       ring.material.color.setHex(profile.ringColor);
       ring.mesh.visible = false;
@@ -1103,17 +1104,16 @@ function createStageViewer(canvas, options) {
     }
   }
 
-  // skillOrigin 取头部骨骼的世界坐标：技能从脸前喷出，而不是从脚底冒烟。
-// 模型没有头骨时退回胸口高度。
-function skillOrigin() {
-  const origin = new THREE.Vector3(0, 0.62, 0.42);
-  if (currentRig && currentRig.head && currentRig.head.bone) {
-    currentRig.head.bone.getWorldPosition(origin);
-    origin.y += 0.04;
-    origin.z += 0.24;
+  // 周身融合构图（设计原型 v3）：技能从宠物身体中心「向四周」释放，
+  // 半透明粒子环绕身体、不遮挡本体。不再从右侧单独打出去（那样与立绘分离）。
+  function skillOrigin() {
+    const origin = new THREE.Vector3(0, 0.62, 0.3);
+    if (currentRig && currentRig.head && currentRig.head.bone) {
+      currentRig.head.bone.getWorldPosition(origin);
+      origin.z += 0.06;
+    }
+    return origin;
   }
-  return origin;
-}
 
   function applySkill(time) {
     if (!current || skillStart < 0) return;
@@ -1245,10 +1245,11 @@ function skillOrigin() {
     const idleFor = time - lastPointerAt;
     if (idleFor < 1800) return { x: 0, y: 0 };
     const ramp = Math.min(1, (idleFor - 1800) / 1200);
+    // 水平漂移减半：慢速挪动时不至于把「往哪看」的意图盖过去，避免头被拽偏。
     return {
-      x: Math.sin(elapsed * 0.9) * 0.035 * ramp +
-        Math.sin(elapsed * 0.37 + 1.1) * 0.02 * ramp,
-      y: Math.sin(elapsed * 0.63 + 0.4) * 0.018 * ramp,
+      x: Math.sin(elapsed * 0.9) * 0.016 * ramp +
+        Math.sin(elapsed * 0.37 + 1.1) * 0.01 * ramp,
+      y: Math.sin(elapsed * 0.63 + 0.4) * 0.012 * ramp,
     };
   }
 

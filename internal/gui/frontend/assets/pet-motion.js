@@ -8,14 +8,17 @@
 // 2. skillProfile：技能类型 + 强度档位 → 粒子数、环数、闪光、镜头冲击、
 //    持续时间、颜色。档位 1-5 与「大招」在同一张表上单调递增，视觉差异由
 //    参数保证，而不是靠调几个系数碰运气。
+// 俯仰与偏航限幅平衡：旧的 headPitch(0.48) 远小于 headYaw(0.72)，「往下看」
+// 只有「往左右看」三分之二的幅度，叠加默认 3/4 侧脸就显得头一直偏右。
+// 现在让竖直与水平接近等强，跟随才「准」。
 export const GAZE_LIMITS = {
-  headYaw: 0.72,
-  headPitch: 0.48,
+  headYaw: 0.66,
+  headPitch: 0.6,
   headRoll: 0.1,
   neckYaw: 0.34,
-  neckPitch: 0.26,
+  neckPitch: 0.32,
   bodyYaw: 0.2,
-  bodyPitch: 0.1,
+  bodyPitch: 0.12,
   bodyRoll: 0.04,
   bodyShift: 0.06,
 };
@@ -34,9 +37,11 @@ function signedCurve(value, exponent) {
 }
 
 // gazePose 把归一化指针位置（-1..1）转成各关节的欧拉角（弧度）。
+// x/y 用同一条灵敏度曲线：旧的 y 指数 0.7 比 x 的 0.62 更钝，竖直跟手更差，
+// 现在两者一致，上下与左右同等灵敏。
 export function gazePose(aimX, aimY) {
   const x = signedCurve(aimX, 0.62);
-  const y = signedCurve(aimY, 0.7);
+  const y = signedCurve(aimY, 0.62);
   return {
     headYaw: x * GAZE_LIMITS.headYaw,
     headPitch: y * GAZE_LIMITS.headPitch,
@@ -226,8 +231,13 @@ export function timingAccuracy(position, center, halfWidth) {
   return Math.max(0.15, 0.9 * Math.exp(-(distance - half) / (half * 2.2)));
 }
 
-// captureOutcome 用两个随机数决定「躲没躲开」与「抓没抓到」。
-// 返回的 catchChance/dodgeChance 供 UI 显示概率，caught 是最终结果。
+// captureOutcome 决定这次抛球的结果：捕获是稀有事件，成功率被钉在
+// 5%–10% 区间（音游卡点越准越靠上限，乱按靠下限），绝大多数尝试都会失败，
+// 「捕获成功」才值得庆祝。
+// 失败再分两种表现：被躲开 / 差一点没抓住——用第二个随机数按准度分配，
+// 卡点越准越像「差一点」，越偏越像「它躲开了」。
+export const CAPTURE_CHANCE = { min: 0.05, max: 0.1 };
+
 export function captureOutcome(options) {
   const opts = options || {};
   // 判定由音游式指针给出；缺省时按「中等」处理（主要服务单测与兜底）。
@@ -235,14 +245,18 @@ export function captureOutcome(options) {
     ? clamp(Number(opts.accuracy), 0, 1)
     : 0.5;
   const tier = clamp(Math.round(Number(opts.tier) || 1), 1, 5);
-  // 技能等级越高，宠物越警觉：躲避概率小幅上升（更强的伙伴更难抓）。
-  const dodgeChance = Math.min(0.75,
-    (0.06 + 0.4 * (1 - accuracy)) * (1 + (tier - 3) * 0.05));
-  const catchChance = Math.min(0.98, 0.5 + 0.48 * accuracy - (tier - 1) * 0.015);
+  // 成功率 = 下限 + 准度买到的上限差额；高等级伙伴最多再压低一档，
+  // 但仍不会低于 5%，保证区间是硬约束。
+  const catchChance = clamp(
+    CAPTURE_CHANCE.min + (CAPTURE_CHANCE.max - CAPTURE_CHANCE.min) * accuracy -
+      (tier - 1) * 0.002,
+    CAPTURE_CHANCE.min, CAPTURE_CHANCE.max);
+  // 失败里算「躲开」的比例：准度高时更少「躲开」（更像差一点）。
+  const dodgeChance = clamp(0.72 - 0.44 * accuracy, 0.12, 0.8);
   const dodgeRoll = Number.isFinite(opts.dodgeRandom) ? opts.dodgeRandom : Math.random();
   const catchRoll = Number.isFinite(opts.catchRandom) ? opts.catchRandom : Math.random();
-  const dodged = dodgeRoll < dodgeChance;
-  const caught = !dodged && catchRoll < catchChance;
+  const caught = catchRoll < catchChance;
+  const dodged = !caught && dodgeRoll < dodgeChance;
   return {
     accuracy,
     dodgeChance,

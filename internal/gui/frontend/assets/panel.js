@@ -1312,144 +1312,154 @@ function skillZigzagPath(x1, y1, x2, y2, power) {
   }).join(" L");
 }
 
+// 实心技能形状：火焰不再是「粗描边直线」，而是带尖端与宽度的火舌轮廓；
+// 水同理是锥形水柱。两者都从宠物身上指向落点，power 决定宽度/层数。
+function skillFlameTonguePath(x1, y1, x2, y2, scale) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const nx = -dy / length;
+  const ny = dx / length;
+  const half = 12 * scale;
+  const tipX = x2 + dx / length * 10;
+  const tipY = y2 + dy / length * 10;
+  const mx = x1 + dx * .55;
+  const my = y1 + dy * .55;
+  const f = function (n) { return n.toFixed(1); };
+  return "M" + f(x1) + " " + f(y1) +
+    " Q" + f(x1 + dx * .18 + nx * half) + " " + f(y1 + dy * .18 + ny * half) +
+    " " + f(mx + nx * half * .8) + " " + f(my + ny * half * .8) +
+    " Q" + f(tipX + nx * half * .3) + " " + f(tipY + ny * half * .3) +
+    " " + f(tipX) + " " + f(tipY) +
+    " Q" + f(tipX - nx * half * .3) + " " + f(tipY - ny * half * .3) +
+    " " + f(mx - nx * half * .8) + " " + f(my - ny * half * .8) +
+    " Q" + f(x1 + dx * .18 - nx * half) + " " + f(y1 + dy * .18 - ny * half) +
+    " " + f(x1) + " " + f(y1) + " Z";
+}
+
+function skillJetConePath(x1, y1, x2, y2, scale) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const length = Math.max(1, Math.hypot(dx, dy));
+  const nx = -dy / length;
+  const ny = dx / length;
+  const w0 = 6 * scale;
+  const w1 = 15 * scale;
+  const tx = x2 + dx / length * 8;
+  const ty = y2 + dy / length * 8;
+  const f = function (n) { return n.toFixed(1); };
+  return "M" + f(x1 + nx * w0) + " " + f(y1 + ny * w0) +
+    " L" + f(tx + nx * w1) + " " + f(ty + ny * w1) +
+    " L" + f(tx - nx * w1) + " " + f(ty - ny * w1) +
+    " L" + f(x1 - nx * w0) + " " + f(y1 - ny * w0) + " Z";
+}
+
 function petSkillSvg(pet, targetX, targetY, rect, power) {
   const width = Math.max(1, rect.width);
   const height = Math.max(1, rect.height);
-  const centerX = width * .5;
+  const f = function (n) { return n.toFixed(1); };
+  const cx = width * .5;
+  const cy = height * .52;
   const effects = [];
-  const leafCount = power;
-  const sparkCount = 2 + power * 2;
+  const count = pet.effect === "leaf" ? 12 + power : 9 + power;
 
-  if (pet.effect === "leaf") {
-    const sourceY = height * .72;
-    for (let index = 0; index < leafCount; index += 1) {
-      const bend = (index - (leafCount - 1) / 2) * (12 + index * 2);
-      const c1x = centerX + bend * .45;
-      const c1y = sourceY - height * (.2 + index * .025);
-      const c2x = targetX - bend * .65;
-      const c2y = targetY + height * .18;
-      effects.push(
-        '<path class="skill-line skill-vine' + (index === 0 ? " core" : "") + '" ' +
-        'style="animation-delay:' + (index * 44) + 'ms" ' +
-        'd="M' + centerX.toFixed(1) + " " + sourceY.toFixed(1) +
-        " C" + c1x.toFixed(1) + " " + c1y.toFixed(1) +
-        " " + c2x.toFixed(1) + " " + c2y.toFixed(1) +
-        " " + targetX.toFixed(1) + " " + targetY.toFixed(1) + '"></path>'
-      );
-    }
-    for (let index = 0; index < 3 + power * 2; index += 1) {
-      const angle = index * 2.214 + .35;
-      const radius = 8 + (index % 4) * 5 + power * 1.7;
-      const lx = targetX + Math.cos(angle) * radius;
-      const ly = targetY + Math.sin(angle) * radius * .68;
-      const rotation = index * 47 - 12;
-      effects.push(
-        '<ellipse class="skill-node skill-leaf" ' +
-        'style="animation-delay:' + (72 + index * 24) + 'ms" ' +
-        'cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" ' +
-        'rx="' + (4.2 + power * .45).toFixed(1) + '" ry="2.2" ' +
-        'transform="rotate(' + rotation + " " + lx.toFixed(1) + " " + ly.toFixed(1) + ')"></ellipse>'
-      );
-    }
+  // 背景光爆：放射星芒 + 中心辉光，把宠物与粒子包成一个整体画面。
+  const rays = [];
+  for (let index = 0; index < 12; index += 1) {
+    const angle = (index / 12) * Math.PI * 2;
+    const angle2 = angle + Math.PI / 12 * .62;
+    const R = Math.min(width, height) * .42 * (index % 2 ? .78 : 1.12);
+    rays.push('M' + f(cx) + ' ' + f(cy) +
+      ' L' + f(cx + Math.cos(angle - .06) * R) + ' ' + f(cy + Math.sin(angle - .06) * R) +
+      ' Q' + f(cx + Math.cos(angle) * R * .72) + ' ' + f(cy + Math.sin(angle) * R * .72) +
+      ' ' + f(cx + Math.cos(angle2) * R * .42) + ' ' + f(cy + Math.sin(angle2) * R * .42) + ' Z');
   }
+  effects.push('<g class="skill-burst-rays">' + rays.map(function (d) {
+    return '<path d="' + d + '"></path>';
+  }).join('') + '</g>');
+  effects.push('<ellipse class="skill-burst-halo" cx="' + f(cx) + '" cy="' + f(cy) +
+    '" rx="' + f(Math.min(width, height) * .38) + '" ry="' + f(Math.min(width, height) * .32) + '"></ellipse>');
 
-  if (pet.effect === "ember") {
-    const sourceX = centerX;
-    const sourceY = height * .47;
-    const distance = Math.max(34, Math.hypot(targetX - sourceX, targetY - sourceY));
-    const count = 2 + power;
-    for (let index = 0; index < count; index += 1) {
-      const spread = (index - (count - 1) / 2) * 7.5;
-      const c1x = sourceX + (targetX - sourceX) * .36 + spread;
-      const c1y = sourceY + (targetY - sourceY) * .28 - distance * .13;
-      const c2x = sourceX + (targetX - sourceX) * .72 - spread * .45;
-      const c2y = sourceY + (targetY - sourceY) * .7 + spread * .35;
-      const classes = index === 0 ? " warm core" : (index % 2 ? " warm" : "");
-      effects.push(
-        '<path class="skill-line skill-flame-stream' + classes + '" ' +
-        'style="--skill-origin-x:' + sourceX.toFixed(1) + 'px;' +
-        '--skill-origin-y:' + sourceY.toFixed(1) + 'px;animation-delay:' + (index * 30) + 'ms" ' +
-        'd="M' + sourceX.toFixed(1) + " " + sourceY.toFixed(1) +
-        " Q" + c1x.toFixed(1) + " " + c1y.toFixed(1) +
-        " " + targetX.toFixed(1) + " " + targetY.toFixed(1) + '"></path>'
-      );
+  // 统一的周身分布：四系共用同一个「半透明、环绕、向上飘」的构图，
+  // 内容各是各的（火苗 / 电光 / 水泡 / 树叶），不遮挡立绘本体。
+  for (let index = 0; index < count; index += 1) {
+    const angle = index * 2.399 + .4;
+    const radius = Math.min(width, height) * (.2 + (index % 4) * .065);
+    const x = cx + Math.cos(angle) * radius * 1.15;
+    const y = cy + Math.sin(angle) * radius * .82;
+    const delay = index * 52;
+    const front = index % 3 === 0;
+    const style = '--dx:' + (((index * 13) % 18) - 9) + 'px;' +
+      '--dy:' + (-20 - (index % 3) * 8) + 'px;animation-delay:' + delay + 'ms';
+    let shape = '';
+
+    if (pet.effect === "ember") {
+      // 小火龙：一簇小簇火苗（半透明，不糊原图）
+      const s = 7 + (index % 3) * 2.2;
+      const outer = 'M' + f(x - s * .5) + ' ' + f(y) +
+        ' Q' + f(x - s * .55) + ' ' + f(y - s * .75) + ' ' + f(x - s * .1) + ' ' + f(y - s * 1.25) +
+        ' Q' + f(x + s * .05) + ' ' + f(y - s * 1.75) + ' ' + f(x + s * .16) + ' ' + f(y - s * 2.1) +
+        ' Q' + f(x + s * .3) + ' ' + f(y - s * 1.2) + ' ' + f(x + s * .42) + ' ' + f(y - s * .72) +
+        ' Q' + f(x + s * .55) + ' ' + f(y - s * .25) + ' ' + f(x + s * .5) + ' ' + f(y) + ' Z';
+      const inner = 'M' + f(x - s * .24) + ' ' + f(y) +
+        ' Q' + f(x - s * .28) + ' ' + f(y - s * .6) + ' ' + f(x + s * .05) + ' ' + f(y - s * 1.15) +
+        ' Q' + f(x + s * .3) + ' ' + f(y - s * .55) + ' ' + f(x + s * .24) + ' ' + f(y) + ' Z';
+      shape = '<g class="skill-float skill-flame-stream" style="' + style + '" data-depth="' + (front ? "front" : "back") + '">' +
+        '<path class="outer" d="' + outer + '"></path><path class="inner" d="' + inner + '"></path></g>';
+    } else if (pet.effect === "leaf") {
+      // 妙蛙种子：半透明小叶片。外层 <g> 只做定位，内层 .skill-float 才做 CSS 动画：
+      // 否则 animation 的 transform 会覆盖 translate，叶片全堆在原点看不见。
+      const s = 13 + (index % 3) * 3;
+      const d = 'M0 0 Q' + f(s * .6) + ' ' + f(-s * .85) + ' ' + f(s * 1.35) + ' ' + f(-s * .15) +
+        ' Q' + f(s * .6) + ' ' + f(s * .7) + ' 0 0 Z';
+      shape = '<g transform="translate(' + f(x) + ' ' + f(y) + ')">' +
+        '<g class="skill-float" style="' + style + '" data-depth="' + (front ? "front" : "back") + '">' +
+        '<g transform="rotate(' + (index * 37 - 20) + ')">' +
+        '<path class="skill-vine" d="' + d + '"></path>' +
+        '<path class="vein" d="M0 0 L' + f(s * 1.1) + ' ' + f(-s * .2) + '"></path>' +
+        '</g></g></g>';
+    } else if (pet.effect === "water") {
+      // 杰尼龟：半透明水泡（基准样式）
+      const r = 6 + (index % 4) * 3.4;
+      shape = '<g class="skill-float skill-water-stream" style="' + style + '" data-depth="' + (front ? "front" : "back") + '">' +
+        '<circle cx="' + f(x) + '" cy="' + f(y) + '" r="' + f(r) + '"></circle>' +
+        '<circle class="glint" cx="' + f(x - r * .35) + '" cy="' + f(y - r * .38) + '" r="' + f(r * .22) + '"></circle></g>';
+    } else {
+      // 皮卡丘：周身短电弧
+      const ex = x + Math.cos(angle) * 18;
+      const ey = y + Math.sin(angle) * 18;
+      const mx = x + Math.cos(angle + .5) * 9;
+      const my = y + Math.sin(angle + .5) * 9;
+      shape = '<path class="skill-line skill-bolt" style="animation-delay:' + delay + 'ms" ' +
+        'd="M' + f(x) + ' ' + f(y) + ' L' + f(mx) + ' ' + f(my) + ' L' + f(ex) + ' ' + f(ey) + '"></path>';
     }
-    for (let index = 0; index < sparkCount; index += 1) {
-      const sx = targetX + ((index * 37) % 28) - 14;
-      const sy = targetY + ((index * 23) % 20) - 10;
-      effects.push(
-        '<circle class="skill-spark" style="' +
-        '--sx:' + (((index * 19) % 22) - 11) + 'px;' +
-        '--sy:' + (-10 - (index % 4) * 5) + 'px;' +
-        'animation-delay:' + (60 + index * 22) + 'ms" ' +
-        'cx="' + sx.toFixed(1) + '" cy="' + sy.toFixed(1) + '" ' +
-        'r="' + (1.4 + power * .12).toFixed(1) + '"></circle>'
-      );
-    }
+    effects.push(shape);
   }
-
-  if (pet.effect === "water") {
-    const sources = [
-      [centerX - Math.min(56, width * .16), height * .63],
-      [centerX + Math.min(56, width * .16), height * .63],
-    ];
-    const jetCount = 2 + Math.floor(power / 2);
-    for (let index = 0; index < jetCount; index += 1) {
-      const source = sources[index % sources.length];
-      const lift = (index - (jetCount - 1) / 2) * 8;
-      const c1x = source[0] + (targetX - source[0]) * .32;
-      const c1y = source[1] - height * (.28 + index * .015);
-      const c2x = targetX + lift;
-      const c2y = targetY + height * (.12 + index * .012);
-      effects.push(
-        '<path class="skill-line skill-water-stream' + (index === 0 ? " core" : "") + '" ' +
-        'style="animation-delay:' + (index * 34) + 'ms" ' +
-        'd="M' + source[0].toFixed(1) + " " + source[1].toFixed(1) +
-        " C" + c1x.toFixed(1) + " " + c1y.toFixed(1) +
-        " " + c2x.toFixed(1) + " " + c2y.toFixed(1) +
-        " " + targetX.toFixed(1) + " " + targetY.toFixed(1) + '"></path>'
-      );
-    }
-    for (let index = 0; index < 4 + power; index += 1) {
-      const bx = targetX + ((index * 31) % 36) - 18;
-      const by = targetY + ((index * 17) % 20) - 10;
-      effects.push(
-        '<circle class="skill-node skill-water-node" style="' +
-        '--wx:' + (((index * 13) % 18) - 9) + 'px;' +
-        '--wy:' + (-6 - (index % 3) * 5) + 'px;' +
-        'animation-delay:' + (48 + index * 28) + 'ms" ' +
-        'cx="' + bx.toFixed(1) + '" cy="' + by.toFixed(1) + '" ' +
-        'r="' + (1.7 + (index % 3) * .75 + power * .08).toFixed(1) + '"></circle>'
-      );
-    }
-  }
-
+  // 皮卡丘再加一圈落点电光球，把周身电弧收成一个整体。
   if (pet.effect === "electric") {
-    const sourceX = centerX;
-    const sourceY = height * .48;
-    effects.push(
-      '<path class="skill-line skill-bolt core" ' +
-      'd="' + skillZigzagPath(sourceX, sourceY, targetX, targetY, power) + '"></path>'
-    );
-    const branches = Math.max(2, power + 1);
-    for (let index = 0; index < branches; index += 1) {
-      const t = .28 + (index / branches) * .45;
-      const bx = sourceX + (targetX - sourceX) * t;
-      const by = sourceY + (targetY - sourceY) * t;
-      const angle = -1.1 + index * 1.73;
-      const ex = bx + Math.cos(angle) * (16 + power * 4);
-      const ey = by + Math.sin(angle) * (11 + power * 3);
-      effects.push(
-        '<path class="skill-line skill-bolt" ' +
-        'style="animation-delay:' + (index * 25) + 'ms" ' +
-        'd="' + skillZigzagPath(bx, by, ex, ey, Math.max(1, power - 1)) + '"></path>'
-      );
-    }
+    effects.push('<circle class="skill-arc-ball" cx="' + f(cx) + '" cy="' + f(cy) +
+      '" r="' + f(Math.min(width, height) * .24) + '"></circle>');
   }
 
+  const defs = '<defs>' +
+    '<radialGradient id="skill-grad-halo"><stop offset="0" stop-color="rgba(255,255,255,.9)"/>' +
+      '<stop offset=".45" stop-color="rgba(255,190,80,.5)"/><stop offset="1" stop-color="rgba(255,255,255,0)"/></radialGradient>' +
+    '<linearGradient id="skill-grad-rays" x1="0" y1="0" x2="1" y2="1">' +
+      '<stop offset="0" stop-color="rgba(255,255,255,.85)"/><stop offset="1" stop-color="rgba(255,255,255,0)"/></linearGradient>' +
+    '<linearGradient id="skill-grad-fire" x1="0" y1="1" x2="0" y2="0">' +
+      '<stop offset="0" stop-color="#ff6a18"/><stop offset=".5" stop-color="#ffab35"/><stop offset="1" stop-color="#ffe799"/></linearGradient>' +
+    '<linearGradient id="skill-grad-fire-inner" x1="0" y1="1" x2="0" y2="0">' +
+      '<stop offset="0" stop-color="#ffe07a"/><stop offset="1" stop-color="#fff8d8"/></linearGradient>' +
+    '<linearGradient id="skill-grad-leaf" x1="0" y1="1" x2="1" y2="0">' +
+      '<stop offset="0" stop-color="#4ea56a"/><stop offset="1" stop-color="#c8f0a4"/></linearGradient>' +
+    '<radialGradient id="skill-grad-bubble"><stop offset="0" stop-color="rgba(255,255,255,.5)"/>' +
+      '<stop offset=".65" stop-color="rgba(140,220,250,.22)"/><stop offset="1" stop-color="rgba(210,245,255,.65)"/></radialGradient>' +
+    '<radialGradient id="skill-grad-bolt"><stop offset="0" stop-color="#fffde7"/>' +
+      '<stop offset=".55" stop-color="#ffe45f"/><stop offset="1" stop-color="rgba(255,210,50,0)"/></radialGradient>' +
+    '</defs>';
   return '<svg class="pet-skill-vector is-' + pet.effect + '" viewBox="0 0 ' +
     width.toFixed(1) + " " + height.toFixed(1) +
-    '" preserveAspectRatio="none" aria-hidden="true">' + effects.join("") + "</svg>";
+    '" preserveAspectRatio="none" aria-hidden="true">' + defs + effects.join("") + "</svg>";
 }
 
 function clearPetSkill() {

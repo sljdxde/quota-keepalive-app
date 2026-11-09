@@ -42,6 +42,19 @@ test("gazePose is symmetric and shares work between neck, head and body", functi
   assert.ok(Math.abs(right.neckYaw) > Math.abs(right.bodyYaw));
 });
 
+// 防回归：竖直俯仰不能明显弱于水平偏航，否则「往下看」压不过默认侧脸，
+// 头会显得一直朝右。旧 headPitch(0.48) 只有 headYaw(0.72) 的 2/3。
+test("gazePose vertical pitch tracks as strongly as horizontal yaw", function () {
+  const horizontal = gazePose(1, 0);
+  const vertical = gazePose(0, 1);
+  assert.ok(Math.abs(vertical.headPitch) >= Math.abs(horizontal.headYaw) * 0.8,
+    "俯仰不应弱于偏航太多");
+  // 同样小幅位移，上下与左右的响应一致。
+  const smallY = gazePose(0, 0.3);
+  const smallX = gazePose(0.3, 0);
+  assert.ok(Math.abs(smallY.headPitch) >= Math.abs(smallX.headYaw) * 0.8);
+});
+
 test("captureOutcome turns accuracy into dodge / catch results", function () {
   const perfect = captureOutcome({
     accuracy: 1, tier: 1, dodgeRandom: 0.99, catchRandom: 0.01,
@@ -50,11 +63,19 @@ test("captureOutcome turns accuracy into dodge / catch results", function () {
   assert.equal(perfect.caught, true);
   assert.equal(perfect.rating, "perfect");
 
+  // 被躲开：稀有 roll 没中（catchRandom 超上限），且躲开 roll 落在带内。
   const dodged = captureOutcome({
-    accuracy: 1, tier: 1, dodgeRandom: 0, catchRandom: 0,
+    accuracy: 1, tier: 1, dodgeRandom: 0, catchRandom: 0.99,
   });
   assert.equal(dodged.dodged, true);
   assert.equal(dodged.caught, false);
+
+  // 差一点没抓住：没中且躲开 roll 在带外，是「捕获失败」而不是「躲开了」。
+  const narrow = captureOutcome({
+    accuracy: 1, tier: 1, dodgeRandom: 0.99, catchRandom: 0.99,
+  });
+  assert.equal(narrow.dodged, false);
+  assert.equal(narrow.caught, false);
 
   const missed = captureOutcome({
     accuracy: 0.2, tier: 1, dodgeRandom: 0.99, catchRandom: 0.99,
@@ -62,10 +83,35 @@ test("captureOutcome turns accuracy into dodge / catch results", function () {
   assert.equal(missed.caught, false);
   assert.equal(missed.rating, "wild");
 
-  // 高等级宠物更警觉：同样蓄力下躲避概率不比低等级低。
+  // 高等级伙伴更难抓：同样准度下成功率不比低等级高。
   const tier1 = captureOutcome({ accuracy: 0.4, tier: 1, dodgeRandom: 1, catchRandom: 1 });
   const tier5 = captureOutcome({ accuracy: 0.4, tier: 5, dodgeRandom: 1, catchRandom: 1 });
-  assert.ok(tier5.dodgeChance >= tier1.dodgeChance);
+  assert.ok(tier5.catchChance <= tier1.catchChance);
+});
+
+test("captureOutcome keeps catch chance pinned inside 5%..10%", function () {
+  for (const accuracy of [0, 0.2, 0.5, 0.8, 1]) {
+    for (const tier of [1, 3, 5]) {
+      const outcome = captureOutcome({
+        accuracy: accuracy, tier: tier, dodgeRandom: 0.5, catchRandom: 0.5,
+      });
+      assert.ok(outcome.catchChance >= 0.05 - 1e-9 && outcome.catchChance <= 0.1 + 1e-9,
+        `成功率越界 accuracy=${accuracy} tier=${tier}: ${outcome.catchChance}`);
+    }
+  }
+  // 卡点越准，成功率越靠上限；乱按靠下限。
+  const sloppy = captureOutcome({ accuracy: 0, tier: 1, dodgeRandom: 0.5, catchRandom: 0.5 });
+  const clean = captureOutcome({ accuracy: 1, tier: 1, dodgeRandom: 0.5, catchRandom: 0.5 });
+  assert.ok(clean.catchChance > sloppy.catchChance);
+
+  // 统计意义：满准度连抛 4000 次，命中率应落在 5%..10% 这一稀有区间内
+  // （含抽样波动留一点余量），而不是旧版那种「几乎必中」。
+  let caught = 0;
+  for (let index = 0; index < 4000; index += 1) {
+    if (captureOutcome({ accuracy: 1, tier: 1 }).caught) caught += 1;
+  }
+  const rate = caught / 4000;
+  assert.ok(rate > 0.03 && rate < 0.16, `成功率异常：${(rate * 100).toFixed(2)}%`);
 });
 
 test("skillProfile scales every tier monotonically and ultimate tops it", function () {
@@ -161,7 +207,7 @@ test("captureOutcome accepts a rhythm accuracy directly", function () {
   assert.equal(perfect.caught, true);
   assert.equal(perfect.rating, "perfect");
   const wild = captureOutcome({
-    accuracy: 0.2, tier: 3, dodgeRandom: 0, catchRandom: 0,
+    accuracy: 0.2, tier: 3, dodgeRandom: 0, catchRandom: 0.99,
   });
   assert.equal(wild.dodged, true);
   assert.equal(wild.rating, "wild");
