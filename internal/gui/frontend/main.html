@@ -1254,21 +1254,90 @@
   }
   .main-pet-bubble.is-charging { color: var(--accent); }
   .main-pet-viewer.model-fallback .pokemon-3d-canvas { display: none; }
+  /* 美漫风说话气泡：白底粗描边 + 尾巴指向宠物 + 弹入动画。
+     与小窗（panel / petmini）同一套视觉语言，主界面的宠物也会自动说话。 */
   .main-pet-bubble {
     position: absolute;
-    z-index: 3;
-    left: 18px;
-    top: 17px;
-    max-width: 230px;
-    padding: 8px 10px;
-    border-radius: 10px 10px 10px 3px;
-    color: var(--fg-2);
-    background: color-mix(in srgb, var(--card) 94%, transparent);
-    box-shadow:
-      0 6px 18px rgba(0,0,0,.07),
-      inset 0 0 0 .5px var(--line);
-    font-size: var(--fs-sm);
+    z-index: 6;
+    left: 16px;
+    top: 15px;
+    max-width: 260px;
+    padding: 9px 12px;
+    border: 2px solid var(--fg);
+    border-radius: 12px;
+    color: var(--fg);
+    background: var(--card);
+    box-shadow: 3px 3px 0 var(--fg), 0 10px 20px rgba(0,0,0,.16);
+    font-size: var(--fs-md);
+    font-weight: 760;
+    line-height: 1.35;
+    transform: rotate(-1.4deg);
+    transform-origin: 0 100%;
     pointer-events: none;
+  }
+  .main-pet-bubble::after,
+  .main-pet-bubble::before {
+    content: "";
+    position: absolute;
+    left: 32px;
+    width: 0;
+    height: 0;
+  }
+  .main-pet-bubble::after {
+    bottom: -14px;
+    border-left: 10px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 14px solid var(--fg);
+  }
+  .main-pet-bubble::before {
+    bottom: -10px;
+    left: 34px;
+    border-left: 7px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 10px solid var(--card);
+  }
+  .main-pet-bubble.pop { animation: main-pet-bubble-speak .34s cubic-bezier(.18,1.5,.4,1) both; }
+  @keyframes main-pet-bubble-speak {
+    0% { transform: rotate(-1.4deg) scale(.6); opacity: 0; }
+    62% { transform: rotate(-1.4deg) scale(1.05); opacity: 1; }
+    100% { transform: rotate(-1.4deg) scale(1); opacity: 1; }
+  }
+  /* 捕获结果横幅：与「每日活跃」页和小窗一致的美漫斜切大字。 */
+  .main-pet-popup {
+    position: absolute;
+    z-index: 7;
+    left: 12%;
+    right: 12%;
+    top: 44%;
+    transform: translateY(-50%) rotate(-4deg);
+    padding: 6px 0;
+    text-align: center;
+    background: #ffd54a;
+    border-top: 2.5px solid #17191e;
+    border-bottom: 2.5px solid #17191e;
+    box-shadow: 0 6px 16px rgba(0,0,0,.28);
+    pointer-events: none;
+    animation: main-pet-popup-slam .3s cubic-bezier(.18,1.4,.4,1);
+  }
+  .main-pet-popup.miss { background: #f3f4f6; }
+  .main-pet-popup span {
+    display: inline-block;
+    font-size: var(--fs-lg);
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: .1em;
+    color: #17191e;
+    text-shadow: 1.5px 1.5px 0 #fff, 2.5px 2.5px 0 rgba(23,25,30,.22);
+    white-space: nowrap;
+  }
+  @keyframes main-pet-popup-slam {
+    0% { transform: translateY(-50%) rotate(-4deg) scale(1.5); opacity: 0; }
+    60% { transform: translateY(-50%) rotate(-4deg) scale(.95); opacity: 1; }
+    100% { transform: translateY(-50%) rotate(-4deg) scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .main-pet-bubble.pop { animation: none; }
+    .main-pet-popup { animation: none; }
   }
   .main-pet-hint {
     position: absolute;
@@ -2746,6 +2815,7 @@
               <span class="main-pet-ground" aria-hidden="true"></span>
               <div class="main-pet-viewer" id="main-pet-viewer"></div>
               <div class="main-pet-bubble" id="main-pet-bubble">移动鼠标，它会转头看你</div>
+              <span class="main-pet-popup" id="main-pet-popup" role="status" aria-live="polite" hidden><span id="main-pet-popup-text">捕获成功！</span></span>
               <div class="main-pet-charge" id="main-pet-charge" aria-hidden="true">
                 <div class="charge-gauge" id="main-pet-gauge">
                   <i class="charge-fill" id="main-pet-charge-fill"></i>
@@ -3232,8 +3302,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       }
       if (btn.dataset.tab === "pet") {
         refreshMainPet();
-      } else if (mainPetViewer) {
-        mainPetViewer.setEnabled(false);
+        scheduleMainPetTalk();
+      } else {
+        stopMainPetTalk();
+        if (mainPetViewer) mainPetViewer.setEnabled(false);
       }
       if (btn.dataset.tab === "settings") renderSettings();
       if (btn.dataset.tab === "freetokens") loadFreeTokens(false);
@@ -4031,10 +4103,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         } catch (_) {}
         resetMainPetGaze();
         renderMainPet();
-        document.getElementById("main-pet-bubble").textContent = mainPetIsCaught(next.id)
+        speakMainPet(mainPetIsCaught(next.id)
           ? "「" + next.name + "」在精灵球里，点一下放出来"
           : "轮到「" + next.name + "」啦，技能等级 " +
-            mainPetRoman(mainPetStageForToday());
+            mainPetRoman(mainPetStageForToday()));
       };
     });
   }
@@ -4117,8 +4189,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         : "点击投球 · 按住蓄力，指针进 PERFECT 再松手";
     }
     if (caught && !wasCaught) {
+      showMainPetPopup("捕获成功！", "ok");
       const bubbleNode = mainPetBubbleNode();
-      if (bubbleNode) bubbleNode.textContent = "捕获成功！点一下精灵球把它放出来";
+      if (bubbleNode) bubbleNode.textContent = "点一下精灵球把它放出来";
+      stopMainPetTalk();
     }
     document.getElementById("main-pet-title").textContent = pet.name;
     document.getElementById("main-pet-subtitle").textContent = pet.subtitle;
@@ -4244,6 +4318,72 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function mainPetBubbleNode() {
     return document.getElementById("main-pet-bubble");
+  }
+
+  // ---------- 美漫风气泡与自动说话（主界面宠物） ----------
+  let mainPetPopupTimer = 0;
+  let mainPetTalkTimer = 0;
+  let mainPetTalkIndex = 0;
+
+  function showMainPetPopup(text, kind) {
+    const popup = document.getElementById("main-pet-popup");
+    const label = document.getElementById("main-pet-popup-text");
+    if (!popup || !label) return;
+    label.textContent = text;
+    popup.className = "main-pet-popup" + (kind === "miss" ? " miss" : "");
+    popup.hidden = false;
+    popup.style.animation = "none";
+    void popup.offsetWidth;
+    popup.style.animation = "";
+    if (mainPetPopupTimer) window.clearTimeout(mainPetPopupTimer);
+    mainPetPopupTimer = window.setTimeout(function () {
+      popup.hidden = true;
+      mainPetPopupTimer = 0;
+    }, 2200);
+  }
+
+  function speakMainPet(text) {
+    const bubble = mainPetBubbleNode();
+    if (!bubble || !text) return;
+    bubble.textContent = text;
+    bubble.classList.remove("pop");
+    void bubble.offsetWidth;
+    bubble.classList.add("pop");
+    scheduleMainPetTalk();
+  }
+
+  function stopMainPetTalk() {
+    window.clearTimeout(mainPetTalkTimer);
+    mainPetTalkTimer = 0;
+  }
+
+  function mainPetTabActive() {
+    const tab = document.getElementById("pet");
+    return !!tab && tab.classList.contains("active");
+  }
+
+  function scheduleMainPetTalk() {
+    stopMainPetTalk();
+    if (!mainPetTabActive() || document.visibilityState === "hidden" ||
+        mainPetIsCaught()) {
+      return;
+    }
+    mainPetTalkTimer = window.setTimeout(function () {
+      mainPetTalkTimer = 0;
+      if (!mainPetTabActive() || document.visibilityState === "hidden" ||
+          mainPetIsCaught()) {
+        return;
+      }
+      if (mainPetViewer && (mainPetViewer.isCapturing() || mainPetViewer.isCharging())) {
+        scheduleMainPetTalk();
+        return;
+      }
+      const pet = currentMainPet();
+      const messages = pet.messages && pet.messages.length
+        ? pet.messages
+        : [pet.name + "在陪你写代码。"];
+      speakMainPet(messages[mainPetTalkIndex++ % messages.length]);
+    }, 9000 + Math.random() * 6000);
   }
 
   function readMainPetCaughtMap() {
@@ -4381,12 +4521,18 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           writeMainPetCaught(pet.id, true);
           syncMainPetTrayCaught();
           if (stageNode) stageNode.classList.add("is-caught");
-          if (bubble) bubble.textContent = "捕获成功！点一下精灵球把它放出来";
+          showMainPetPopup("捕获成功！", "ok");
+          if (bubble) bubble.textContent = "点一下精灵球把它放出来";
+          stopMainPetTalk();
           spawnMainPetShockwave(2);
-        } else if (bubble) {
-          bubble.textContent = result.dodged
-            ? "它躲开了！再来一球"
-            : "球晃了两下弹开了…卡准 PERFECT 更稳";
+        } else {
+          showMainPetPopup("捕获失败", "miss");
+          if (bubble) {
+            bubble.textContent = result.dodged
+              ? "它躲开了！再来一球"
+              : "球晃了两下弹开了…卡准 PERFECT 更稳";
+          }
+          scheduleMainPetTalk();
         }
         scheduleMainPetAutoSkill();
       },
@@ -4401,8 +4547,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     syncMainPetTrayCaught();
     const stage = document.getElementById("main-pet-stage");
     if (stage) stage.classList.remove("is-caught", "is-charging");
-    const bubble = mainPetBubbleNode();
-    if (bubble) bubble.textContent = pet.name + "回来了！";
+    showMainPetPopup("回来了！", "ok");
+    speakMainPet(pet.name + "回来啦！");
     spawnMainPetShockwave(1);
     scheduleMainPetAutoSkill();
   }
@@ -4432,8 +4578,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         mainPetViewer.playSkill(pet.effect, power);
         // 档位越高圈越多：DOM 冲击环与 3D 粒子一起说明「这次更强」。
         spawnMainPetShockwave(power >= 4 ? 3 : power >= 2 ? 2 : 1);
-        const bubble = mainPetBubbleNode();
-        if (bubble) bubble.textContent = pet.messages[mainPetMessageIndex++ % pet.messages.length];
+        speakMainPet(pet.messages[mainPetMessageIndex++ % pet.messages.length]);
       }
       scheduleMainPetAutoSkill();
     }, autoSkillDelay(mainPetStageForToday()));

@@ -122,6 +122,43 @@
     0%, 100% { transform: translate(-50%, -54%); }
     45% { transform: translate(-50%, -62%) scale(1.03); }
   }
+  /* 美漫风说话气泡：小窗里只占顶部一条，白底粗描边 + 尾巴 + 弹入。 */
+  .pm-bubble {
+    position: absolute;
+    z-index: 4;
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    padding: 6px 9px;
+    border: 2px solid #17191e;
+    border-radius: 10px;
+    color: #17191e;
+    background: #fffdf3;
+    box-shadow: 2px 2px 0 #17191e, 0 6px 12px rgba(0,0,0,.3);
+    font-size: 11px;
+    font-weight: 760;
+    line-height: 1.3;
+    transform: rotate(-1.4deg);
+    pointer-events: none;
+    transition: opacity .2s ease;
+  }
+  .pm-bubble::after {
+    content: "";
+    position: absolute;
+    left: 22px;
+    bottom: -9px;
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 3px solid transparent;
+    border-top: 9px solid #17191e;
+  }
+  .pm-bubble.pop { animation: pm-bubble-speak .34s cubic-bezier(.18,1.5,.4,1) both; }
+  @keyframes pm-bubble-speak {
+    0% { transform: rotate(-1.4deg) scale(.6); opacity: 0; }
+    62% { transform: rotate(-1.4deg) scale(1.05); opacity: 1; }
+    100% { transform: rotate(-1.4deg) scale(1); opacity: 1; }
+  }
   /* 长按蓄力：细条只随按住时长变长（无持续动画）。 */
   .pm-charge {
     position: absolute; left: 14px; right: 14px; bottom: 12px;
@@ -186,6 +223,7 @@
       <span class="pm-glow" aria-hidden="true"></span>
       <span class="pm-ground" aria-hidden="true"></span>
       <div class="pm-avatar is-loading" id="pm-avatar"></div>
+      <span class="pm-bubble" id="pm-bubble" hidden></span>
       <span class="pm-charge" id="pm-charge" hidden><i id="pm-charge-fill"></i></span>
       <span class="pm-popup" id="pm-popup" hidden><span id="pm-popup-text">捕获成功！</span></span>
     </div>
@@ -229,6 +267,7 @@
   const chargeFill = document.getElementById("pm-charge-fill");
   const popupNode = document.getElementById("pm-popup");
   const popupText = document.getElementById("pm-popup-text");
+  const bubbleNode = document.getElementById("pm-bubble");
 
   let pet = null;
   let viewer = null;
@@ -252,6 +291,48 @@
       popupNode.hidden = true;
       popupTimer = 0;
     }, 2200);
+  }
+
+  // 美漫风自动说话：每 9-15 秒一句，气泡停留 6 秒后收起。
+  let talkTimer = 0;
+  let talkIndex = 0;
+  let bubbleTimer = 0;
+
+  function speak(text) {
+    if (!bubbleNode || !text) return;
+    bubbleNode.textContent = text;
+    bubbleNode.hidden = false;
+    bubbleNode.classList.remove("pop");
+    void bubbleNode.offsetWidth;
+    bubbleNode.classList.add("pop");
+    if (bubbleTimer) clearTimeout(bubbleTimer);
+    bubbleTimer = setTimeout(function () {
+      if (bubbleNode) bubbleNode.hidden = true;
+      bubbleTimer = 0;
+    }, 6000);
+    scheduleTalk();
+  }
+
+  function stopTalk() {
+    if (talkTimer) clearTimeout(talkTimer);
+    talkTimer = 0;
+  }
+
+  function scheduleTalk() {
+    stopTalk();
+    if (!pet || isCaught(pet.id) || document.visibilityState === "hidden") return;
+    talkTimer = setTimeout(function () {
+      talkTimer = 0;
+      if (!pet || isCaught(pet.id) || document.visibilityState === "hidden") return;
+      if (viewer && (viewer.isCapturing() || viewer.isCharging())) {
+        scheduleTalk();
+        return;
+      }
+      const messages = pet.messages && pet.messages.length
+        ? pet.messages
+        : [pet.name + "在陪你写代码。"];
+      speak(messages[talkIndex++ % messages.length]);
+    }, 9000 + Math.random() * 6000);
   }
 
   function placeCharge(progress) {
@@ -440,6 +521,7 @@
     nameNode.textContent = pet.name;
     updateLevel();
     ensureViewer(pet);
+    if (!isCaught(pet.id)) scheduleTalk();
   }
 
   function renderSnapshot(view) {
@@ -467,6 +549,7 @@
       Events.Emit("pet-caught", { caught: false, petId: pet.id });
     } catch (_) {}
     showPopup("回来了！", "ok");
+    speak(pet.name + "回来啦！");
   }
 
   function skillNow() {
@@ -475,6 +558,10 @@
     void stage.offsetWidth;
     stage.classList.add("is-poked");
     if (viewer) viewer.playSkill(pet.effect, effectIntensity());
+    const messages = pet.messages && pet.messages.length
+      ? pet.messages
+      : [pet.name + "在陪你写代码。"];
+    speak(messages[talkIndex++ % messages.length]);
   }
 
   // 长按松手：按音游式指针判定抛球；结果用美漫风横幅给出。
@@ -607,6 +694,7 @@
     if (event && event.sender && event.sender !== "petMini") return;
     if (viewer) viewer.setEnabled(true);
     refreshPet();
+    scheduleTalk();
     Bound.TokenSpeedGet()
       .then(function (view) { renderSnapshot(asJSON(view)); })
       .catch(function () {});
@@ -614,6 +702,8 @@
   Events.On("common:WindowHide", function (event) {
     if (event && event.sender && event.sender !== "petMini") return;
     if (viewer) viewer.setEnabled(false);
+    stopTalk();
+    if (bubbleNode) bubbleNode.hidden = true;
   });
 
   refreshPet();
