@@ -69,9 +69,11 @@ export function activitySummaryText(summary) {
 
 export function activityCostText(account) {
   if (!account || !account.sent_today) return "";
-  return String(account.today_message || "").indexOf("订阅") >= 0
-    ? "成本：订阅额度"
-    : "成本：免费模型";
+  const message = String(account.today_message || "");
+  // WorkBuddy 的每日活跃是计费域 chat 事件（点亮连登），不经过模型，别写成
+  // 「免费模型」，否则用户会以为它真的消费了一次模型调用。
+  if (message.indexOf("连登") >= 0) return "成本：不消耗模型额度";
+  return message.indexOf("订阅") >= 0 ? "成本：订阅额度" : "成本：免费模型";
 }
 
 export function activityDetailText(account) {

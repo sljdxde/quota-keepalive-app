@@ -27,6 +27,7 @@ import (
 	"qka/internal/privacy"
 	"qka/internal/providerruntime"
 	"qka/internal/requestguard"
+	"qka/internal/workbuddy"
 )
 
 // Runtime is the provider host surface used by the service.
@@ -2309,6 +2310,12 @@ func (s *Service) activity(
 		return engine.ExternalResult{Kind: engine.RFinal, Message: "该供应商不支持每日活跃对话请求"},
 			activityOutcome{State: "failed_final", Message: "该供应商不支持每日活跃对话请求"}
 	}
+	// WorkBuddy 国内版的每日活跃是「计费域一条 chat 事件」，不是模型对话：
+	// 发 hi 给免费模型不会点亮成长中心连登，旧路径因此看起来执行成功却没生效。
+	// 只在 workbuddy（国内版）走专用上报；workbuddy-ai 仍走通用对话路径。
+	if provider == "workbuddy" {
+		return s.workBuddyDailyActivity(ctx, host, provider, account)
+	}
 	runtimeProvider, err := s.runtimeProvider(ctx, host, provider)
 	if err != nil {
 		return engine.ExternalResult{Kind: engine.RRetryable, Message: "读取供应商模型失败"},
@@ -2393,6 +2400,98 @@ func (s *Service) activity(
 		outcome.Message = "每日活跃完成"
 	}
 	return engine.ExternalResult{Kind: engine.RSuccess, Message: outcome.Message}, outcome
+}
+
+// workBuddyDailyActivity reports the billing-domain chat event that lights the
+// WorkBuddy growth-center streak. The provider plugin's fetch signs the request
+// with the account token/uid/domain, so this path never needs the raw token.
+func (s *Service) workBuddyDailyActivity(
+	ctx context.Context, host Runtime, provider, account string,
+) (engine.ExternalResult, activityOutcome) {
+	runtimeProvider, err := s.runtimeProvider(ctx, host, provider)
+	if err != nil {
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: "读取 WorkBuddy 账号信息失败"},
+			activityOutcome{State: "failed_retryable", Message: "读取 WorkBuddy 账号信息失败"}
+	}
+	uid := ""
+	for _, item := range runtimeProvider.Accounts {
+		if item.Key == account {
+			uid = item.UID
+			break
+		}
+	}
+	if uid == "" {
+		message := "无法读取 WorkBuddy 账号 UID，已跳过每日活跃"
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: message},
+			activityOutcome{State: "failed_retryable", Message: message}
+	}
+
+	now := s.now()
+	event := workbuddy.DailyActivityEventFor(uid, now)
+	body, err := json.Marshal([]workbuddy.DailyActivityEvent{event})
+	if err != nil {
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: "构造 WorkBuddy 每日活跃事件失败"},
+			activityOutcome{State: "failed_retryable", Message: "构造 WorkBuddy 每日活跃事件失败"}
+	}
+
+	started := time.Now()
+	outcome := activityOutcome{}
+	response, fetchErr := host.Fetch(ctx, providerruntime.FetchRequest{
+		Provider: provider, Account: account,
+		URL: workbuddy.BillingReportURL(), Method: "POST",
+		Headers: workbuddy.DailyActivityHeaders(uid, now),
+		Body:    string(body),
+	})
+	outcome.LatencyMS = time.Since(started).Milliseconds()
+	if fetchErr != nil {
+		outcome.State = "failed_retryable"
+		outcome.Message = "WorkBuddy 每日活跃上报失败（网络）"
+		return engine.ExternalResult{Kind: engine.RRetryable, Message: outcome.Message}, outcome
+	}
+	outcome.HTTPStatus = response.Status
+	parsed := workbuddy.ParseDailyActivityResponse(response.Status, response.Body)
+	upstream := parsed.Message
+	switch {
+	case parsed.OK:
+		outcome.State = "completed"
+		outcome.Message = "每日活跃已上报（WorkBuddy 连登已点亮）"
+		return engine.ExternalResult{Kind: engine.RSuccess, Message: outcome.Message}, outcome
+	case parsed.Restricted:
+		outcome.State = "failed_final"
+		outcome.Message = "WorkBuddy 拒绝了每日活跃上报（账号级风控），请稍后再试"
+	case parsed.Unauthorized:
+		outcome.State = "unauthorized"
+		outcome.Message = fmt.Sprintf("账号鉴权失败（HTTP %d），请重新登录后再试", response.Status)
+	case parsed.Retryable:
+		if response.Status == 429 {
+			outcome.State = "rate_limited"
+			outcome.Message = "WorkBuddy 限流（HTTP 429），稍后自动重试"
+		} else {
+			outcome.State = "failed_retryable"
+			outcome.Message = fmt.Sprintf("WorkBuddy 每日活跃上报失败（HTTP %d），稍后自动重试", response.Status)
+		}
+	default:
+		outcome.State = "failed_retryable"
+		outcome.Message = "WorkBuddy 每日活跃上报失败，稍后自动重试"
+	}
+	if upstream != "" {
+		outcome.Message += "：" + redactMessage(upstream)
+	}
+	return engine.ExternalResult{Kind: resultKindForActivityState(outcome.State), Message: outcome.Message}, outcome
+}
+
+// resultKindForActivityState maps our activity states to the shared state
+// machine result kinds.
+func resultKindForActivityState(state string) engine.ResultKind {
+	if state == "completed" {
+		return engine.RSuccess
+	}
+	switch state {
+	case "unauthorized", "failed_final":
+		return engine.RFinal
+	default:
+		return engine.RRetryable
+	}
 }
 
 // activityStatusOutcome maps one HTTP status to the persisted activity state and

@@ -2,12 +2,14 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
 	"qka/internal/engine"
 	"qka/internal/providerruntime"
+	"qka/internal/workbuddy"
 )
 
 func TestActivitySenderUsesFreeModelAndHiPrompt(t *testing.T) {
@@ -310,5 +312,116 @@ func TestSetActivityEnabledPersistsTaskPreference(t *testing.T) {
 		if item.Account == "a2" && !item.TaskEnabled {
 			t.Fatalf("other accounts keep the default enabled preference: %+v", item)
 		}
+	}
+}
+
+func workBuddyActivityFixture(t *testing.T) *fixture {
+	t.Helper()
+	f := newFixture(t)
+	f.runtime.providers[0].ID = "workbuddy"
+	f.runtime.providers[0].Name = "WorkBuddy"
+	f.runtime.providers[0].Accounts[0].UID = "uid-abc"
+	return f
+}
+
+// WorkBuddy 的每日活跃走计费域 chat 事件（点亮连登），不再发一条 hi 给模型。
+func TestWorkBuddyActivityReportsBillingChatEvent(t *testing.T) {
+	f := workBuddyActivityFixture(t)
+	f.runtime.fetch = providerruntime.FetchResponse{
+		Status: 200, Body: []byte(`{"code":0,"msg":"ok"}`),
+	}
+	result, outcome := f.service.activity(context.Background(), f.runtime, "workbuddy", "a1")
+	if result.Kind != engine.RSuccess || outcome.State != "completed" {
+		t.Fatalf("result=%+v outcome=%+v", result, outcome)
+	}
+	request := f.runtime.fetchRequest
+	if request.URL != "https://www.codebuddy.cn/v2/report" || request.Method != "POST" {
+		t.Fatalf("billing request = %s %s", request.Method, request.URL)
+	}
+	if _, ok := request.Headers["authorization"]; ok {
+		t.Fatal("Authorization must be signed by the plugin, not sent from Go")
+	}
+	for _, key := range []string{"origin", "referer", "x-codebuddy-request", "x-machine-id", "x-session-id", "x-request-id"} {
+		if request.Headers[key] == "" {
+			t.Fatalf("billing headers missing %q: %+v", key, request.Headers)
+		}
+	}
+	var events []workbuddy.DailyActivityEvent
+	if err := json.Unmarshal([]byte(request.Body), &events); err != nil {
+		t.Fatalf("event body: %v (%s)", err, request.Body)
+	}
+	if len(events) != 1 || events[0].EventCode != "chat_request_send" ||
+		events[0].UserID != "uid-abc" || events[0].Mode != "craft" {
+		t.Fatalf("daily activity event = %+v", events)
+	}
+	if strings.Contains(request.Body, `"content":"hi"`) {
+		t.Fatal("billing path must not send a model chat prompt")
+	}
+}
+
+func TestWorkBuddyActivityFailureClassification(t *testing.T) {
+	cases := []struct {
+		name      string
+		status    int
+		body      string
+		wantState string
+		wantKind  engine.ResultKind
+		wantCalls int
+	}{
+		{"restricted 403", 403, `{"code":11140,"msg":"request illegal"}`, "failed_final", engine.RFinal, 1},
+		{"unauthorized 401", 401, `{"code":401,"msg":"expired"}`, "unauthorized", engine.RFinal, 1},
+		{"rate limited 429", 429, `{"code":429,"msg":"slow down"}`, "rate_limited", engine.RRetryable, 1},
+		{"server 500", 500, "oops", "failed_retryable", engine.RRetryable, 1},
+		{"envelope refusal", 200, `{"code":5,"msg":"bad"}`, "failed_retryable", engine.RRetryable, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := workBuddyActivityFixture(t)
+			f.runtime.fetch = providerruntime.FetchResponse{Status: tc.status, Body: []byte(tc.body)}
+			result, outcome := f.service.activity(context.Background(), f.runtime, "workbuddy", "a1")
+			if result.Kind != tc.wantKind || outcome.State != tc.wantState {
+				t.Fatalf("result=%+v outcome=%+v", result, outcome)
+			}
+			if f.runtime.fetchCalls != tc.wantCalls {
+				t.Fatalf("fetch calls = %d, want %d", f.runtime.fetchCalls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+func TestWorkBuddyActivityRequiresAccountUID(t *testing.T) {
+	f := workBuddyActivityFixture(t)
+	f.runtime.providers[0].Accounts[0].UID = ""
+	result, outcome := f.service.activity(context.Background(), f.runtime, "workbuddy", "a1")
+	if result.Kind != engine.RRetryable || outcome.State != "failed_retryable" {
+		t.Fatalf("result=%+v outcome=%+v", result, outcome)
+	}
+	if f.runtime.fetchCalls != 0 {
+		t.Fatalf("must not hit upstream without uid, calls = %d", f.runtime.fetchCalls)
+	}
+}
+
+func TestWorkBuddyActivityRunsOncePerBeijingDay(t *testing.T) {
+	f := workBuddyActivityFixture(t)
+	ctx := context.Background()
+	// workbuddy 是默认启用的供应商；List 会把运行时账号同步进库。
+	if _, err := f.service.List(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.runtime.fetch = providerruntime.FetchResponse{
+		Status: 200, Body: []byte(`{"code":0,"msg":"ok"}`),
+	}
+	if err := f.service.RunActivity(ctx, "workbuddy", "a1"); err != nil {
+		t.Fatal(err)
+	}
+	if f.runtime.fetchCalls != 1 {
+		t.Fatalf("first activity fetches = %d", f.runtime.fetchCalls)
+	}
+	if err := f.service.RunActivity(ctx, "workbuddy", "a1"); err == nil ||
+		!strings.Contains(err.Error(), "今日已活跃") {
+		t.Fatalf("second activity = %v, want already-active", err)
+	}
+	if f.runtime.fetchCalls != 1 {
+		t.Fatalf("second activity must not report again, fetches = %d", f.runtime.fetchCalls)
 	}
 }

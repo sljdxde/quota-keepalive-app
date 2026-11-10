@@ -60,6 +60,11 @@ test("detail text exposes failure reason, free cost and streak", function () {
     activityCostText({ sent_today: true, today_message: "每日活跃完成（订阅额度）" }),
     "成本：订阅额度",
   );
+  // WorkBuddy 走连登上报，不是模型调用。
+  assert.equal(
+    activityCostText({ sent_today: true, today_message: "每日活跃已上报（WorkBuddy 连登已点亮）" }),
+    "成本：不消耗模型额度",
+  );
   assert.equal(activityCostText({ sent_today: false }), "");
 });
 

@@ -1983,6 +1983,8 @@ async function providers({ proxies } = {}) {
         key: k,
         type: stored[k]?.type ?? "",
         accountId: whoOf(stored[k]),
+        // WorkBuddy 的 uid：账号可能同名，事件上报与账号展示都要用到它。
+        uid: uidOf(stored[k]),
         hint: hintOf(stored[k]),
         models: own.length === 0 ? undefined : i === 0 ? ids(p) : own[i - 1]?.models ? ids(own[i - 1]) : undefined,
         fellBack: i === 0 ? !!p.fellBack : !!(own[i - 1]?.fellBack || own[i - 1]?.failed),

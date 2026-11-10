@@ -5435,7 +5435,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         activityList.appendChild(activityTaskRow(provider, account));
       });
       body.appendChild(agentModalSection(
-        "每日活跃", accounts.length + " 个", "每天一次 · 免费模型优先", [activityList], true));
+        "每日活跃", accounts.length + " 个",
+        provider.id === "workbuddy"
+          ? "每天一次 · 上报连登（不消耗模型额度）"
+          : "每天一次 · 免费模型优先", [activityList], true));
       if (!activitySnapshot && !activityRefreshPromise) {
         void refreshActivityView().then(function (view) {
           if (view) void renderAccounts();

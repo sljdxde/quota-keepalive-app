@@ -85,11 +85,14 @@ type Model struct {
 // Account is one provider account. Key is a stable account selector and must
 // never be used as a display identity.
 type Account struct {
-	Key       string   `json:"key"`
-	Type      string   `json:"type"`
-	AccountID string   `json:"accountId"`
-	Hint      string   `json:"hint,omitempty"`
-	Models    []string `json:"models,omitempty"`
+	Key       string `json:"key"`
+	Type      string `json:"type"`
+	AccountID string `json:"accountId"`
+	// UID is the vendor's own account id when the plugin keeps one beside the
+	// display name (WorkBuddy 的 uid)；每日活跃事件要把它写进 userId。
+	UID    string   `json:"uid,omitempty"`
+	Hint   string   `json:"hint,omitempty"`
+	Models []string `json:"models,omitempty"`
 }
 
 // Provider is the credential-free projection returned by host.js.
