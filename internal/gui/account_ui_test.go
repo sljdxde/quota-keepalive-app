@@ -100,6 +100,11 @@ func TestAccountCardLeadsWithCheckinAndQuota(t *testing.T) {
 		`.acct-link {`,
 		`.mini-action {`,
 		`.op-chip {`,
+		// 控件尺度参照 magpie：标题 13px、chip/文字操作/按钮 11.5px，
+		// 不再用 8.5-9.5px 的灰字（夜间看不清）。
+		`font-size: var(--fs-base); font-weight: 600;`,
+		`font-size: var(--fs-sm); line-height: 1;`,
+		`font-size: var(--fs-sm); font-weight: 560; cursor: pointer;`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("账号卡缺少 mac 风格样式 %q", want)

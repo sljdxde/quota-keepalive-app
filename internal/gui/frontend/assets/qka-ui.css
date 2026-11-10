@@ -66,8 +66,8 @@
   --card2: #1b1b1e;
   --code: #151517;
   --ink: #f2f2f3;
-  --ink2: #b3b3ba;
-  --ink3: #7a7a82;
+  --ink2: #bdbdc4;
+  --ink3: #8f8f98;
   --line: #26262a;
   --line2: #202024;
   --track: #2d2d33;
@@ -224,7 +224,7 @@
 .am-ic { width: 26px; height: 26px; border-radius: 6px; flex: none; object-fit: contain; }
 .am-who { min-width: 0; }
 .am-who h2 { font-size: var(--fs-lg); margin: 0; }
-.am-who p { margin-top: 2px; color: var(--ink2); font-size: var(--fs-xs); }
+.am-who p { margin-top: 2px; color: var(--ink2); font-size: var(--fs-sm); }
 .am-switch { margin-left: auto; }
 .am-x { margin-left: 8px; }
 .abody { flex: 1; overflow-y: auto; min-height: 0; }

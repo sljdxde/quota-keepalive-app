@@ -589,7 +589,7 @@
   }
   .acct-title {
     display: flex; align-items: center; gap: 7px;
-    font-size: var(--fs-sm); font-weight: 560;
+    font-size: var(--fs-base); font-weight: 600;
   }
   .acct-title .dot {
     width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--faint);
@@ -598,8 +598,8 @@
   .acct-title .dot.warn { background: var(--amber); }
   .acct-title .dot.bad { background: var(--red); }
   .acct-meta {
-    display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
-    margin-top: 3px; color: var(--fg-2); font-size: var(--fs-2xs);
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px;
+    margin-top: 4px; color: var(--fg-2); font-size: var(--fs-sm);
   }
   .acct-meta b { font-weight: 600; color: var(--fg); }
   /* 额度在摘要行内联（mac 的小字语言），去掉共享样式的盒子、边框与缩进。
@@ -607,14 +607,17 @@
   .account-card .acct-meta .account-quota {
     display: inline-flex; align-items: center; gap: 6px;
     margin: 0; padding: 0; border: 0; background: transparent;
-    color: var(--fg-2); font-size: var(--fs-2xs);
+    color: var(--fg-2); font-size: var(--fs-sm);
   }
-  .account-card .acct-meta .quota-track { width: 52px; height: 3px; }
-  .acct-ops { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .account-card .acct-meta .quota-track { width: 58px; height: 3px; }
+  .acct-ops { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  /* chip 与按钮参照 magpie 的控件尺度：22px 高、11.5px 字，字号和点击区
+     都够用；夜间模式用更亮的控件文字，不再靠 8.5px 灰字。 */
   .op-chip {
-    padding: 2px 6px; border-radius: 4px; border: 0;
-    color: var(--muted); background: var(--card-2);
-    font-size: var(--fs-3xs); line-height: 1.25;
+    display: inline-flex; align-items: center;
+    height: 22px; padding: 0 8px; border-radius: 6px; border: 0;
+    color: var(--fg-2); background: var(--card-2);
+    font-size: var(--fs-sm); line-height: 1;
   }
   .op-chip.good { color: var(--green); background: var(--green-soft); }
   .op-chip.warn { color: var(--amber); background: var(--amber-soft); }
@@ -622,8 +625,8 @@
   .op-chip.mode { cursor: pointer; }
   .op-chip.mode:hover { color: var(--fg); }
   .op-chip.quota { font-variant-numeric: tabular-nums; }
-  .acct-hint { margin-top: 4px; color: var(--fg-2); font-size: var(--fs-2xs); line-height: 1.45; }
-  .acct-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 6px; }
+  .acct-hint { margin-top: 5px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
+  .acct-links { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; margin-top: 8px; }
   /* 账号马赛克：和菜单栏面板同一套视觉；按标识哈希生成固定色块。 */
   .acct-mosaic {
     display: inline-flex;
@@ -644,8 +647,8 @@
   .acct-link {
     border: 0; background: transparent; padding: 0; margin: 0;
     height: auto; min-height: 0; border-radius: 0; box-shadow: none;
-    color: var(--muted); font: inherit; font-size: var(--fs-2xs);
-    line-height: 1.4; cursor: pointer;
+    color: var(--fg-2); font: inherit; font-size: var(--fs-sm);
+    line-height: 1.45; cursor: pointer;
   }
   .acct-link:hover { color: var(--fg); text-decoration: underline; }
   .acct-link.danger { color: var(--red); }
@@ -654,11 +657,11 @@
   .acct-right { display: flex; align-items: center; gap: 8px; flex: none; align-self: start; }
   /* mac 的 mini-action：小、无边框、pill 底。 */
   .mini-action {
-    min-height: 25px; padding: 0 10px;
-    border: 0; border-radius: 6px;
+    min-height: 26px; padding: 0 11px;
+    border: 0; border-radius: 7px;
     color: var(--fg-2); background: var(--bg2);
     box-shadow: inset 0 0 0 .5px var(--line);
-    font: inherit; font-size: var(--fs-2xs); cursor: pointer;
+    font: inherit; font-size: var(--fs-sm); font-weight: 560; cursor: pointer;
   }
   .mini-action:hover { background: var(--card-2); color: var(--fg); }
   .mini-action:disabled { opacity: .55; cursor: default; }
@@ -1029,6 +1032,35 @@
     box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06);
   }
   .settings-choice button:disabled { opacity: .55; }
+  /* 设置页的操作按钮不放进灰色分段槽：描边 + 卡片底，能点的一眼能看出来；
+     真正禁用时才变灰底、无描边。分段选择器（主题/性能/缩放）仍保持槽式。 */
+  .settings-choice.settings-actions {
+    background: transparent;
+    padding: 0;
+    gap: 8px;
+  }
+  .settings-choice.settings-actions button {
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--card);
+    color: var(--fg-2);
+    font-size: var(--fs-sm);
+    font-weight: 560;
+  }
+  .settings-choice.settings-actions button:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--card-2);
+    color: var(--fg);
+  }
+  .settings-choice.settings-actions button:disabled {
+    opacity: .55;
+    border-color: transparent;
+    background: var(--bg2);
+    color: var(--muted);
+  }
+  .settings-choice.settings-actions button[hidden] { display: none; }
   .settings-select-shell {
     position: relative;
     display: inline-flex;
@@ -2916,7 +2948,7 @@
               <b>自定义背景图片</b>
               <small id="settings-custom-bg-name">图片只保存在本机；建议使用横向图片，最大 8 MB。</small>
             </span>
-            <span class="settings-choice">
+            <span class="settings-choice settings-actions">
               <button type="button" id="settings-custom-bg-pick">选择图片</button>
               <button type="button" id="settings-custom-bg-reset">清除</button>
             </span>
@@ -2943,7 +2975,7 @@
               <b>安装更新</b>
               <small>替换过程在 Quota Keepalive 退出后进行；失败会自动恢复旧版本。</small>
             </span>
-            <span class="settings-choice">
+            <span class="settings-choice settings-actions">
               <button type="button" id="settings-update-check">检查</button>
               <button type="button" id="settings-update-notes" hidden>更新说明</button>
               <button type="button" id="settings-update-install" disabled>下载并安装</button>
@@ -2972,7 +3004,7 @@
               <b>自助取证</b>
               <small>复制完整诊断信息（纯文本），或直接打开日志目录。</small>
             </span>
-            <span class="settings-choice">
+            <span class="settings-choice settings-actions">
               <button type="button" id="diagnostics-copy">复制诊断信息</button>
               <button type="button" id="diagnostics-open-logdir">打开日志目录</button>
             </span>

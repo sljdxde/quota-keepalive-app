@@ -52,6 +52,10 @@ func TestSettingsPageUsesFullProductNameAndAlignedSections(t *testing.T) {
 		`.select-shell::after`,
 		`@media (max-width: 700px)`,
 		`.brand { display: none; }`,
+		// 设置页的操作按钮不再套灰色分段槽：描边按钮明确可点。
+		`class="settings-choice settings-actions"`,
+		`.settings-choice.settings-actions button {`,
+		`border: 1px solid var(--line);`,
 	)
 	requireStrings(t, settingsPage, "独立设置页",
 		"Quota Keepalive 使用同一份声明式配置",
