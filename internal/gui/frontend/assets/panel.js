@@ -33,7 +33,10 @@ import {
 const panelTabIds = ["checkin", "speed", "pet"];
 const panelTabStorageKey = "qka.panel.tab";
 const petSelectedStorageKey = "qka.pet.selected";
-const accountPrivacyStorageKey = "qka.panel.hideAccounts";
+// 与主窗口 Agent 详情共用同一个隐私开关：在哪边切了，另一边也一致。
+const accountPrivacyStorageKey = "qka.accounts.hidden";
+// 旧版本把面板开关存在自己的 key 里，读一次并迁移过去，不让用户重设。
+const legacyPanelPrivacyStorageKey = "qka.panel.hideAccounts";
 const opLabels = { checkin: "签到" };
 const expanded = {};
 const providerInfo = {};
@@ -58,7 +61,12 @@ let selectedPetId = readStoredString(petSelectedStorageKey, "bulbasaur");
 let petMessageIndex = 0;
 let refreshInFlight = null;
 let lastStatusView = null;
-let hideAccounts = readStoredString(accountPrivacyStorageKey, "0") === "1";
+let hideAccounts = readStoredString(accountPrivacyStorageKey, "") === "1";
+if (readStoredString(accountPrivacyStorageKey, "") === "" &&
+    readStoredString(legacyPanelPrivacyStorageKey, "") === "1") {
+  hideAccounts = true;
+  writeStoredValue(accountPrivacyStorageKey, "1");
+}
 let renderedPetId = "";
 let renderedSkillTier = 0;
 let petViewer = null;

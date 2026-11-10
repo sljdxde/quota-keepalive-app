@@ -624,6 +624,21 @@
   .op-chip.quota { font-variant-numeric: tabular-nums; }
   .acct-hint { margin-top: 4px; color: var(--fg-2); font-size: var(--fs-2xs); line-height: 1.45; }
   .acct-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; margin-top: 6px; }
+  /* 账号马赛克：和菜单栏面板同一套视觉；按标识哈希生成固定色块。 */
+  .acct-mosaic {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 12px;
+    vertical-align: middle;
+  }
+  .acct-mosaic i {
+    display: block;
+    height: 10px;
+    border-radius: 1.5px;
+    background: var(--fg-2);
+  }
+  .am-privacy { margin-left: 8px; }
   /* 文字操作：彻底重置按钮外观（全局 .danger/.secondary 会带高度、内边距、
      圆角与 inset 描边，不重置的话「删除」会显示成一个红框按钮）。 */
   .acct-link {
@@ -2977,6 +2992,8 @@
             <p id="agent-modal-sub"></p>
           </div>
           <button class="switch am-switch" id="agent-modal-switch" type="button" role="switch" aria-checked="true" aria-label="启用或停用该 Agent"></button>
+          <button class="text am-privacy" id="agent-modal-privacy" type="button"
+                  aria-pressed="false" title="把账号标识换成马赛克">隐藏账号</button>
           <button class="text am-x" id="agent-modal-close" type="button" data-close aria-label="关闭">关闭</button>
         </header>
         <div class="abody" id="agent-modal-body"></div>
@@ -5508,6 +5525,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const panel = providerModelPanel(provider);
     body.appendChild(agentModalSection("模型", models.length + " 个", "先选后测", [panel], false));
 
+    syncAccountPrivacyButton();
     document.getElementById("agent-modal-title").textContent = provider.name || provider.id;
     document.getElementById("agent-modal-sub").textContent =
       (provider.signed_in ? "已登录" : "未登录") + " · " +
@@ -5556,6 +5574,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     showAccountsMessage("");
   }
 
+  document.getElementById("agent-modal-privacy").onclick = toggleAccountPrivacy;
   document.getElementById("agent-modal-close").onclick = closeAgentModal;
   document.getElementById("agent-modal").addEventListener("click", function (event) {
     if (event.target.id === "agent-modal") closeAgentModal();
@@ -5623,6 +5642,62 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       return "网络请求失败，请检查网络后重试；本次未宣称成功。";
     }
     return fallback;
+  }
+
+  // 账号隐私：主窗口的 Agent 详情里可把账号标识换成马赛克；选择存
+  // localStorage，与菜单栏面板的开关互不影响。
+  const ACCOUNT_PRIVACY_STORAGE_KEY = "qka.accounts.hidden";
+  let hideAccountIdentities = false;
+  try {
+    hideAccountIdentities = localStorage.getItem(ACCOUNT_PRIVACY_STORAGE_KEY) === "1";
+    // 旧版本面板用 qka.panel.hideAccounts，迁移到共用 key，别让用户重设。
+    if (localStorage.getItem(ACCOUNT_PRIVACY_STORAGE_KEY) === null &&
+        localStorage.getItem("qka.panel.hideAccounts") === "1") {
+      hideAccountIdentities = true;
+      localStorage.setItem(ACCOUNT_PRIVACY_STORAGE_KEY, "1");
+    }
+  } catch (_) {}
+
+  function mosaicIdentityNode(text) {
+    const span = document.createElement("span");
+    span.className = "acct-mosaic";
+    span.setAttribute("aria-hidden", "true");
+    const source = String(text || "");
+    let seed = 2166136261;
+    for (let i = 0; i < source.length; i++) {
+      seed ^= source.charCodeAt(i);
+      seed = Math.imul(seed, 16777619) >>> 0;
+    }
+    const count = Math.max(6, Math.min(14, Math.round(source.length * 1.6)));
+    for (let i = 0; i < count; i++) {
+      const cell = document.createElement("i");
+      const bits = (seed >>> ((i * 3) % 24)) & 7;
+      cell.style.width = 3 + (bits & 3) + "px";
+      cell.style.opacity = (0.35 + ((bits >> 2) & 3) * 0.18).toFixed(2);
+      span.appendChild(cell);
+    }
+    return span;
+  }
+
+  function syncAccountPrivacyButton() {
+    const button = document.getElementById("agent-modal-privacy");
+    if (!button) return;
+    button.textContent = hideAccountIdentities ? "显示账号" : "隐藏账号";
+    button.setAttribute("aria-pressed", hideAccountIdentities ? "true" : "false");
+    button.title = hideAccountIdentities
+      ? "点击恢复显示账号标识"
+      : "把账号标识换成马赛克";
+  }
+
+  function toggleAccountPrivacy() {
+    hideAccountIdentities = !hideAccountIdentities;
+    try {
+      localStorage.setItem(ACCOUNT_PRIVACY_STORAGE_KEY, hideAccountIdentities ? "1" : "0");
+    } catch (_) {}
+    syncAccountPrivacyButton();
+    if (agentModalProvider) {
+      fillAgentModal(agentModalProvider);
+    }
   }
 
   function displayAccountIdentity(value) {
@@ -5996,8 +6071,9 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       const originalLabel = test.textContent;
       result.hidden = false;
       result.className = "model-test-result";
-      result.textContent = "正在通过账号 " +
-        displayAccountIdentity(account.masked_identity) + " 逐个测试 " +
+      result.textContent = "正在通过" +
+        (hideAccountIdentities ? "已隐藏账号" : "账号 " +
+          displayAccountIdentity(account.masked_identity)) + " 逐个测试 " +
         picks.length + " 个模型…";
       const rows = [];
       picks.forEach(function (model) { applyModelStatus(model.id, "testing", "测试中…"); });
@@ -6056,7 +6132,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const dot = document.createElement("i");
     dot.className = "dot " + stateClass(failed ? failed.state : "");
     title.appendChild(dot);
-    title.appendChild(document.createTextNode(identity));
+    if (hideAccountIdentities) {
+      title.appendChild(mosaicIdentityNode(identity));
+    } else {
+      title.appendChild(document.createTextNode(identity));
+    }
     copy.appendChild(title);
 
     // 一行摘要：签到结果（首要）+ 主额度。只报一套口径（剩余/总量）。
@@ -6133,7 +6213,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     sw.className = "switch";
     sw.setAttribute("role", "switch");
     sw.setAttribute("aria-checked", account.enabled ? "true" : "false");
-    sw.setAttribute("aria-label", (account.enabled ? "停用" : "启用") + "账号 " + identity);
+    sw.setAttribute("aria-label", (account.enabled ? "停用" : "启用") +
+      (hideAccountIdentities ? "该账号" : "账号 " + identity));
     sw.onclick = async function () {
       sw.disabled = true;
       showAccountsMessage(account.enabled ? "正在停用账号…" : "正在启用账号…", "pending");

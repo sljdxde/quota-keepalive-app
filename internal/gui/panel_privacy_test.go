@@ -30,7 +30,8 @@ func TestPanelAccountPrivacyMosaicToggle(t *testing.T) {
 	}
 	script := string(scriptData)
 	requireStrings(t, script, "面板账号马赛克逻辑",
-		`const accountPrivacyStorageKey = "qka.panel.hideAccounts";`,
+		`const accountPrivacyStorageKey = "qka.accounts.hidden";`,
+		`const legacyPanelPrivacyStorageKey = "qka.panel.hideAccounts";`,
 		`function mosaicIdentityNode(`,
 		`function syncPrivacyToggle(`,
 		`function toggleAccountPrivacy(`,
