@@ -20,25 +20,31 @@ func TestAppsPageExposesDailyActivity(t *testing.T) {
 		`assets/activity.js`,
 		`refreshActivityView`,
 		`activityForAccount`,
-		`activityTaskRow`,
+		`activityMode`,
 		`Bound.ActivityView()`,
 		`Bound.ActivityRun(`,
 		`Bound.ActivitySetEnabled(`,
 		`每日活跃`,
 		`立即活跃`,
-		`今日未活跃`,
+		`activityChipText`,
 		`activityStateText`,
 		`activitySummaryText`,
-		// 每日活跃行的操作按钮必须比开关小一圈：只放大文字按钮，不能把
-		// .switch 一起撑高（旧规则写的是 .task-actions button）。
-		`.task-actions .mini-action {`,
-		`.task-actions .switch { min-height: 0; }`,
+		// 每日活跃并进账号卡：状态 chip + 活跃自动/手动 chip，不再单独成块。
+		`"活跃自动" : "活跃手动"`,
+		`Bound.ActivitySetEnabled(provider.id, accountKey, !activityTaskOn)`,
+		`runActivity.textContent = sentToday ? "活跃已完成" : "立即活跃"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("应用管理页缺少每日活跃 UI: %q", want)
 		}
 	}
-	for _, forbidden := range []string{`保活`, `data-tab="activity"`} {
+	for _, forbidden := range []string{
+		`保活`,
+		`data-tab="activity"`,
+		// 每日活跃不再单独占一个 section，也不能再出现那套行式 UI。
+		`activityTaskRow`,
+		`每天一次 · 免费模型优先`,
+	} {
 		if strings.Contains(page, forbidden) {
 			t.Errorf("应用管理页不应包含 %q", forbidden)
 		}

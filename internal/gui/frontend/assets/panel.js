@@ -311,6 +311,8 @@ function syncPrivacyToggle() {
   const label = hideAccounts ? "显示账号" : "隐藏账号（马赛克）";
   button.setAttribute("aria-label", label);
   button.title = label;
+  const text = document.getElementById("account-privacy-label");
+  if (text) text.textContent = hideAccounts ? "显示账号" : "隐藏账号";
 }
 
 function toggleAccountPrivacy() {

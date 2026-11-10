@@ -594,21 +594,24 @@
   }
   .section-label .muted { color: var(--muted); font-size: var(--fs-xs); font-weight: 500; }
   .section-label .spacer { flex: 1; }
-  /* 账号隐私开关：眼睛图标，隐藏时把账号标识替换成马赛克块。 */
+  /* 账号隐私开关：图标 + 文字，避免只有一个眼睛图标让人看不懂。
+     隐藏时把账号标识替换成马赛克块。 */
   .section-label .privacy-toggle {
-    width: 20px;
-    height: 18px;
-    padding: 0;
+    min-height: 18px;
+    padding: 0 4px;
     border: 0;
     border-radius: 5px;
-    display: inline-grid;
-    place-items: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex: none;
     color: var(--muted);
     background: transparent;
+    font: inherit;
+    font-weight: 560;
   }
-  .section-label .privacy-toggle:hover { color: var(--fg); background: var(--pill); }
-  .section-label .privacy-toggle svg { width: 13px; height: 13px; display: block; }
+  .section-label .privacy-toggle:hover { color: var(--fg); background: var(--pill-hover); }
+  .section-label .privacy-toggle svg { width: 12px; height: 12px; display: block; }
   .section-label .privacy-toggle .eye-off { display: none; }
   .checkin-page.is-private .privacy-toggle .eye-open { display: none; }
   .checkin-page.is-private .privacy-toggle .eye-off { display: block; }
@@ -2039,7 +2042,6 @@
 
         <div class="section-label">
           <span>签到</span>
-          <span class="muted">按供应商折叠</span>
           <span class="spacer"></span>
           <button class="privacy-toggle" id="account-privacy" type="button"
                   aria-pressed="false" aria-label="隐藏账号（马赛克）" title="隐藏账号（马赛克）">
@@ -2055,6 +2057,7 @@
               <path d="M2.7 13.3 13.3 2.7" stroke="currentColor" stroke-width="1.5"
                     stroke-linecap="round"/>
             </svg>
+            <span id="account-privacy-label">隐藏账号</span>
           </button>
           <button class="collapse-all" id="checkin-collapse-all" type="button"
                   aria-pressed="false">全部收起</button>

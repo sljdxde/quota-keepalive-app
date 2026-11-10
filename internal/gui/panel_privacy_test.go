@@ -16,6 +16,8 @@ func TestPanelAccountPrivacyMosaicToggle(t *testing.T) {
 	requireStrings(t, page, "面板账号隐私开关",
 		`id="account-privacy"`,
 		`aria-label="隐藏账号（马赛克）"`,
+		`id="account-privacy-label"`,
+		`<span id="account-privacy-label">隐藏账号</span>`,
 		`class="eye-open"`,
 		`class="eye-off"`,
 		`.acct-mosaic {`,
@@ -35,6 +37,7 @@ func TestPanelAccountPrivacyMosaicToggle(t *testing.T) {
 		`mosaicIdentityNode(identity)`,
 		`"打开主窗口查看账号（已隐藏）"`,
 		`document.getElementById("account-privacy").addEventListener("click"`,
+		`text.textContent = hideAccounts ? "显示账号" : "隐藏账号"`,
 	)
 	// 隐藏时不能再把明文写进 DOM：identity 变量只在非隐藏分支用 createTextNode。
 	for _, want := range []string{
