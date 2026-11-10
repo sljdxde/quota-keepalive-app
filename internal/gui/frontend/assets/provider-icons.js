@@ -13,6 +13,7 @@ const PROVIDER_ICONS = {
   "qwenwork-enterprise": { path: "assets/provider-icons/qwen.svg", mode: "color" },
   "trae-cn": { path: "assets/provider-icons/trae.svg", mode: "mask" },
   "trae-global": { path: "assets/provider-icons/trae.svg", mode: "mask" },
+  trae: { path: "assets/provider-icons/trae.svg", mode: "mask" },
   zcode: { path: "assets/provider-icons/zcode.png", mode: "color" },
 };
 

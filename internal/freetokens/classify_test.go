@@ -17,23 +17,35 @@ func TestClassifyThreeTiers(t *testing.T) {
 			{ID: "qoder", Provider: "阿里云 Qoder", Kind: "daily", Counted: true, Yuan: yuan(2)},
 			{ID: "cloudflare", Provider: "Cloudflare", Kind: "daily"},
 			{ID: "amd", Provider: "AMD Radeon Cloud", Kind: "daily", Counted: true, Yuan: yuan(1)},
+			// 有账号但应用管理里没启用：必须归到待配置，不能算已配置可用。
+			{ID: "trae", Provider: "字节 TRAE", Kind: "daily"},
 		},
 	}
 	states := []ProviderState{
-		{ID: "minimax-code", Name: "MiniMax Code", Enabled: true, SignedIn: true, Accounts: 2, Checkin: true},
+		{ID: "minimax-code", Name: "MiniMax Code", Icon: "data:image/svg+xml;base64,AA==",
+			Enabled: true, SignedIn: true, Accounts: 2, Checkin: true},
 		{ID: "qoder-cn", Name: "Qoder CN", Enabled: true},
+		{ID: "trae-cn", Name: "Trae CN", Enabled: false, SignedIn: true, Accounts: 1, Checkin: true},
 	}
 	view := Classify(snapshot, states, nil)
-	if len(view.Deals) != 4 {
-		t.Fatalf("deals = %d, want 4", len(view.Deals))
+	if len(view.Deals) != 5 {
+		t.Fatalf("deals = %d, want 5", len(view.Deals))
 	}
 	assertDeal(t, view.Deals[0], TierReady, "checkin", "minimax-code")
+	if view.Deals[0].QKAProviderIcon == "" {
+		t.Fatal("已配置可用的插件图标没有透传给前端")
+	}
 	assertDeal(t, view.Deals[1], TierSetup, "login", "qoder-cn")
 	// Cloudflare 有映射（插件内置），但运行时没有注册出 provider → 待配置。
 	assertDeal(t, view.Deals[2], TierSetup, "open-apps", "")
 	// 没有映射的厂商 → 暂无插件。
 	assertDeal(t, view.Deals[3], TierNone, "", "")
-	if view.Summary.Ready != 1 || view.Summary.Setup != 2 || view.Summary.None != 1 {
+	// 有账号但没启用 → 待配置 + 去应用管理，而不是已配置可用。
+	assertDeal(t, view.Deals[4], TierSetup, "open-apps", "trae-cn")
+	if view.Deals[4].Enabled || !view.Deals[4].SignedIn {
+		t.Fatalf("未启用但有账号的 deal 状态异常: %+v", view.Deals[4])
+	}
+	if view.Summary.Ready != 1 || view.Summary.Setup != 3 || view.Summary.None != 1 {
 		t.Fatalf("summary 异常: %+v", view.Summary)
 	}
 	// 只有 counted && yuan!=nil 的 deal 计入今日折算：6.5 + 2 + 1 = 9.5 → 10。

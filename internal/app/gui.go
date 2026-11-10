@@ -192,6 +192,7 @@ func (a *App) guiDeps() gui.Deps {
 					states = append(states, freetokens.ProviderState{
 						ID:       provider.ID,
 						Name:     provider.Name,
+						Icon:     provider.Icon,
 						Enabled:  provider.Enabled,
 						SignedIn: provider.SignedIn,
 						Accounts: len(provider.Accounts),

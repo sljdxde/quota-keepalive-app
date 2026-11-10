@@ -18,8 +18,10 @@ const (
 // ProviderState 是分类时需要的 QKA provider 现场状态（由 GUI 层从
 // providers.View 投影，保持本包不依赖 providers/runtime）。
 type ProviderState struct {
-	ID       string
-	Name     string
+	ID   string
+	Name string
+	// Icon 是插件声明的图标（data: URI 或 https URL）；没有时留空。
+	Icon     string
 	Enabled  bool
 	SignedIn bool
 	Accounts int
@@ -29,14 +31,15 @@ type ProviderState struct {
 // DealView 是一条带分档与行动建议的 deal。
 type DealView struct {
 	Deal
-	Tier          string `json:"tier"`
-	Action        string `json:"action,omitempty"`
-	QKAProviderID string `json:"qka_provider_id,omitempty"`
-	QKAProvider   string `json:"qka_provider,omitempty"`
-	Supported     bool   `json:"supported"`
-	SignedIn      bool   `json:"signed_in"`
-	Enabled       bool   `json:"enabled"`
-	Checkin       bool   `json:"checkin"`
+	Tier            string `json:"tier"`
+	Action          string `json:"action,omitempty"`
+	QKAProviderID   string `json:"qka_provider_id,omitempty"`
+	QKAProvider     string `json:"qka_provider,omitempty"`
+	QKAProviderIcon string `json:"qka_provider_icon,omitempty"`
+	Supported       bool   `json:"supported"`
+	SignedIn        bool   `json:"signed_in"`
+	Enabled         bool   `json:"enabled"`
+	Checkin         bool   `json:"checkin"`
 }
 
 // Summary 是三档计数与今日折算。
@@ -90,11 +93,23 @@ func Classify(snapshot Snapshot, states []ProviderState, fetchErr error) View {
 				item.Tier = TierSetup
 				item.Action = "open-apps"
 				view.Summary.Setup++
+			case !state.Enabled:
+				// 有账号但「应用管理」里没启用：页面口径是「启用且已登录」才算
+				// 已配置可用，否则会把一堆没启用的插件误报成可用；这里归到待
+				// 配置并引导去应用管理启用。
+				item.Tier = TierSetup
+				item.Action = "open-apps"
+				item.QKAProviderID = state.ID
+				item.QKAProviderIcon = state.Icon
+				item.Enabled = false
+				item.SignedIn = state.SignedIn || state.Accounts > 0
+				view.Summary.Setup++
 			case state.SignedIn || state.Accounts > 0:
 				item.Tier = TierReady
 				item.SignedIn = true
-				item.Enabled = state.Enabled
+				item.Enabled = true
 				item.QKAProviderID = state.ID
+				item.QKAProviderIcon = state.Icon
 				if mapping.Checkin {
 					item.Action = "checkin"
 				} else {
@@ -105,6 +120,7 @@ func Classify(snapshot Snapshot, states []ProviderState, fetchErr error) View {
 				item.Tier = TierSetup
 				item.Action = "login"
 				item.QKAProviderID = state.ID
+				item.QKAProviderIcon = state.Icon
 				item.Enabled = state.Enabled
 				view.Summary.Setup++
 			}

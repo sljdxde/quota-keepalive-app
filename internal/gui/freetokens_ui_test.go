@@ -25,6 +25,11 @@ func TestFreeTokensPageShipped(t *testing.T) {
 		`from "./assets/free-tokens.js"`,
 		`function renderFreeTokens(`,
 		`function loadFreeTokens(`,
+		`function freeTokenAvatar(`,
+		`providerIconSpec(providerId)`,
+		`deal.qka_provider_icon`,
+		`.ft-avatar.has-icon`,
+		`.ft-avatar .provider-glyph`,
 		`<h1>免费额度</h1>`,
 		`AIHOT`,
 	)

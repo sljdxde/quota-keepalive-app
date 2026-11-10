@@ -2523,6 +2523,21 @@
   .ft-avatar {
     width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
     color: var(--fg-2); background: var(--pill); font-size: var(--fs-md); font-weight: 700;
+    overflow: hidden;
+  }
+  /* 真实供应商图标：优先用随包内置的品牌 SVG，其次用插件声明的 icon
+     （data: URI 或 https 地址），两者都没有才回落到厂商首字。 */
+  .ft-avatar.has-icon {
+    background: var(--card-2);
+    box-shadow: inset 0 0 0 .5px var(--line);
+  }
+  .ft-avatar img { width: 22px; height: 22px; object-fit: contain; display: block; }
+  .ft-avatar .provider-glyph {
+    width: 20px; height: 20px; display: block;
+    background: currentColor;
+    -webkit-mask-position: center; mask-position: center;
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   }
   .ft-body { min-width: 0; }
   .ft-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -6884,6 +6899,36 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     Bound.OpenURL(deal.url).catch(function () {});
   }
 
+  // freeTokenAvatar 优先渲染真实供应商图标：内置品牌 SVG → 插件图标 → 首字。
+  function freeTokenAvatar(deal) {
+    const avatar = document.createElement("div");
+    avatar.className = "ft-avatar";
+    const fallback = String(deal.provider || "?").slice(0, 1);
+    const providerId = String(deal.qka_provider_id || "").trim().toLowerCase();
+    if (providerId && providerIconSpec(providerId)) {
+      populateProviderIcon(avatar, { id: providerId });
+      avatar.classList.add("has-icon");
+      return avatar;
+    }
+    const icon = String(deal.qka_provider_icon || "").trim();
+    if (icon) {
+      const image = document.createElement("img");
+      image.src = icon;
+      image.alt = "";
+      image.draggable = false;
+      image.addEventListener("error", function () {
+        image.remove();
+        avatar.classList.remove("has-icon");
+        avatar.textContent = fallback;
+      });
+      avatar.appendChild(image);
+      avatar.classList.add("has-icon");
+      return avatar;
+    }
+    avatar.textContent = fallback;
+    return avatar;
+  }
+
   function freeTokenActionButton(deal) {
     const label = actionLabel(deal.action);
     if (!label) return null;
@@ -6943,10 +6988,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       const row = document.createElement("div");
       row.className = "ft-row";
 
-      const avatar = document.createElement("div");
-      avatar.className = "ft-avatar";
-      avatar.textContent = String(deal.provider || "?").slice(0, 1);
-      row.appendChild(avatar);
+      row.appendChild(freeTokenAvatar(deal));
 
       const body = document.createElement("div");
       body.className = "ft-body";
