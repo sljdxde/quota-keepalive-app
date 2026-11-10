@@ -29,6 +29,10 @@ func TestAppsPageExposesDailyActivity(t *testing.T) {
 		`今日未活跃`,
 		`activityStateText`,
 		`activitySummaryText`,
+		// 每日活跃行的操作按钮必须比开关小一圈：只放大文字按钮，不能把
+		// .switch 一起撑高（旧规则写的是 .task-actions button）。
+		`.task-actions .mini-action {`,
+		`.task-actions .switch { min-height: 0; }`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("应用管理页缺少每日活跃 UI: %q", want)

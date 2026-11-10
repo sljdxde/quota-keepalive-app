@@ -689,7 +689,20 @@
   .task-row.bad .task-state { color: var(--red); }
   .task-hint { margin-top: 2px; color: var(--muted); font-size: var(--fs-xs); line-height: 1.4; }
   .task-actions { display: flex; align-items: center; gap: 7px; flex: none; }
-  .task-actions button { min-height: 26px; padding: 0 9px; font-size: var(--fs-sm); }
+  /* 只放大文字按钮，不能把开关也一起撑大：旧规则 `.task-actions button`
+     同时命中了 .switch，把 20px 高的开关拉到 26px 并带 9px 内边距，看起来
+     又胖又高；「立即活跃」也比账号卡里的 mini-action 大一圈。 */
+  .task-actions .mini-action {
+    min-height: 24px;
+    padding: 0 9px;
+    border-radius: 6px;
+    font-size: var(--fs-sm);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .task-actions .switch { min-height: 0; }
   .provider-account-empty {
     margin: 10px 12px 0; padding: 13px 14px;
     border-radius: 9px; color: var(--fg-2); background: var(--card-2);
