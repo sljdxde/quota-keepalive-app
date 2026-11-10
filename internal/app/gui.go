@@ -113,6 +113,14 @@ func (a *App) guiDeps() gui.Deps {
 	freeTokensService := freetokens.NewService()
 	tokenSpeed.SetTitleTheme(st.GetString("title_theme"))
 	updateService := a.updateService()
+	// 下载进度推给前端：设置页在安装时显示百分比，不再只是一个「下载中」。
+	updateService.Progress = func(downloaded, total int64) {
+		if app := application.Get(); app != nil {
+			app.Event.Emit("update-progress", map[string]any{
+				"downloaded": downloaded, "total": total,
+			})
+		}
+	}
 
 	bridge := gui.NewAccountBridge(
 		a.accounts,

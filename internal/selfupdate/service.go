@@ -23,7 +23,18 @@ const (
 	// development and controlled acceptance tests away from the network.
 	DefaultFeedURL = "https://github.com/sljdxde/quota-keepalive-app/releases/latest/download/feed.json"
 	maxFeedBytes   = 1 << 20
+	// releasePagePrefix 是更新说明的官方地址前缀。
+	releasePagePrefix = "https://github.com/sljdxde/quota-keepalive-app/releases/tag/"
 )
+
+// releasePageURL 返回某版本对应的 release 页面；版本为空时返回空串。
+func releasePageURL(version string) string {
+	value := normalizeVersion(version)
+	if value == "" {
+		return ""
+	}
+	return releasePagePrefix + "v" + value
+}
 
 var (
 	// ErrNoArtifact reports a feed without a compatible release artifact.
@@ -67,7 +78,9 @@ type Status struct {
 	Downloaded     bool   `json:"downloaded"`
 	Ready          bool   `json:"ready"`
 	Artifact       string `json:"artifact,omitempty"`
-	Message        string `json:"message,omitempty"`
+	// ReleaseURL 指向这次版本在 GitHub 上的 release 页（更新说明）。
+	ReleaseURL string `json:"release_url,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 type stagedRelease struct {
@@ -85,6 +98,9 @@ type Service struct {
 	Platform       string
 	Executable     func() (string, error)
 	StartInstaller func(context.Context, string, string) error
+	// Progress 在下载过程中汇报进度（已下载字节, 总字节；总字节未知时为 0）。
+	// 只用于 GUI 展示，不参与校验。
+	Progress func(downloaded, total int64)
 }
 
 // New constructs a production update service.
@@ -167,6 +183,7 @@ func (s *Service) fetchRelease(ctx context.Context) (Status, Release, error) {
 	status.LatestVersion = release.Version
 	status.Available = true
 	status.Artifact = release.Name
+	status.ReleaseURL = releasePageURL(release.Version)
 	status.Message = "发现新版本，可下载安装"
 	return status, release, nil
 }
@@ -253,7 +270,15 @@ func (s *Service) download(ctx context.Context, release Release) (string, error)
 		return "", err
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(f, hash), io.LimitReader(resp.Body, maxUpdateBytes+1))
+	total := resp.ContentLength
+	if total < 0 {
+		total = 0
+	}
+	source := io.LimitReader(resp.Body, maxUpdateBytes+1)
+	if s.Progress != nil {
+		source = &progressReader{reader: source, total: total, report: s.Progress}
+	}
+	written, copyErr := io.Copy(io.MultiWriter(f, hash), source)
 	closeErr := f.Close()
 	if copyErr != nil {
 		_ = os.Remove(tmp)
@@ -283,6 +308,26 @@ func (s *Service) download(ctx context.Context, release Release) (string, error)
 	return path, nil
 }
 
+// progressReader 按约 200ms 的节流频率汇报下载进度，避免每个 32KB chunk
+// 都推一次事件把前端刷爆。
+type progressReader struct {
+	reader io.Reader
+	total  int64
+	done   int64
+	last   time.Time
+	report func(downloaded, total int64)
+}
+
+func (p *progressReader) Read(buf []byte) (int, error) {
+	n, err := p.reader.Read(buf)
+	p.done += int64(n)
+	if p.report != nil && (err != nil || time.Since(p.last) >= 200*time.Millisecond) {
+		p.last = time.Now()
+		p.report(p.done, p.total)
+	}
+	return n, err
+}
+
 func (s *Service) status() Status {
 	current := s.CurrentVersion
 	if strings.TrimSpace(current) == "" {
@@ -298,6 +343,7 @@ func (s *Service) status() Status {
 	status.Downloaded = true
 	status.Ready = true
 	status.Artifact = staged.Name
+	status.ReleaseURL = releasePageURL(staged.Version)
 	status.Message = "已验证的更新已暂存"
 	return status
 }

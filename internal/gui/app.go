@@ -19,6 +19,7 @@ import (
 
 	"qka/internal/applog"
 	"qka/internal/procquit"
+	"qka/internal/selfupdate"
 	"qka/internal/status"
 	"qka/internal/tokenspeed"
 )
@@ -46,6 +47,7 @@ type App struct {
 	ballMenuFocus  *panelFocusGuard
 	theme          string
 	tokenSpeed     *tokenspeed.Service
+	updateCheck    func(context.Context) (selfupdate.Status, error)
 	status         func(context.Context) (status.View, error)
 	providersWarm  func(context.Context) error
 	windowMu       sync.Mutex
@@ -132,7 +134,8 @@ func New(deps Deps) *App {
 	result := &App{
 		theme: theme, tokenSpeed: deps.TokenSpeed,
 		status: deps.Status, providersWarm: deps.ProvidersWarm,
-		dockApply: dockApply,
+		updateCheck: deps.UpdateCheck,
+		dockApply:   dockApply,
 	}
 	// 悬浮球显隐的真实实现；测试可替换这两个字段验证策略。
 	result.barShow = result.showBar
@@ -1632,6 +1635,9 @@ func (a *App) Run() error {
 			a.monitorStatus(ctx)
 		}()
 	}
+	// 启动后延迟检查一次更新，之后每 6 小时一次；发现新版本推事件让前端提示，
+	// 不自动下载（是否安装由用户点）。
+	go a.monitorUpdates(ctx)
 	err := a.wails.Run()
 	if a.quitStop != nil {
 		a.quitStop()
@@ -1648,7 +1654,50 @@ func (a *App) Run() error {
 	return err
 }
 
-var statusPollInterval = 10 * time.Second
+var (
+	statusPollInterval = 10 * time.Second
+	// updateCheckDelay 让更新检查避开启动时的供应商运行时预热。
+	updateCheckDelay = 20 * time.Second
+	// updateCheckInterval 是自动检查频率；手动「检查」不受它限制。
+	updateCheckInterval = 6 * time.Hour
+)
+
+// updateNotice 决定是否要为这次检查结果提示用户：只在「发现可用的新版本且
+// 尚未提示过同一版本」时返回 true，避免每 6 小时重复弹同一个横幅。
+func updateNotice(status selfupdate.Status, notified string) (string, bool) {
+	if !status.Available || strings.TrimSpace(status.LatestVersion) == "" {
+		return notified, false
+	}
+	if status.LatestVersion == notified {
+		return notified, false
+	}
+	return status.LatestVersion, true
+}
+
+func (a *App) monitorUpdates(ctx context.Context) {
+	if a.updateCheck == nil || a.wails == nil {
+		return
+	}
+	notified := ""
+	timer := time.NewTimer(updateCheckDelay)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		status, err := a.updateCheck(ctx)
+		if err == nil {
+			var notice bool
+			notified, notice = updateNotice(status, notified)
+			if notice {
+				a.wails.Event.Emit("update-available", status)
+			}
+		}
+		timer.Reset(updateCheckInterval)
+	}
+}
 
 func (a *App) monitorStatus(ctx context.Context) {
 	last, _ := a.pollStatus(ctx)

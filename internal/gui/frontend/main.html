@@ -326,6 +326,20 @@
   html.platform-native-titlebar .topbar { padding-left: 14px; }
   /* 常驻刘海是独立的置顶窗口（bar.html），主窗口顶栏不再承载它；只有主窗口
      不可见时才显示刘海，避免它压住顶栏居中的导航。 */
+  /* 更新横幅：后台检查到新版本时从顶栏下方滑出；不打断当前页操作。 */
+  .update-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    color: var(--fg);
+    background: color-mix(in srgb, var(--accent) 12%, var(--card));
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-sm);
+  }
+  .update-banner[hidden] { display: none; }
+  .update-banner .spacer { flex: 1; }
+  .update-banner b { font-weight: 650; }
   .brand {
     grid-column: 1;
     justify-self: start;
@@ -2617,6 +2631,13 @@
       </div>
     </header>
 
+    <div class="update-banner" id="update-banner" hidden role="status" aria-live="polite">
+      <span id="update-banner-text"></span>
+      <span class="spacer"></span>
+      <button class="text action" type="button" id="update-banner-view">查看并安装</button>
+      <button class="text" type="button" id="update-banner-dismiss">稍后</button>
+    </div>
+
     <main class="content">
       <section id="apps" class="page active">
         <div class="page-head">
@@ -2909,6 +2930,7 @@
             </span>
             <span class="settings-choice">
               <button type="button" id="settings-update-check">检查</button>
+              <button type="button" id="settings-update-notes" hidden>更新说明</button>
               <button type="button" id="settings-update-install" disabled>下载并安装</button>
             </span>
           </div>
@@ -3913,6 +3935,21 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   let updateAvailable = false;
+  let updateInstalling = false;
+  let pendingUpdateStatus = null;
+
+  function formatBytes(bytes) {
+    const value = Number(bytes);
+    if (!(value > 0)) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    let size = value;
+    let unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024;
+      unit += 1;
+    }
+    return (unit === 0 ? Math.round(size) : size.toFixed(1)) + " " + units[unit];
+  }
 
   function renderUpdate(view) {
     if (!view) return;
@@ -3927,8 +3964,72 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     state.textContent = view.ready ? "安装已就绪" :
       view.available ? "发现更新" : "已是最新";
     state.className = "pill" + (view.ready ? " good" : view.available ? " warn" : "");
-    document.getElementById("settings-update-install").disabled = !updateAvailable;
+    const install = document.getElementById("settings-update-install");
+    install.disabled = !updateAvailable;
+    install.textContent = view.ready ? "安装并重启" : "下载并安装";
+    const notes = document.getElementById("settings-update-notes");
+    if (notes) {
+      notes.hidden = !view.release_url;
+      if (view.release_url) {
+        notes.onclick = function () {
+          Bound.OpenURL(view.release_url).catch(function () {});
+        };
+      }
+    }
   }
+
+  // ---- 更新横幅：后台检查发现新版本时提示，不打断当前页 ----
+  function hideUpdateBanner() {
+    const banner = document.getElementById("update-banner");
+    if (banner) banner.hidden = true;
+  }
+
+  function showUpdateBanner(status) {
+    pendingUpdateStatus = status || null;
+    const banner = document.getElementById("update-banner");
+    const text = document.getElementById("update-banner-text");
+    if (!banner || !text) return;
+    const version = status && status.latest_version
+      ? "v" + String(status.latest_version).replace(/^v/i, "")
+      : "";
+    text.innerHTML = "<b>发现新版本" + (version ? " " + escapeHTML(version) : "") +
+      "</b> · 可查看更新说明后安装";
+    banner.hidden = false;
+  }
+
+  Events.On("update-available", function (event) {
+    const status = asJSON(event && event.data);
+    if (!status || !status.available) return;
+    showUpdateBanner(status);
+  });
+
+  Events.On("update-progress", function (event) {
+    if (!updateInstalling) return;
+    const data = asJSON(event && event.data) || {};
+    const total = Number(data.total) || 0;
+    const done = Number(data.downloaded) || 0;
+    const state = document.getElementById("settings-update-state");
+    if (state) {
+      state.textContent = total > 0
+        ? "下载中 " + Math.min(100, Math.round((done / total) * 100)) + "%"
+        : "下载中";
+      state.className = "pill warn";
+    }
+    const message = document.getElementById("settings-update-message");
+    if (message) {
+      message.textContent = total > 0
+        ? "已下载 " + formatBytes(done) + " / " + formatBytes(total)
+        : "已下载 " + formatBytes(done);
+    }
+  });
+
+  document.getElementById("update-banner-dismiss").onclick = hideUpdateBanner;
+  document.getElementById("update-banner-view").onclick = function () {
+    hideUpdateBanner();
+    openTab("settings");
+    revealSettingSection("settings-update-title");
+    if (pendingUpdateStatus) renderUpdate(pendingUpdateStatus);
+  };
 
   async function checkUpdate() {
     const button = document.getElementById("settings-update-check");
@@ -3950,6 +4051,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   async function installUpdate() {
     const button = document.getElementById("settings-update-install");
     button.disabled = true;
+    updateInstalling = true;
     document.getElementById("settings-update-state").textContent = "下载中";
     try {
       const view = asJSON(await Bound.UpdateInstall());
@@ -3958,6 +4060,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       document.getElementById("settings-update-message").textContent =
         view.message || "更新已验证，Quota Keepalive 即将退出并自动重启。";
     } catch (err) {
+      updateInstalling = false;
       button.disabled = false;
       const state = document.getElementById("settings-update-state");
       state.textContent = "安装失败";
