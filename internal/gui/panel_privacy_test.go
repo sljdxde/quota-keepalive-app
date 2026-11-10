@@ -36,6 +36,8 @@ func TestPanelAccountPrivacyMosaicToggle(t *testing.T) {
 		`function syncPrivacyToggle(`,
 		`function toggleAccountPrivacy(`,
 		`mosaicIdentityNode(identity)`,
+		`function accountIdentityText(`,
+		`known.identity`,
 		`"打开主窗口查看账号（已隐藏）"`,
 		`document.getElementById("account-privacy").addEventListener("click"`,
 		`text.textContent = hideAccounts ? "显示账号" : "隐藏账号"`,

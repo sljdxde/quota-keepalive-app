@@ -5700,6 +5700,16 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
   }
 
+  // accountIdentityText 取完整账号标识（邮箱/手机/账号名）；后端没给完整值
+  // 时回落到脱敏值，保证「显示账号」不会出现空白。
+  function accountIdentityText(account) {
+    const masked = displayAccountIdentity(account && account.masked_identity);
+    const identity = account && account.identity
+      ? displayAccountIdentity(account.identity)
+      : "";
+    return identity || masked;
+  }
+
   function displayAccountIdentity(value) {
     const text = String(value || "").trim();
     if (!text) return "****";
@@ -6072,9 +6082,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       result.hidden = false;
       result.className = "model-test-result";
       result.textContent = "正在通过" +
-        (hideAccountIdentities ? "已隐藏账号" : "账号 " +
-          displayAccountIdentity(account.masked_identity)) + " 逐个测试 " +
-        picks.length + " 个模型…";
+        (hideAccountIdentities ? "已隐藏账号" : "账号 " + accountIdentityText(account)) +
+        " 逐个测试 " + picks.length + " 个模型…";
       const rows = [];
       picks.forEach(function (model) { applyModelStatus(model.id, "testing", "测试中…"); });
       for (let index = 0; index < picks.length; index += 1) {
@@ -6110,7 +6119,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   function providerAccountCard(provider, account) {
     const accountKey = account.key || account.id || "";
     const failed = accountHealth(account);
-    const identity = displayAccountIdentity(account.masked_identity);
+    const identity = accountIdentityText(account);
     // 账号状态一句话：停用 > 异常 > 正常。
     const accountStateText = !account.enabled
       ? "账号已停用"

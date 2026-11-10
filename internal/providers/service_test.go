@@ -249,6 +249,9 @@ func TestListSyncsProvidersAndMasksAccounts(t *testing.T) {
 	if view.Providers[0].Accounts[0].MaskedIdentity != "us***@example.com" {
 		t.Errorf("email mask mismatch: %s", view.Providers[0].Accounts[0].MaskedIdentity)
 	}
+	if view.Providers[0].Accounts[0].Identity != "user@example.com" {
+		t.Errorf("full identity mismatch: %q", view.Providers[0].Accounts[0].Identity)
+	}
 	if view.Providers[0].Accounts[1].MaskedIdentity != "****8000" {
 		t.Errorf("phone mask mismatch: %s", view.Providers[0].Accounts[1].MaskedIdentity)
 	}

@@ -287,6 +287,19 @@ function displayAccountIdentity(value) {
   return text.indexOf("\uFFFD") >= 0 ? "账号信息待刷新" : text;
 }
 
+// accountIdentityText 优先用供应商视图里的完整账号标识；状态投影只有脱敏值，
+// 取不到完整值时回落脱敏值。「显示账号」要显示完整信息，而不是继续打码。
+function accountIdentityText(account) {
+  const masked = displayAccountIdentity(account.masked_identity || account.display_name);
+  const provider = providerInfo[account.target];
+  const accountKey = account.account_id || account.id || "";
+  const known = provider && Array.isArray(provider.accounts)
+    ? provider.accounts.find(function (item) { return item && item.key === accountKey; })
+    : null;
+  const full = known && known.identity ? displayAccountIdentity(known.identity) : "";
+  return full || masked;
+}
+
 // 马赛克：按账号标识哈希生成固定宽度/深浅的小色块，刷新后图案不变；
 // DOM 里不保留明文标识，避免「只是视觉遮住、复制/读屏还能拿到」。
 function mosaicIdentityNode(text) {
@@ -448,10 +461,10 @@ function accountNode(account) {
   node.dataset.accountKey = account.account_id || account.id || "";
   node.tabIndex = 0;
   node.setAttribute("role", "link");
+  const identity = accountIdentityText(account);
   node.setAttribute("aria-label", hideAccounts
     ? "打开主窗口查看账号（已隐藏）"
-    : "打开主窗口查看账号 " +
-      displayAccountIdentity(account.masked_identity || account.display_name));
+    : "打开主窗口查看账号 " + identity);
 
   const copy = document.createElement("div");
   const title = document.createElement("div");
@@ -460,7 +473,6 @@ function accountNode(account) {
   dot.className = "dot " +
     (account.source_health === "reauth_required" ? "warn" : stateClass(state));
   title.appendChild(dot);
-  const identity = displayAccountIdentity(account.masked_identity || account.display_name);
   if (hideAccounts) {
     title.appendChild(mosaicIdentityNode(identity));
   } else {

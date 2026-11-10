@@ -80,7 +80,10 @@ type ModelView struct {
 
 // AccountView is one provider account and today's operation state.
 type AccountView struct {
-	Key             string          `json:"key"`
+	Key string `json:"key"`
+	// Identity 是完整账号标识（邮箱/手机号/账号名），供用户在「显示账号」时
+	// 查看；默认界面仍按 MaskedIdentity 展示。不是凭据，也不是 token。
+	Identity        string          `json:"identity,omitempty"`
 	MaskedIdentity  string          `json:"masked_identity"`
 	Type            string          `json:"type"`
 	Enabled         bool            `json:"enabled"`
@@ -924,9 +927,11 @@ func (s *Service) view(ctx context.Context, runtimeItems []providerruntime.Provi
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return View{}, err
 			}
+			maskedSource := firstNonEmpty(account.AccountID, account.Hint, account.Key)
 			av := AccountView{
 				Key:            account.Key,
-				MaskedIdentity: maskIdentity(firstNonEmpty(account.AccountID, account.Hint, account.Key)),
+				Identity:       publicIdentity(account.AccountID),
+				MaskedIdentity: maskIdentity(maskedSource),
 				Type:           account.Type, Enabled: stored.Enabled,
 				Models:          append([]string(nil), account.Models...),
 				TaskPreferences: map[string]bool{},
@@ -2731,6 +2736,19 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// publicIdentity 只在完整标识看起来是「账号名/邮箱/手机号」时才透出给界面：
+// 过长或带换行的值可能是插件误把凭据塞进 accountId，宁可回落到脱敏值。
+func publicIdentity(value string) string {
+	identity := strings.ToValidUTF8(strings.TrimSpace(value), "�")
+	if identity == "" || len([]rune(identity)) > 64 || strings.ContainsAny(identity, "\n\r\t") {
+		return ""
+	}
+	if strings.Count(identity, ".") >= 2 && len(identity) > 40 {
+		return "" // JWT/长 token 形态，不当账号名展示
+	}
+	return identity
 }
 
 func maskIdentity(value string) string {
