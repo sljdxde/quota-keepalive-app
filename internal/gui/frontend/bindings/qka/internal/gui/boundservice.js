@@ -45,6 +45,17 @@ export function ActivityView() {
 }
 
 /**
+ * ActivityHistory 返回单个账号最近的每日活跃执行记录（已脱敏）。
+ * @param {string} provider
+ * @param {string} account
+ * @param {number} limit
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function ActivityHistory(provider, account, limit) {
+    return $Call.ByID(1494372760, provider, account, limit);
+}
+
+/**
  * AccountsBeginLogin 发起官方登录并返回可见状态。
  * @param {string} target
  * @returns {$CancellablePromise<json$0.RawMessage>}

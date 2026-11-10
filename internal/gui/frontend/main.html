@@ -3004,6 +3004,19 @@
         </footer>
       </div>
     </div>
+
+    <div class="modal hidden" id="activity-modal" role="dialog" aria-modal="true" aria-labelledby="activity-modal-title">
+      <div class="dialog adialog activity-dialog">
+        <header>
+          <div class="am-who">
+            <h2 id="activity-modal-title">每日活跃记录</h2>
+            <p id="activity-modal-sub"></p>
+          </div>
+          <button class="text am-x" id="activity-modal-close" type="button" data-close aria-label="关闭">关闭</button>
+        </header>
+        <div class="abody" id="activity-modal-body"></div>
+      </div>
+    </div>
   </div>
 
 <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-title">
@@ -5574,6 +5587,161 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     showAccountsMessage("");
   }
 
+  // ---- 每日活跃记录弹层：结构化活动记录 + 相关日志 ----
+  function activityTimeText(value, withDate) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    try {
+      return new Intl.DateTimeFormat("zh-CN", withDate
+        ? { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }
+        : { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
+    } catch (_) {
+      return String(value);
+    }
+  }
+
+  function closeActivityModal() {
+    document.getElementById("activity-modal").classList.add("hidden");
+  }
+
+  // 历史记录用中性状态标签；activityStateText 面向「今天」会输出「今日已活跃」，
+  // 放进历史行里语义不对。
+  const ACTIVITY_RECORD_STATE = {
+    completed: "已完成",
+    failed_retryable: "失败（可重试）",
+    failed_final: "失败",
+    unauthorized: "需重新登录",
+    rate_limited: "被限流",
+    no_free_model: "无可用模型",
+    needs_stream: "需要流式请求",
+    no_reply: "无回复",
+    none: "未执行",
+  };
+
+  function activityRecordStateText(state) {
+    const key = String(state || "none");
+    return ACTIVITY_RECORD_STATE[key] || key;
+  }
+
+  function activityStateClass(state) {
+    const kind = activityStateKind(state);
+    return kind === "good" || kind === "bad" || kind === "warn" ? " " + kind : "";
+  }
+
+  function renderActivityHistory(provider, account, records, logs) {
+    const body = document.getElementById("activity-modal-body");
+    body.innerHTML = "";
+    const key = account.key || account.id || "";
+    const current = activityForAccount(provider.id, key) || {};
+
+    const summary = document.createElement("div");
+    summary.className = "activity-summary";
+    const today = document.createElement("span");
+    today.textContent = "今日：" + activityStateText(current.today_state || "none");
+    summary.appendChild(today);
+    const streak = document.createElement("span");
+    streak.textContent = "连续 " + (Number(current.streak) || 0) + " 天";
+    summary.appendChild(streak);
+    if (current.last_at) {
+      const last = document.createElement("span");
+      last.textContent = "最近：" + activityTimeText(current.last_at, true);
+      summary.appendChild(last);
+    }
+    body.appendChild(summary);
+
+    const recordTitle = document.createElement("div");
+    recordTitle.className = "activity-section-title";
+    recordTitle.textContent = "执行记录（" + records.length + "）";
+    body.appendChild(recordTitle);
+    if (!records.length) {
+      const empty = document.createElement("div");
+      empty.className = "activity-empty";
+      empty.textContent = "还没有执行记录；执行一次每日活跃后这里会出现明细。";
+      body.appendChild(empty);
+    } else {
+      records.forEach(function (record) {
+        const row = document.createElement("div");
+        row.className = "activity-row";
+        const when = document.createElement("span");
+        when.className = "when";
+        when.textContent = record.day || activityTimeText(record.ts, true);
+        row.appendChild(when);
+        const state = document.createElement("span");
+        state.className = "state" + activityStateClass(record.state);
+        state.textContent = activityRecordStateText(record.state);
+        row.appendChild(state);
+        const msg = document.createElement("span");
+        msg.className = "msg";
+        const parts = [];
+        if (record.message) parts.push(record.message);
+        const meta = [];
+        if (record.latency_ms > 0) meta.push(record.latency_ms + " ms");
+        if (record.http_status > 0) meta.push("HTTP " + record.http_status);
+        if (meta.length) parts.push("（" + meta.join(" · ") + "）");
+        msg.textContent = parts.join(" ") || "—";
+        row.appendChild(msg);
+        body.appendChild(row);
+      });
+    }
+
+    const logTitle = document.createElement("div");
+    logTitle.className = "activity-section-title";
+    logTitle.textContent = "相关日志（" + logs.length + "）";
+    body.appendChild(logTitle);
+    if (!logs.length) {
+      const empty = document.createElement("div");
+      empty.className = "activity-empty";
+      empty.textContent = "暂无每日活跃相关日志。";
+      body.appendChild(empty);
+    } else {
+      logs.forEach(function (entry) {
+        const row = document.createElement("div");
+        row.className = "activity-log-row";
+        const when = document.createElement("span");
+        when.className = "when";
+        when.textContent = activityTimeText(entry.ts, true);
+        row.appendChild(when);
+        const msg = document.createElement("span");
+        msg.textContent = entry.message || entry.state || "";
+        row.appendChild(msg);
+        body.appendChild(row);
+      });
+    }
+
+    if (provider.id === "workbuddy") {
+      const note = document.createElement("div");
+      note.className = "activity-note";
+      note.textContent = "WorkBuddy 的猫猫旅行是独立的成长任务，目前 QKA 只接入每日活跃上报，还没有派出猫猫的记录；接入旅行任务后会显示在这里。";
+      body.appendChild(note);
+    }
+  }
+
+  async function openActivityHistory(provider, account) {
+    const key = account.key || account.id || "";
+    document.getElementById("activity-modal-title").textContent = "每日活跃记录";
+    document.getElementById("activity-modal-sub").textContent =
+      (provider.name || provider.id) + " · " + accountIdentityText(account);
+    document.getElementById("activity-modal-body").innerHTML =
+      '<div class="activity-empty">正在读取活跃记录…</div>';
+    document.getElementById("activity-modal").classList.remove("hidden");
+    let records = [];
+    let logs = [];
+    try {
+      records = asJSON(await Bound.ActivityHistory(provider.id, key, 30)) || [];
+    } catch (_) {}
+    try {
+      const page = asJSON(await Bound.LogsTail(provider.id, key, "keepalive", "", 20, 0));
+      logs = (page && page.entries) || [];
+    } catch (_) {}
+    renderActivityHistory(provider, account, records, logs);
+  }
+
+  document.getElementById("activity-modal-close").onclick = closeActivityModal;
+  document.getElementById("activity-modal").addEventListener("click", function (event) {
+    if (event.target.id === "activity-modal") closeActivityModal();
+  });
+
   document.getElementById("agent-modal-privacy").onclick = toggleAccountPrivacy;
   document.getElementById("agent-modal-close").onclick = closeAgentModal;
   document.getElementById("agent-modal").addEventListener("click", function (event) {
@@ -6378,25 +6546,34 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       runActivity.type = "button";
       runActivity.className = "acct-link";
       runActivity.textContent = sentToday ? "活跃已完成" : "立即活跃";
-      runActivity.disabled = !account.enabled || sentToday;
-      runActivity.title = activity
-        ? activityDetailText(activity)
-        : "每天执行一次：WorkBuddy 上报连登，其他供应商发一条最小 hi";
-      runActivity.onclick = async function () {
-        runActivity.disabled = true;
-        showAccountsMessage("正在执行每日活跃…", "pending");
-        try {
-          await Bound.ActivityRun(provider.id, accountKey);
-          await refreshActivityView();
-          await renderAccounts();
-          await renderApps();
-          showAccountsMessage("每日活跃执行完成", "success");
-        } catch (err) {
-          runActivity.disabled = false;
-          const detail = err && err.message ? String(err.message) : "";
-          showAccountsMessage(detail || "每日活跃执行失败；本次未宣称成功。");
-        }
-      };
+      if (sentToday) {
+        // 今天已完成时，这个入口改为查看历史：活跃记录 + 相关日志，而不是
+        // 一个不能点的灰字。
+        runActivity.title = "点击查看每日活跃记录与日志";
+        runActivity.onclick = function () {
+          openActivityHistory(provider, account);
+        };
+      } else {
+        runActivity.disabled = !account.enabled;
+        runActivity.title = activity
+          ? activityDetailText(activity)
+          : "每天执行一次：WorkBuddy 上报连登，其他供应商发一条最小 hi";
+        runActivity.onclick = async function () {
+          runActivity.disabled = true;
+          showAccountsMessage("正在执行每日活跃…", "pending");
+          try {
+            await Bound.ActivityRun(provider.id, accountKey);
+            await refreshActivityView();
+            await renderAccounts();
+            await renderApps();
+            showAccountsMessage("每日活跃执行完成", "success");
+          } catch (err) {
+            runActivity.disabled = false;
+            const detail = err && err.message ? String(err.message) : "";
+            showAccountsMessage(detail || "每日活跃执行失败；本次未宣称成功。");
+          }
+        };
+      }
       links.appendChild(runActivity);
     }
     const refreshStatus = document.createElement("button");

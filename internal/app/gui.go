@@ -216,6 +216,7 @@ func (a *App) guiDeps() gui.Deps {
 		ProvidersList:      a.providers.CachedListView,
 		ActivityView:       a.providers.ActivityView,
 		ActivityRun:        a.RunProviderActivity,
+		ActivityHistory:    a.providers.ActivityHistory,
 		ActivitySetEnabled: a.providers.SetActivityEnabled,
 		ProvidersWarm: func(ctx context.Context) error {
 			_, err := a.providers.List(ctx)

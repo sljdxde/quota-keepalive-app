@@ -228,6 +228,49 @@
 .am-switch { margin-left: auto; }
 .am-x { margin-left: 8px; }
 .abody { flex: 1; overflow-y: auto; min-height: 0; }
+
+/* 每日活跃历史弹层：记录 + 相关日志，保持与 Agent 详情同一套语言。 */
+.activity-dialog {
+  width: min(620px, calc(100% - 32px));
+  height: min(540px, calc(100% - 40px));
+}
+.activity-dialog .am-x { margin-left: auto; }
+.activity-summary {
+  display: flex; flex-wrap: wrap; gap: 6px 16px;
+  padding: 11px 16px; border-bottom: 1px solid var(--line);
+  color: var(--ink2); font-size: var(--fs-sm);
+}
+.activity-summary b { color: var(--ink); font-weight: 560; }
+.activity-section-title {
+  padding: 10px 16px 6px; color: var(--ink3);
+  font-size: var(--fs-xs); font-weight: 600;
+}
+.activity-row {
+  display: grid; grid-template-columns: 92px 92px minmax(0, 1fr);
+  gap: 8px; align-items: start;
+  padding: 8px 16px; border-top: 1px solid var(--line2);
+  font-size: var(--fs-sm);
+}
+.activity-row:first-child { border-top: 0; }
+.activity-row .when { color: var(--ink3); font-variant-numeric: tabular-nums; }
+.activity-row .state { font-weight: 560; }
+.activity-row .state.good { color: var(--green); }
+.activity-row .state.warn { color: var(--warn); }
+.activity-row .state.bad { color: var(--red); }
+.activity-row .msg { color: var(--ink2); overflow-wrap: anywhere; }
+.activity-log-row {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px; padding: 6px 16px; border-top: 1px solid var(--line2);
+  color: var(--ink2); font-size: var(--fs-xs);
+}
+.activity-log-row:first-child { border-top: 0; }
+.activity-log-row .when { color: var(--ink3); font-variant-numeric: tabular-nums; }
+.activity-empty { padding: 14px 16px; color: var(--ink3); font-size: var(--fs-sm); }
+.activity-note {
+  margin-top: auto; padding: 10px 16px;
+  border-top: 1px dashed var(--line2);
+  color: var(--ink3); font-size: var(--fs-xs); line-height: 1.5;
+}
 .adialog footer { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); flex: none; }
 .adialog footer .sp { margin-left: auto; }
 

@@ -80,6 +80,8 @@ type Deps struct {
 	ActivityView func(ctx context.Context) (providers.ActivityView, error)
 	// ActivityRun 立即为单个账号执行一次每日活跃。
 	ActivityRun func(ctx context.Context, provider, account string) error
+	// ActivityHistory 返回单个账号最近的每日活跃执行记录。
+	ActivityHistory func(ctx context.Context, provider, account string, limit int) ([]providers.ActivityRecord, error)
 	// ActivitySetEnabled 开关单个账号的每日活跃任务。
 	ActivitySetEnabled func(ctx context.Context, provider, account string, enabled bool) error
 	// Providers 是随包供应商插件的统一管理投影。
@@ -381,6 +383,21 @@ func (s *BoundService) ActivityView() (json.RawMessage, error) {
 		return nil, err
 	}
 	return json.Marshal(view)
+}
+
+// ActivityHistory 返回单个账号最近的每日活跃执行记录（已脱敏）。
+func (s *BoundService) ActivityHistory(provider, account string, limit int) (json.RawMessage, error) {
+	if s.deps.ActivityHistory == nil {
+		return nil, errNotWired
+	}
+	records, err := s.deps.ActivityHistory(context.Background(), provider, account, limit)
+	if err != nil {
+		return nil, err
+	}
+	if records == nil {
+		records = []providers.ActivityRecord{}
+	}
+	return json.Marshal(records)
 }
 
 // ActivityRun 立即为单个账号执行一次每日活跃；仍受当天幂等与冷却约束。

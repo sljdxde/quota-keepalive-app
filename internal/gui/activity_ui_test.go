@@ -33,6 +33,11 @@ func TestAppsPageExposesDailyActivity(t *testing.T) {
 		`"活跃自动" : "活跃手动"`,
 		`Bound.ActivitySetEnabled(provider.id, accountKey, !activityTaskOn)`,
 		`runActivity.textContent = sentToday ? "活跃已完成" : "立即活跃"`,
+		`function openActivityHistory(`,
+		`id="activity-modal"`,
+		`Bound.ActivityHistory(`,
+		`Bound.LogsTail(provider.id, key, "keepalive", "", 20, 0)`,
+		`猫猫旅行`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("应用管理页缺少每日活跃 UI: %q", want)
@@ -64,6 +69,8 @@ func TestActivityBindingsMatchWailsIDs(t *testing.T) {
 		`$Call.ByID(2942169009, provider, account, enabled)`,
 		`export function ActivityView()`,
 		`$Call.ByID(1504037297)`,
+		`export function ActivityHistory(provider, account, limit)`,
+		`$Call.ByID(1494372760, provider, account, limit)`,
 		// 现有绑定自检：hash 规则必须能复现这个已知值。
 		`$Call.ByID(2607732007, target)`,
 	} {

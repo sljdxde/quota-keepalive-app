@@ -425,3 +425,37 @@ func TestWorkBuddyActivityRunsOncePerBeijingDay(t *testing.T) {
 		t.Fatalf("second activity must not report again, fetches = %d", f.runtime.fetchCalls)
 	}
 }
+
+func TestActivityHistoryReturnsNewestFirst(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	for _, row := range []struct {
+		day, state, ts  string
+		status, latency int
+	}{
+		{"2026-11-08", "completed", "2026-11-08T02:00:00Z", 200, 120},
+		{"2026-11-09", "failed_retryable", "2026-11-09T02:00:00Z", 500, 90},
+		{"2026-11-10", "completed", "2026-11-10T02:00:00Z", 200, 80},
+	} {
+		if _, err := f.store.DB().ExecContext(ctx, `
+INSERT INTO activity_runs
+(day_key, provider, account_id, state, http_status, latency_ms, cost, message, ts)
+VALUES (?, 'fixture', 'a1', ?, ?, ?, 0, 'ok', ?)`,
+			row.day, row.state, row.status, row.latency, row.ts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	records, err := f.service.ActivityHistory(ctx, "fixture", "a1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("records = %d, want limit 2", len(records))
+	}
+	if records[0].Day != "2026-11-10" || records[0].State != "completed" {
+		t.Fatalf("first record = %+v", records[0])
+	}
+	if records[1].Day != "2026-11-09" || records[1].HTTPStatus != 500 {
+		t.Fatalf("second record = %+v", records[1])
+	}
+}

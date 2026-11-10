@@ -2835,17 +2835,51 @@ type ActivityAccountInput struct {
 	TodayMessage string
 }
 
+// ActivityHistory returns the most recent daily-activity runs for one account,
+// newest first. Records are already redacted when written.
+func (s *Service) ActivityHistory(
+	ctx context.Context, provider, account string, limit int,
+) ([]ActivityRecord, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT provider, account_id, day_key, state, http_status, latency_ms, cost, message, ts
+FROM activity_runs
+WHERE provider = ? AND account_id = ?
+ORDER BY ts DESC, id DESC
+LIMIT ?`, provider, account, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := []ActivityRecord{}
+	for rows.Next() {
+		var record ActivityRecord
+		if err := rows.Scan(&record.Provider, &record.Account, &record.Day,
+			&record.State, &record.HTTPStatus, &record.LatencyMS, &record.Cost,
+			&record.Message, &record.TS); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
 // ActivityRecord is one persisted activity_runs row (already redacted).
 type ActivityRecord struct {
-	Provider   string
-	Account    string
-	Day        string
-	State      string
-	HTTPStatus int
-	LatencyMS  int64
-	Cost       float64
-	Message    string
-	TS         string
+	Provider   string  `json:"provider"`
+	Account    string  `json:"account"`
+	Day        string  `json:"day"`
+	State      string  `json:"state"`
+	HTTPStatus int     `json:"http_status"`
+	LatencyMS  int64   `json:"latency_ms"`
+	Cost       float64 `json:"cost"`
+	Message    string  `json:"message"`
+	TS         string  `json:"ts"`
 }
 
 func activityKey(provider, account string) string {
