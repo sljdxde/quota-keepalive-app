@@ -33,6 +33,7 @@ import {
 const panelTabIds = ["checkin", "speed", "pet"];
 const panelTabStorageKey = "qka.panel.tab";
 const petSelectedStorageKey = "qka.pet.selected";
+const accountPrivacyStorageKey = "qka.panel.hideAccounts";
 const opLabels = { checkin: "签到" };
 const expanded = {};
 const providerInfo = {};
@@ -56,6 +57,8 @@ let speedHistorySeeded = false;
 let selectedPetId = readStoredString(petSelectedStorageKey, "bulbasaur");
 let petMessageIndex = 0;
 let refreshInFlight = null;
+let lastStatusView = null;
+let hideAccounts = readStoredString(accountPrivacyStorageKey, "0") === "1";
 let renderedPetId = "";
 let renderedSkillTier = 0;
 let petViewer = null;
@@ -276,6 +279,47 @@ function displayAccountIdentity(value) {
   return text.indexOf("\uFFFD") >= 0 ? "账号信息待刷新" : text;
 }
 
+// 马赛克：按账号标识哈希生成固定宽度/深浅的小色块，刷新后图案不变；
+// DOM 里不保留明文标识，避免「只是视觉遮住、复制/读屏还能拿到」。
+function mosaicIdentityNode(text) {
+  const span = document.createElement("span");
+  span.className = "acct-mosaic";
+  span.setAttribute("aria-hidden", "true");
+  const source = String(text || "");
+  let seed = 2166136261;
+  for (let i = 0; i < source.length; i++) {
+    seed ^= source.charCodeAt(i);
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  const count = Math.max(6, Math.min(14, Math.round(source.length * 1.6)));
+  for (let i = 0; i < count; i++) {
+    const cell = document.createElement("i");
+    const bits = (seed >>> ((i * 3) % 24)) & 7;
+    cell.style.width = 3 + (bits & 3) + "px";
+    cell.style.opacity = (0.35 + ((bits >> 2) & 3) * 0.18).toFixed(2);
+    span.appendChild(cell);
+  }
+  return span;
+}
+
+function syncPrivacyToggle() {
+  const page = document.getElementById("page-checkin");
+  if (page) page.classList.toggle("is-private", hideAccounts);
+  const button = document.getElementById("account-privacy");
+  if (!button) return;
+  button.setAttribute("aria-pressed", hideAccounts ? "true" : "false");
+  const label = hideAccounts ? "显示账号" : "隐藏账号（马赛克）";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+}
+
+function toggleAccountPrivacy() {
+  hideAccounts = !hideAccounts;
+  writeStoredValue(accountPrivacyStorageKey, hideAccounts ? "1" : "0");
+  syncPrivacyToggle();
+  if (lastStatusView) render(lastStatusView);
+}
+
 function syncPanelCollapseButton() {
   const button = document.getElementById("checkin-collapse-all");
   if (!button) return;
@@ -394,8 +438,10 @@ function accountNode(account) {
   node.dataset.accountKey = account.account_id || account.id || "";
   node.tabIndex = 0;
   node.setAttribute("role", "link");
-  node.setAttribute("aria-label", "打开主窗口查看账号 " +
-    displayAccountIdentity(account.masked_identity || account.display_name));
+  node.setAttribute("aria-label", hideAccounts
+    ? "打开主窗口查看账号（已隐藏）"
+    : "打开主窗口查看账号 " +
+      displayAccountIdentity(account.masked_identity || account.display_name));
 
   const copy = document.createElement("div");
   const title = document.createElement("div");
@@ -404,9 +450,12 @@ function accountNode(account) {
   dot.className = "dot " +
     (account.source_health === "reauth_required" ? "warn" : stateClass(state));
   title.appendChild(dot);
-  title.appendChild(document.createTextNode(
-    displayAccountIdentity(account.masked_identity || account.display_name)
-  ));
+  const identity = displayAccountIdentity(account.masked_identity || account.display_name);
+  if (hideAccounts) {
+    title.appendChild(mosaicIdentityNode(identity));
+  } else {
+    title.appendChild(document.createTextNode(identity));
+  }
   copy.appendChild(title);
 
   const meta = document.createElement("div");
@@ -492,6 +541,8 @@ function providerForTarget(target) {
 }
 
 function render(view) {
+  lastStatusView = view;
+  syncPrivacyToggle();
   currentAccounts = view.accounts || [];
   const box = document.getElementById("targets");
   box.innerHTML = "";
@@ -1997,6 +2048,9 @@ document.getElementById("refresh").addEventListener("click", function () {
   refresh();
 });
 document.getElementById("open-main-top").addEventListener("click", openMain);
+document.getElementById("account-privacy").addEventListener("click", function () {
+  toggleAccountPrivacy();
+});
 document.getElementById("checkin-collapse-all").addEventListener("click", function () {
   if (!currentTargets.length) return;
   const next = nextGroupExpansion(currentTargets, expanded);
