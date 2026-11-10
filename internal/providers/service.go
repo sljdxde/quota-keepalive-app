@@ -927,10 +927,13 @@ func (s *Service) view(ctx context.Context, runtimeItems []providerruntime.Provi
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return View{}, err
 			}
-			maskedSource := firstNonEmpty(account.AccountID, account.Hint, account.Key)
+			// 展示名优先用插件自己存的 user_phone（CodeArts 的脱敏手机号），
+			// 没有才退回 accountId；脱敏口径与展示名保持同一来源。
+			displaySource := firstNonEmpty(account.UserPhone, account.AccountID)
+			maskedSource := firstNonEmpty(account.UserPhone, account.AccountID, account.Hint, account.Key)
 			av := AccountView{
 				Key:            account.Key,
-				Identity:       publicIdentity(account.AccountID),
+				Identity:       publicIdentity(displaySource),
 				MaskedIdentity: maskIdentity(maskedSource),
 				Type:           account.Type, Enabled: stored.Enabled,
 				Models:          append([]string(nil), account.Models...),
@@ -2748,6 +2751,15 @@ func publicIdentity(value string) string {
 	if strings.Count(identity, ".") >= 2 && len(identity) > 40 {
 		return "" // JWT/长 token 形态，不当账号名展示
 	}
+	// 华为云把账号缩成 iam::<domain>:user:<name>；完整 URN 对人没有意义，
+	// 卡片只展示 <name>（如 hw083749283），和 IAM 控制台一致。
+	if strings.HasPrefix(identity, "iam::") {
+		if _, after, ok := strings.Cut(identity, ":user:"); ok {
+			if name := strings.TrimSpace(after); name != "" {
+				return name
+			}
+		}
+	}
 	return identity
 }
 
@@ -2833,6 +2845,68 @@ type ActivityAccountInput struct {
 	TaskEnabled  bool
 	TodayState   string
 	TodayMessage string
+}
+
+// RunWorkBuddyTravel advances the WorkBuddy cat-travel loop for one account.
+// Requests go through provider host.Fetch so the plugin signs them; this method
+// never sees the token. It returns a credential-free result for logging.
+func (s *Service) workBuddyTravelRunner(
+	ctx context.Context, account string,
+) (*workbuddy.TravelRunner, error) {
+	host, err := s.runtime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runtimeProvider, err := s.runtimeProvider(ctx, host, "workbuddy")
+	if err != nil {
+		return nil, err
+	}
+	uid := ""
+	for _, item := range runtimeProvider.Accounts {
+		if item.Key == account {
+			uid = item.UID
+			break
+		}
+	}
+	return workbuddy.NewTravelRunner(workbuddy.TravelConfig{
+		BaseURL: workbuddy.DefaultBaseURL,
+		UID:     uid,
+		Now:     s.now,
+		Fetch: func(ctx context.Context, method, url string, body []byte) (int, []byte, error) {
+			response, fetchErr := host.Fetch(ctx, providerruntime.FetchRequest{
+				Provider: "workbuddy", Account: account,
+				URL: url, Method: method,
+				Headers: map[string]string{
+					"content-type": "application/json",
+					"accept":       "application/json",
+				},
+				Body: string(body),
+			})
+			return response.Status, response.Body, fetchErr
+		},
+	}), nil
+}
+
+// RunWorkBuddyTravel 推进一次猫猫旅行（派出 / 领奖 / 旅行中跳过）。
+func (s *Service) RunWorkBuddyTravel(
+	ctx context.Context, account string,
+) (workbuddy.TravelResult, error) {
+	runner, err := s.workBuddyTravelRunner(ctx, account)
+	if err != nil {
+		return workbuddy.TravelResult{}, err
+	}
+	return runner.Run(ctx)
+}
+
+// WorkBuddyTravelStatus 只读查询猫猫旅行状态，供界面展示与归来检测。
+func (s *Service) WorkBuddyTravelStatus(
+	ctx context.Context, account string,
+) (workbuddy.TravelStatus, error) {
+	runner, err := s.workBuddyTravelRunner(ctx, account)
+	if err != nil {
+		return workbuddy.TravelStatus{}, err
+	}
+	return runner.Status(ctx)
 }
 
 // ActivityHistory returns the most recent daily-activity runs for one account,

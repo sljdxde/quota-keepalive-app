@@ -146,6 +146,19 @@ func (a *App) RunAllActionSummary(ctx context.Context, action string) (RunSummar
 			failures = append(failures, runErr)
 		}
 	}
+	// WorkBuddy 猫猫旅行：每日活跃阶段之后推进一次（归来领奖 / 在家派出 /
+	// 旅行中跳过）。失败只记日志，不阻断其它账号；30 分钟冷却避免频繁打上游。
+	if workBuddyTravelEnabled && providerActive && providerErr == nil &&
+		actionRunsOperation(action, features.OperationActivity) {
+		travelSummary, travelErr := a.runWorkBuddyTravel(ctx)
+		summary.Attempted += travelSummary.Attempted
+		summary.Succeeded += travelSummary.Succeeded
+		summary.NeedsAttention += travelSummary.NeedsAttention
+		summary.Skipped += travelSummary.Skipped
+		if travelErr != nil {
+			failures = append(failures, travelErr)
+		}
+	}
 	return summary, errors.Join(failures...)
 }
 

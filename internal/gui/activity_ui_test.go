@@ -37,7 +37,19 @@ func TestAppsPageExposesDailyActivity(t *testing.T) {
 		`id="activity-modal"`,
 		`Bound.ActivityHistory(`,
 		`Bound.LogsTail(provider.id, key, "keepalive", "", 20, 0)`,
-		`猫猫旅行`,
+		`猫猫旅行（`,
+		`Bound.LogsTail(provider.id, key, "travel", "", 20, 0)`,
+		`function renderActivityHistory(provider, account, records, logs, travelLogs)`,
+		`猫猫旅行由 QKA 自动推进`,
+		`id="travel-modal"`,
+		`function openTravelModal(`,
+		`Bound.WorkBuddyTravelStatus(`,
+		`Bound.WorkBuddyTravelRun(`,
+		`const WORKBUDDY_TRAVEL_UI = false;`,
+		`if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {`,
+		`travelLink.textContent = "猫猫旅行"`,
+		`action.textContent = "派出猫猫"`,
+		`action.textContent = "领取旅行奖励"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("应用管理页缺少每日活跃 UI: %q", want)
@@ -71,6 +83,10 @@ func TestActivityBindingsMatchWailsIDs(t *testing.T) {
 		`$Call.ByID(1504037297)`,
 		`export function ActivityHistory(provider, account, limit)`,
 		`$Call.ByID(1494372760, provider, account, limit)`,
+		`export function WorkBuddyTravelStatus(account)`,
+		`$Call.ByID(3328366946, account)`,
+		`export function WorkBuddyTravelRun(account)`,
+		`$Call.ByID(1847674805, account)`,
 		// 现有绑定自检：hash 规则必须能复现这个已知值。
 		`$Call.ByID(2607732007, target)`,
 	} {

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"time"
@@ -213,10 +214,24 @@ func (a *App) guiDeps() gui.Deps {
 		OpenURL:  openBrowser,
 		Accounts: bridge,
 		// 页面打开走缓存投影（秒开），过期后在后台刷新；写操作会立即失效缓存。
-		ProvidersList:      a.providers.CachedListView,
-		ActivityView:       a.providers.ActivityView,
-		ActivityRun:        a.RunProviderActivity,
-		ActivityHistory:    a.providers.ActivityHistory,
+		ProvidersList:   a.providers.CachedListView,
+		ActivityView:    a.providers.ActivityView,
+		ActivityRun:     a.RunProviderActivity,
+		ActivityHistory: a.providers.ActivityHistory,
+		// 猫猫旅行被上游风控（403/11140），暂时关闭：界面入口隐藏、自动执行
+		// 跳过、绑定调用也直接拒绝，避免误触发账号级限制。
+		WorkBuddyTravelStatus: func(ctx context.Context, account string) (workbuddy.TravelStatus, error) {
+			if !workBuddyTravelEnabled {
+				return workbuddy.TravelStatus{}, errors.New("猫猫旅行暂时关闭")
+			}
+			return a.providers.WorkBuddyTravelStatus(ctx, account)
+		},
+		WorkBuddyTravelRun: func(ctx context.Context, account string) (workbuddy.TravelResult, error) {
+			if !workBuddyTravelEnabled {
+				return workbuddy.TravelResult{}, errors.New("猫猫旅行暂时关闭")
+			}
+			return a.providers.RunWorkBuddyTravel(ctx, account)
+		},
 		ActivitySetEnabled: a.providers.SetActivityEnabled,
 		ProvidersWarm: func(ctx context.Context) error {
 			_, err := a.providers.List(ctx)

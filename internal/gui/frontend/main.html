@@ -3017,6 +3017,23 @@
         <div class="abody" id="activity-modal-body"></div>
       </div>
     </div>
+
+    <div class="modal hidden" id="travel-modal" role="dialog" aria-modal="true" aria-labelledby="travel-modal-title">
+      <div class="dialog adialog activity-dialog">
+        <header>
+          <div class="am-who">
+            <h2 id="travel-modal-title">猫猫旅行</h2>
+            <p id="travel-modal-sub"></p>
+          </div>
+          <button class="text am-x" id="travel-modal-close" type="button" data-close aria-label="关闭">关闭</button>
+        </header>
+        <div class="abody" id="travel-modal-body"></div>
+        <footer>
+          <span class="sp"></span>
+          <button class="text action" id="travel-modal-action" type="button">派出猫猫</button>
+        </footer>
+      </div>
+    </div>
   </div>
 
 <dialog class="command-dialog" id="command-dialog" aria-labelledby="command-title">
@@ -3184,6 +3201,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     titleThemeOrder,
     titleThresholds,
   } from "./assets/title-system.js";
+
+  // 猫猫旅行暂时关闭：上游对这类请求做了账号级风控（403/11140），先隐藏入口
+  // 并停掉自动执行，等确认安全口径后再打开。代码保留，改为 true 即可恢复。
+  const WORKBUDDY_TRAVEL_UI = false;
 
   // Wails 对返回 json.RawMessage 的方法，前端拿到的是已解析对象（兼容字符串）。
   function asJSON(v) {
@@ -5629,7 +5650,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return kind === "good" || kind === "bad" || kind === "warn" ? " " + kind : "";
   }
 
-  function renderActivityHistory(provider, account, records, logs) {
+  function renderActivityHistory(provider, account, records, logs, travelLogs) {
     const body = document.getElementById("activity-modal-body");
     body.innerHTML = "";
     const key = account.key || account.id || "";
@@ -5709,10 +5730,33 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       });
     }
 
-    if (provider.id === "workbuddy") {
+    if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {
+      const travelTitle = document.createElement("div");
+      travelTitle.className = "activity-section-title";
+      travelTitle.textContent = "猫猫旅行（" + travelLogs.length + "）";
+      body.appendChild(travelTitle);
+      if (!travelLogs.length) {
+        const empty = document.createElement("div");
+        empty.className = "activity-empty";
+        empty.textContent = "还没有猫猫旅行记录；下次巡检会自动查看状态、派出猫猫或领取归来奖励。";
+        body.appendChild(empty);
+      } else {
+        travelLogs.forEach(function (entry) {
+          const row = document.createElement("div");
+          row.className = "activity-log-row";
+          const when = document.createElement("span");
+          when.className = "when";
+          when.textContent = activityTimeText(entry.ts, true);
+          row.appendChild(when);
+          const msg = document.createElement("span");
+          msg.textContent = entry.message || entry.state || "";
+          row.appendChild(msg);
+          body.appendChild(row);
+        });
+      }
       const note = document.createElement("div");
       note.className = "activity-note";
-      note.textContent = "WorkBuddy 的猫猫旅行是独立的成长任务，目前 QKA 只接入每日活跃上报，还没有派出猫猫的记录；接入旅行任务后会显示在这里。";
+      note.textContent = "猫猫旅行由 QKA 自动推进：在家会派出、归来会领奖、旅行中会等待；同一账号 30 分钟内最多推进一次。";
       body.appendChild(note);
     }
   }
@@ -5727,6 +5771,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     document.getElementById("activity-modal").classList.remove("hidden");
     let records = [];
     let logs = [];
+    let travelLogs = [];
     try {
       records = asJSON(await Bound.ActivityHistory(provider.id, key, 30)) || [];
     } catch (_) {}
@@ -5734,12 +5779,179 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       const page = asJSON(await Bound.LogsTail(provider.id, key, "keepalive", "", 20, 0));
       logs = (page && page.entries) || [];
     } catch (_) {}
-    renderActivityHistory(provider, account, records, logs);
+    if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {
+      try {
+        const page = asJSON(await Bound.LogsTail(provider.id, key, "travel", "", 20, 0));
+        travelLogs = (page && page.entries) || [];
+      } catch (_) {}
+    }
+    renderActivityHistory(provider, account, records, logs, travelLogs);
   }
 
   document.getElementById("activity-modal-close").onclick = closeActivityModal;
   document.getElementById("activity-modal").addEventListener("click", function (event) {
     if (event.target.id === "activity-modal") closeActivityModal();
+  });
+
+  // ---- 猫猫旅行：状态 + 手动派出 / 领奖 + 历史 ----
+  let travelModalProvider = null;
+  let travelModalAccount = null;
+  let travelModalBusy = false;
+
+  function travelStateText(state) {
+    const labels = {
+      idle: "猫猫在家，可以出发",
+      traveling: "猫猫正在旅行途中",
+      arrived: "猫猫已归来，可以领奖",
+    };
+    return labels[state] || (state ? "当前状态：" + state : "状态未知");
+  }
+
+  function travelTimeText(unixSeconds) {
+    const value = Number(unixSeconds) || 0;
+    if (value <= 0) return "";
+    return activityTimeText(new Date(value * 1000).toISOString(), true);
+  }
+
+  function closeTravelModal() {
+    document.getElementById("travel-modal").classList.add("hidden");
+    travelModalProvider = null;
+    travelModalAccount = null;
+  }
+
+  function renderTravelModal(status, logs) {
+    const body = document.getElementById("travel-modal-body");
+    body.innerHTML = "";
+    const summary = document.createElement("div");
+    summary.className = "activity-summary";
+    const state = document.createElement("span");
+    state.textContent = "状态：" + travelStateText(status && status.state);
+    summary.appendChild(state);
+    if (status && status.location) {
+      const where = document.createElement("span");
+      where.textContent = "目的地：" + status.location;
+      summary.appendChild(where);
+    }
+    const arrive = status && travelTimeText(status.arrive_at);
+    if (arrive) {
+      const when = document.createElement("span");
+      when.textContent = "预计归来：" + arrive;
+      summary.appendChild(when);
+    }
+    if (status && status.daily_limit_reached) {
+      const limit = document.createElement("span");
+      limit.textContent = "今日旅行次数已用完";
+      summary.appendChild(limit);
+    }
+    if (status && !status.ok && status.message) {
+      const problem = document.createElement("span");
+      problem.textContent = status.message;
+      summary.appendChild(problem);
+    }
+    body.appendChild(summary);
+
+    const title = document.createElement("div");
+    title.className = "activity-section-title";
+    title.textContent = "旅行记录（" + logs.length + "）";
+    body.appendChild(title);
+    if (!logs.length) {
+      const empty = document.createElement("div");
+      empty.className = "activity-empty";
+      empty.textContent = "还没有旅行记录；派出猫猫后这里会出现出发/归来/领奖记录。";
+      body.appendChild(empty);
+    } else {
+      logs.forEach(function (entry) {
+        const row = document.createElement("div");
+        row.className = "activity-log-row";
+        const when = document.createElement("span");
+        when.className = "when";
+        when.textContent = activityTimeText(entry.ts, true);
+        row.appendChild(when);
+        const msg = document.createElement("span");
+        msg.textContent = entry.message || entry.state || "";
+        row.appendChild(msg);
+        body.appendChild(row);
+      });
+    }
+
+    const note = document.createElement("div");
+    note.className = "activity-note";
+    note.textContent = "自动巡检也会检查旅行状态：归来会自动领奖并再次派出；手动操作不占用 30 分钟自动冷却。";
+    body.appendChild(note);
+
+    // 主按钮：可派出/可领奖时执行，其余状态变成刷新。
+    const action = document.getElementById("travel-modal-action");
+    const canDepart = status && status.ok && status.state === "idle" &&
+      !status.daily_limit_reached;
+    const canClaim = status && status.ok && status.state === "arrived";
+    if (canClaim) {
+      action.textContent = "领取旅行奖励";
+    } else if (canDepart) {
+      action.textContent = "派出猫猫";
+    } else {
+      action.textContent = "刷新状态";
+    }
+    action.disabled = travelModalBusy;
+    action.dataset.mode = canClaim ? "claim" : canDepart ? "depart" : "refresh";
+  }
+
+  async function refreshTravelModal() {
+    if (!travelModalAccount) return;
+    const body = document.getElementById("travel-modal-body");
+    body.innerHTML = '<div class="activity-empty">正在读取猫猫旅行状态…</div>';
+    let status = null;
+    let logs = [];
+    try {
+      status = asJSON(await Bound.WorkBuddyTravelStatus(travelModalAccount.key));
+    } catch (_) {
+      status = { ok: false, message: "读取旅行状态失败，请稍后重试" };
+    }
+    try {
+      const page = asJSON(await Bound.LogsTail(
+        travelModalProvider.id, travelModalAccount.key, "travel", "", 20, 0));
+      logs = (page && page.entries) || [];
+    } catch (_) {}
+    renderTravelModal(status, logs);
+  }
+
+  async function openTravelModal(provider, account) {
+    travelModalProvider = provider;
+    travelModalAccount = account;
+    document.getElementById("travel-modal-sub").textContent =
+      (provider.name || provider.id) + " · " + accountIdentityText(account);
+    document.getElementById("travel-modal-action").disabled = true;
+    document.getElementById("travel-modal").classList.remove("hidden");
+    await refreshTravelModal();
+  }
+
+  document.getElementById("travel-modal-action").onclick = async function () {
+    if (travelModalBusy || !travelModalAccount) return;
+    const action = this;
+    travelModalBusy = true;
+    action.disabled = true;
+    const mode = action.dataset.mode || "refresh";
+    try {
+      if (mode === "refresh") {
+        await refreshTravelModal();
+        return;
+      }
+      action.textContent = mode === "claim" ? "正在领奖…" : "正在派出…";
+      const result = asJSON(await Bound.WorkBuddyTravelRun(travelModalAccount.key));
+      showAccountsMessage(result && result.message ? result.message : "猫猫旅行已推进", "success");
+      await refreshTravelModal();
+    } catch (err) {
+      const detail = err && err.message ? String(err.message) : "";
+      showAccountsMessage(detail || "猫猫旅行操作失败，请稍后重试");
+      await refreshTravelModal();
+    } finally {
+      travelModalBusy = false;
+      action.disabled = false;
+    }
+  };
+
+  document.getElementById("travel-modal-close").onclick = closeTravelModal;
+  document.getElementById("travel-modal").addEventListener("click", function (event) {
+    if (event.target.id === "travel-modal") closeTravelModal();
   });
 
   document.getElementById("agent-modal-privacy").onclick = toggleAccountPrivacy;
@@ -6575,6 +6787,15 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         };
       }
       links.appendChild(runActivity);
+      if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {
+        const travelLink = document.createElement("button");
+        travelLink.type = "button";
+        travelLink.className = "acct-link";
+        travelLink.textContent = "猫猫旅行";
+        travelLink.title = "查看猫猫旅行状态、派出猫猫或领取归来奖励";
+        travelLink.onclick = function () { openTravelModal(provider, account); };
+        links.appendChild(travelLink);
+      }
     }
     const refreshStatus = document.createElement("button");
     refreshStatus.type = "button";

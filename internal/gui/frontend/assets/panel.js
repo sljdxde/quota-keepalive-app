@@ -1131,22 +1131,28 @@ async function refreshSpeed() {
 function updateFooter() {
   const count = document.getElementById("count");
   const run = document.getElementById("run");
+  // 签到页不再保留全局「巡检」按钮：自动执行每 2 小时跑一次，账号卡里也有
+  // 立即签到/立即活跃，这个入口属于重复且容易误触。速度页同样不需要按钮；
+  // 只有宠物页把同一个按钮复用为「放技能」。
+  if (activeTab === "checkin") {
+    count.innerHTML = "<b>" + currentAccounts.length + "</b> 个账号";
+    run.hidden = true;
+    return;
+  }
   if (activeTab === "speed") {
     count.textContent = "自动刷新";
     run.hidden = true;
     return;
   }
-  run.hidden = false;
   if (activeTab === "pet") {
     const tier = currentSkillTier();
     count.innerHTML = "<b>" + romanStage(tier) + "</b> / III 技能";
+    run.hidden = false;
     run.textContent = "放技能";
     run.setAttribute("aria-label", "投出精灵球或放出伙伴");
     return;
   }
-  count.innerHTML = "<b>" + currentAccounts.length + "</b> 个账号";
-  run.textContent = "巡检";
-  run.setAttribute("aria-label", "立即执行今日巡检");
+  run.hidden = true;
 }
 
 function currentPet() {
@@ -2092,27 +2098,9 @@ document.getElementById("settings").addEventListener("click", function () {
   hidePanel();
 });
 document.getElementById("collapse").addEventListener("click", hidePanel);
-document.getElementById("run").addEventListener("click", async function () {
-  const button = this;
-  if (activeTab === "speed") {
-    await refreshSpeed();
-    return;
-  }
-  if (activeTab === "pet") {
-    panelPetAction();
-    return;
-  }
-  button.disabled = true;
-  showMessage("正在执行今日巡检…", true);
-  try {
-    await Bound.Run();
-    await refresh();
-    showMessage("巡检完成", true);
-  } catch (_) {
-    showMessage("巡检失败；本次未宣称成功。");
-  } finally {
-    button.disabled = false;
-  }
+// 只有宠物页用它放技能；签到/速度页的按钮是隐藏的，不再承载「巡检」。
+document.getElementById("run").addEventListener("click", function () {
+  if (activeTab === "pet") panelPetAction();
 });
 document.getElementById("open-main").addEventListener("click", openMain);
 document.getElementById("quit").addEventListener("click", function () {

@@ -15,6 +15,7 @@ import (
 	"qka/internal/settings"
 	"qka/internal/status"
 	"qka/internal/tokenspeed"
+	"qka/internal/workbuddy"
 )
 
 // Deps 是 GUI 所需的后端能力（由应用装配注入）。
@@ -82,6 +83,10 @@ type Deps struct {
 	ActivityRun func(ctx context.Context, provider, account string) error
 	// ActivityHistory 返回单个账号最近的每日活跃执行记录。
 	ActivityHistory func(ctx context.Context, provider, account string, limit int) ([]providers.ActivityRecord, error)
+	// WorkBuddyTravelStatus 查询 WorkBuddy 猫猫旅行状态。
+	WorkBuddyTravelStatus func(ctx context.Context, account string) (workbuddy.TravelStatus, error)
+	// WorkBuddyTravelRun 手动推进一步 WorkBuddy 猫猫旅行（派出或领奖）。
+	WorkBuddyTravelRun func(ctx context.Context, account string) (workbuddy.TravelResult, error)
 	// ActivitySetEnabled 开关单个账号的每日活跃任务。
 	ActivitySetEnabled func(ctx context.Context, provider, account string, enabled bool) error
 	// Providers 是随包供应商插件的统一管理投影。
@@ -398,6 +403,30 @@ func (s *BoundService) ActivityHistory(provider, account string, limit int) (jso
 		records = []providers.ActivityRecord{}
 	}
 	return json.Marshal(records)
+}
+
+// WorkBuddyTravelStatus 查询 WorkBuddy 猫猫旅行状态（只读）。
+func (s *BoundService) WorkBuddyTravelStatus(account string) (json.RawMessage, error) {
+	if s.deps.WorkBuddyTravelStatus == nil {
+		return nil, errNotWired
+	}
+	status, err := s.deps.WorkBuddyTravelStatus(context.Background(), account)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(status)
+}
+
+// WorkBuddyTravelRun 手动推进一步猫猫旅行：在家派出、归来领奖。
+func (s *BoundService) WorkBuddyTravelRun(account string) (json.RawMessage, error) {
+	if s.deps.WorkBuddyTravelRun == nil {
+		return nil, errNotWired
+	}
+	result, err := s.deps.WorkBuddyTravelRun(context.Background(), account)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(result)
 }
 
 // ActivityRun 立即为单个账号执行一次每日活跃；仍受当天幂等与冷却约束。

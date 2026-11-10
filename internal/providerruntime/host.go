@@ -90,9 +90,12 @@ type Account struct {
 	AccountID string `json:"accountId"`
 	// UID is the vendor's own account id when the plugin keeps one beside the
 	// display name (WorkBuddy 的 uid)；每日活跃事件要把它写进 userId。
-	UID    string   `json:"uid,omitempty"`
-	Hint   string   `json:"hint,omitempty"`
-	Models []string `json:"models,omitempty"`
+	UID string `json:"uid,omitempty"`
+	// UserPhone 是插件自己存下的展示名（CodeArts 等插件把手机号脱敏后写进
+	// 凭据的 user_phone），有它时优先于 accountId 作为账号标识。
+	UserPhone string   `json:"user_phone,omitempty"`
+	Hint      string   `json:"hint,omitempty"`
+	Models    []string `json:"models,omitempty"`
 }
 
 // Provider is the credential-free projection returned by host.js.

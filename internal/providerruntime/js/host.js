@@ -1985,6 +1985,8 @@ async function providers({ proxies } = {}) {
         accountId: whoOf(stored[k]),
         // WorkBuddy 的 uid：账号可能同名，事件上报与账号展示都要用到它。
         uid: uidOf(stored[k]),
+        // 插件自己存的展示名（CodeArts 会把手机号脱敏写进 user_phone）。
+        user_phone: typeof stored[k]?.user_phone === "string" ? stored[k].user_phone : "",
         hint: hintOf(stored[k]),
         models: own.length === 0 ? undefined : i === 0 ? ids(p) : own[i - 1]?.models ? ids(own[i - 1]) : undefined,
         fellBack: i === 0 ? !!p.fellBack : !!(own[i - 1]?.fellBack || own[i - 1]?.failed),

@@ -56,6 +56,24 @@ export function ActivityHistory(provider, account, limit) {
 }
 
 /**
+ * WorkBuddyTravelStatus 查询 WorkBuddy 猫猫旅行状态（只读）。
+ * @param {string} account
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function WorkBuddyTravelStatus(account) {
+    return $Call.ByID(3328366946, account);
+}
+
+/**
+ * WorkBuddyTravelRun 手动推进一步猫猫旅行：在家派出、归来领奖。
+ * @param {string} account
+ * @returns {$CancellablePromise<json$0.RawMessage>}
+ */
+export function WorkBuddyTravelRun(account) {
+    return $Call.ByID(1847674805, account);
+}
+
+/**
  * AccountsBeginLogin 发起官方登录并返回可见状态。
  * @param {string} target
  * @returns {$CancellablePromise<json$0.RawMessage>}

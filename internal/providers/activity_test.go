@@ -459,3 +459,32 @@ VALUES (?, 'fixture', 'a1', ?, ?, ?, 0, 'ok', ?)`,
 		t.Fatalf("second record = %+v", records[1])
 	}
 }
+
+// WorkBuddy 猫猫旅行也走 provider host.Fetch（插件签名），Go 侧不碰 token。
+func TestRunWorkBuddyTravelUsesSignedFetch(t *testing.T) {
+	f := newFixture(t)
+	f.runtime.providers[0].ID = "workbuddy"
+	f.runtime.providers[0].Name = "WorkBuddy"
+	f.runtime.providers[0].Accounts[0].UID = "uid-travel"
+	f.runtime.fetchQueue = []providerruntime.FetchResponse{
+		{Status: 200, Body: []byte(`{"code":0,"data":{"state":"idle"}}`)},
+		{Status: 200, Body: []byte(`{"code":0,"data":{"locations":[{"id":7,"name":"猫猫岛"}]}}`)},
+		{Status: 200, Body: []byte(`{"code":0,"data":{"location":{"name":"火山口"}}}`)},
+	}
+	result, err := f.service.RunWorkBuddyTravel(context.Background(), "a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OK || result.Action != "depart" || !strings.Contains(result.Message, "火山口") {
+		t.Fatalf("result = %+v", result)
+	}
+	if f.runtime.fetchCalls != 3 {
+		t.Fatalf("fetch calls = %d", f.runtime.fetchCalls)
+	}
+	if !strings.HasSuffix(f.runtime.fetchRequest.URL, "/activity/growth/buddy/travel/depart") {
+		t.Fatalf("last url = %q", f.runtime.fetchRequest.URL)
+	}
+	if !strings.Contains(f.runtime.fetchRequest.Body, `"location_id":7`) {
+		t.Fatalf("depart body = %q", f.runtime.fetchRequest.Body)
+	}
+}
