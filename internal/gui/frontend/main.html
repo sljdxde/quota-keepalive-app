@@ -3220,6 +3220,7 @@
     timingAccuracy,
   } from "./assets/pet-motion.js";
   import { resolveAccountProviderView } from "./assets/account-view.js";
+  import { formatQuotaNumber as formatQuota, quotaViewForWindow } from "./assets/account-quota.js";
   import {
     activityAccountsFor,
     activityChipText,
@@ -6094,11 +6095,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   let checkinFocusGeneration = 0;
   let accountsRenderGeneration = 0;
 
-  function formatQuota(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return "—";
-    return n.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-  }
+  // formatQuota 来自 assets/account-quota.js（import 处用别名对齐旧名），
+  // 与面板共用同一套千分位格式化。
 
   function claimGrowth(op) {
     if (quotaStates.indexOf(op.state) === -1) return null;
@@ -6814,6 +6812,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     });
 
     // 额度读取：账号卡不只看 op.balance（不少供应商只在用量窗口里给额度）。
+    // 口径统一走 account-quota.js（与面板同一套纯函数）；主窗口只负责版式：
+    // 第一个窗口进摘要行 + 已用比例细条，其余窗口按 chip 语言排到 acct-ops 下面。
     if (accountKey) {
       (async function () {
         try {
@@ -6822,46 +6822,32 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           const windows = ((reading && reading.windows) || []).filter(function (w) { return !w.aside; });
           quotaLine.textContent = "";
           if (windows.length) {
-            // 摘要行只放第一个窗口；其余窗口按 mac 的 chip 语言排到 acct-ops 下面。
             windows.forEach(function (w, index) {
-              // 统一语义：只说「剩余 / 总量」。amount 是已用量，剩余 = limit - amount。
-              let text = "";
-              let hasBar = false;
-              if (w.limit > 0 && w.amount >= 0) {
-                const remaining = Math.max(0, w.limit - w.amount);
-                text = "剩余 " + formatQuota(remaining) + " / 总量 " + formatQuota(w.limit) +
-                  (w.unit ? " " + w.unit : "");
-                hasBar = true;
-              } else if (w.balance != null) {
-                text = "剩余 " + formatQuota(Number(w.balance));
-              } else if (w.display) {
-                text = w.display;
-              }
-              if (!text && !hasBar) return;
-              const prefix = w.name ? w.name + " · " : "";
+              // 第二个参数传 null：单个窗口没有可用字段就整行跳过，不带
+              // reading.balance 兜底——那个兜底只在完全没有窗口时走。
+              const view = quotaViewForWindow(w, null);
+              if (!view) return;
               if (index === 0) {
-                quotaLine.textContent = " · " + prefix + text;
-                if (hasBar) {
+                quotaLine.textContent = " · " + view.text;
+                if (view.pct != null) {
                   const track = document.createElement("span");
                   track.className = "quota-track";
                   const bar = document.createElement("i");
-                  const pct = Math.max(0, Math.min(100, (w.amount / w.limit) * 100));
-                  bar.className = "quota-bar" + (pct >= 100 ? " full" : "");
-                  bar.style.width = pct.toFixed(1) + "%";
+                  bar.className = "quota-bar" + (view.pct >= 100 ? " full" : "");
+                  bar.style.width = view.pct.toFixed(1) + "%";
                   track.appendChild(bar);
                   quotaLine.appendChild(track);
                 }
               } else {
                 const chip = document.createElement("span");
                 chip.className = "op-chip quota";
-                chip.textContent = prefix + text;
+                chip.textContent = view.text;
                 ops.appendChild(chip);
               }
             });
-          } else if (reading && reading.balance) {
-            quotaLine.textContent = " · 剩余 " + reading.balance;
           } else {
-            quotaLine.textContent = " · 暂无额度读数";
+            const view = quotaViewForWindow(null, reading);
+            quotaLine.textContent = view ? " · " + view.text : " · 暂无额度读数";
           }
         } catch (_) {
           quotaLine.textContent = " · 额度暂不可读";

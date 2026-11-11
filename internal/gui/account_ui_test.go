@@ -176,13 +176,15 @@ func TestCheckinManagementHasPerTaskActionsAndQuotaHistory(t *testing.T) {
 		"供应商今天没有可领取的签到活动",
 		"刷新额度",
 		"历史 / 额度",
-		"剩余 ",
-		"总量 ",
+		// 额度口径统一走 account-quota.js（与面板同一套纯函数）：主窗口按
+		// 窗口取视图，没有窗口时才带 reading 兜底。
+		`from "./assets/account-quota.js"`,
+		"quotaViewForWindow(w, null)",
+		"quotaViewForWindow(null, reading)",
 		"function claimGrowth(op)",
 		`"今日已领取 +" + formatQuota(growth)`,
 		"Math.abs(value - Number(op.balance)) > 0.000001",
 		"provider-history",
-		"w.limit - w.amount",
 		"terminal",
 		"trigger.disabled = !account.enabled || terminal",
 		"账号已停用",
