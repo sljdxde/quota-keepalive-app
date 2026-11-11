@@ -296,6 +296,9 @@ function accountIdentityText(account) {
   const known = provider && Array.isArray(provider.accounts)
     ? provider.accounts.find(function (item) { return item && item.key === accountKey; })
     : null;
+  // 用户备注优先：上游账号标识可能是脱敏手机号，备注才是他认得的那串号码。
+  const label = known && typeof known.label === "string" ? known.label.trim() : "";
+  if (label) return label;
   const full = known && known.identity ? displayAccountIdentity(known.identity) : "";
   return full || masked;
 }

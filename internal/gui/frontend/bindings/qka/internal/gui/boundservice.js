@@ -397,6 +397,17 @@ export function ProvidersSetAccountEnabled(provider, account, enabled) {
 }
 
 /**
+ * ProvidersSetAccountLabel saves one account's display label (备注).
+ * @param {string} provider
+ * @param {string} account
+ * @param {string} label
+ * @returns {$CancellablePromise<void>}
+ */
+export function ProvidersSetAccountLabel(provider, account, label) {
+    return $Call.ByID(2780333272, provider, account, label);
+}
+
+/**
  * ProvidersSetEnabled toggles one provider.
  * @param {string} provider
  * @param {boolean} enabled

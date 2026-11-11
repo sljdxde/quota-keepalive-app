@@ -83,8 +83,11 @@ type AccountView struct {
 	Key string `json:"key"`
 	// Identity 是完整账号标识（邮箱/手机号/账号名），供用户在「显示账号」时
 	// 查看；默认界面仍按 MaskedIdentity 展示。不是凭据，也不是 token。
-	Identity        string          `json:"identity,omitempty"`
-	MaskedIdentity  string          `json:"masked_identity"`
+	Identity       string `json:"identity,omitempty"`
+	MaskedIdentity string `json:"masked_identity"`
+	// Label 是用户在 QKA 里给这个账号起的备注（例如真实手机号）。它只用于
+	// 界面展示，不改变插件里的账号标识，也不是凭据。
+	Label           string          `json:"label,omitempty"`
 	Type            string          `json:"type"`
 	Enabled         bool            `json:"enabled"`
 	Models          []string        `json:"models"`
@@ -866,6 +869,11 @@ DELETE FROM accounts WHERE target = ? AND id = ?`,
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `
+DELETE FROM account_labels WHERE provider = ? AND account_id = ?`,
+		provider, account.Key); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
 UPDATE provider_account_identities
 SET identity_hash = ?, updated_at = ?
 WHERE provider = ? AND slot_key = ?`,
@@ -892,6 +900,11 @@ func (s *Service) pruneMissingPluginSources(
 			}
 			if err := s.accounts.RemoveSource(ctx, provider, account.ID, source.ID); err != nil {
 				return err
+			}
+			if _, err := s.accounts.Get(ctx, provider, account.ID); errors.Is(err, sql.ErrNoRows) {
+				if err := s.deleteAccountLabel(ctx, provider, account.ID); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -933,6 +946,10 @@ func (s *Service) view(ctx context.Context, runtimeItems []providerruntime.Provi
 				Context: model.Context, Rate: model.Rate,
 			})
 		}
+		labels, err := s.accountLabels(ctx, p.ID)
+		if err != nil {
+			return View{}, err
+		}
 		for _, account := range p.Accounts {
 			stored, err := s.accounts.Get(ctx, p.ID, account.Key)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -946,6 +963,7 @@ func (s *Service) view(ctx context.Context, runtimeItems []providerruntime.Provi
 				Key:            account.Key,
 				Identity:       publicIdentity(displaySource),
 				MaskedIdentity: maskIdentity(maskedSource),
+				Label:          labels[account.Key],
 				Type:           account.Type, Enabled: stored.Enabled,
 				Models:          append([]string(nil), account.Models...),
 				TaskPreferences: map[string]bool{},
@@ -1256,6 +1274,10 @@ func (s *Service) DeleteAccount(ctx context.Context, provider, account string) e
 		return err
 	}
 	if err := s.accounts.Delete(ctx, provider, account); err != nil {
+		s.writeAuditFailure(ctx, provider, account, "account", err)
+		return err
+	}
+	if err := s.deleteAccountLabel(ctx, provider, account); err != nil {
 		s.writeAuditFailure(ctx, provider, account, "account", err)
 		return err
 	}

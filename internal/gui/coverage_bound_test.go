@@ -110,6 +110,9 @@ func TestBoundCoverageHappyPaths(t *testing.T) {
 		ProviderSetAccountEnabled: func(context.Context, string, string, bool) error {
 			return nil
 		},
+		ProviderSetAccountLabel: func(context.Context, string, string, string) error {
+			return nil
+		},
 		ProviderSetTaskEnabled: func(context.Context, string, string, string, bool) error {
 			return nil
 		},
@@ -171,6 +174,9 @@ func TestBoundCoverageHappyPaths(t *testing.T) {
 		{"provider enabled", func() error { return svc.ProvidersSetEnabled("qoder", true) }},
 		{"provider account", func() error {
 			return svc.ProvidersSetAccountEnabled("qoder", "a", true)
+		}},
+		{"provider label", func() error {
+			return svc.ProvidersSetAccountLabel("qoder", "a", "18907197198")
 		}},
 		{"provider task", func() error {
 			return svc.ProvidersSetTaskEnabled("qoder", "a", "checkin", true)
@@ -240,6 +246,7 @@ func TestBoundCoverageNotWired(t *testing.T) {
 		{"provider api key", func() error { _, err := svc.ProvidersLoginAPIKey("", 0, nil, ""); return err }},
 		{"provider enabled", func() error { return svc.ProvidersSetEnabled("", true) }},
 		{"provider account", func() error { return svc.ProvidersSetAccountEnabled("", "", true) }},
+		{"provider label", func() error { return svc.ProvidersSetAccountLabel("", "", "") }},
 		{"provider task", func() error { return svc.ProvidersSetTaskEnabled("", "", "checkin", true) }},
 		{"provider run", func() error { return svc.ProvidersRun("", "", "checkin") }},
 		{"provider test model", func() error {

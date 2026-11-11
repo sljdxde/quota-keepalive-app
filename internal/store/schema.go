@@ -196,3 +196,16 @@ ON activity_runs (provider, account_id, day_key);
 CREATE INDEX IF NOT EXISTS idx_activity_runs_ts
 ON activity_runs (ts);
 `
+
+// schemaV8 保存账号备注：用户在 QKA 里给账号起的显示名（例如真实手机号）。
+// 备注只影响界面展示，不参与 provider_account_identities 的身份哈希，因此
+// 改备注不会像改账号标识那样触发账号历史重置。
+const schemaV8 = `
+CREATE TABLE IF NOT EXISTS account_labels (
+    provider   TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (provider, account_id)
+);
+`

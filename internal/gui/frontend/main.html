@@ -597,6 +597,14 @@
   .acct-title .dot.good { background: var(--green); }
   .acct-title .dot.warn { background: var(--amber); }
   .acct-title .dot.bad { background: var(--red); }
+  /* 账号备注的行内编辑：直接在标题位置改，不弹二级对话框。 */
+  .acct-rename-input {
+    height: 24px; min-width: 148px; max-width: 240px; padding: 0 8px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--card); color: var(--fg);
+    font: inherit; font-size: var(--fs-sm);
+  }
+  .acct-rename-input:focus { outline: none; border-color: var(--accent); }
   .acct-meta {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px;
     margin-top: 4px; color: var(--fg-2); font-size: var(--fs-sm);
@@ -6198,9 +6206,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   document.getElementById("logs-privacy").onclick = toggleAccountPrivacy;
 
-  // accountIdentityText 取完整账号标识（邮箱/手机/账号名）；后端没给完整值
-  // 时回落到脱敏值，保证「显示账号」不会出现空白。
+  // accountIdentityText 取账号在界面上的名字：用户备注 > 上游完整标识 >
+  // 上游脱敏值。备注是本地展示名（例如真实手机号），只改 QKA 的显示，
+  // 不写回插件、也不改变账号标识。
   function accountIdentityText(account) {
+    const label = account && typeof account.label === "string"
+      ? account.label.trim()
+      : "";
+    if (label) return label;
     const masked = displayAccountIdentity(account && account.masked_identity);
     const identity = account && account.identity
       ? displayAccountIdentity(account.identity)
@@ -6614,6 +6627,64 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return panel;
   }
 
+  // startAccountRename 把账号卡标题临时换成输入框：保存后写入本地备注，
+  // 标题随 renderAccounts 重绘。备注只影响 QKA 的显示名，空值表示清除。
+  function startAccountRename(title, provider, account) {
+    if (!title || title.dataset.editing === "1") return;
+    title.dataset.editing = "1";
+    const previous = Array.prototype.slice.call(title.childNodes);
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "acct-rename-input";
+    input.maxLength = 40;
+    input.value = String((account && account.label) || "");
+    input.placeholder = "例如 18907197198";
+    input.setAttribute("aria-label", "账号备注");
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "acct-link";
+    save.textContent = "保存";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "acct-link";
+    cancel.textContent = "取消";
+    function restore() {
+      delete title.dataset.editing;
+      title.innerHTML = "";
+      previous.forEach(function (node) { title.appendChild(node); });
+    }
+    async function commit() {
+      if (save.disabled) return; // 回车连按时只保存一次
+      save.disabled = true;
+      cancel.disabled = true;
+      try {
+        await Bound.ProvidersSetAccountLabel(
+          provider.id, (account && (account.key || account.id)) || "", input.value);
+        // renderAccounts 读取的是重绘后的投影，成功后先重绘再报结果，否则
+        // 重绘里的 showAccountsMessage("") 会把提示立刻清掉。
+        await renderAccounts();
+        await renderApps();
+        showAccountsMessage("账号备注已保存", "success");
+      } catch (err) {
+        save.disabled = false;
+        cancel.disabled = false;
+        showAccountsMessage(accountErrorMessage(err, "账号备注保存失败，请重试。"));
+      }
+    }
+    save.onclick = commit;
+    cancel.onclick = restore;
+    input.onkeydown = function (event) {
+      if (event.key === "Enter") { event.preventDefault(); commit(); }
+      if (event.key === "Escape") { event.preventDefault(); restore(); }
+    };
+    title.innerHTML = "";
+    title.appendChild(input);
+    title.appendChild(save);
+    title.appendChild(cancel);
+    input.focus();
+    input.select();
+  }
+
   function providerAccountCard(provider, account) {
     const accountKey = account.key || account.id || "";
     const failed = accountHealth(account);
@@ -6903,6 +6974,13 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         links.appendChild(travelLink);
       }
     }
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "acct-link";
+    rename.textContent = "改备注";
+    rename.title = "给这个账号起个界面显示名（例如真实手机号）；只改 QKA 的显示，不影响供应商";
+    rename.onclick = function () { startAccountRename(title, provider, account); };
+    links.appendChild(rename);
     const refreshStatus = document.createElement("button");
     refreshStatus.type = "button";
     refreshStatus.className = "acct-link";
@@ -7554,7 +7632,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       const name = String(provider.name || "");
       if (id && name) targets.set(id, name);
       (provider.accounts || []).forEach(function (account) {
-        const identity = account.identity || account.masked_identity || account.key || "";
+        const identity = account.label || account.identity || account.masked_identity || account.key || "";
         const key = String(account.key || account.id || "");
         if (!identity || !key) return;
         if (id) accounts.set(id + "|" + key, identity);

@@ -255,6 +255,7 @@ func (a *App) guiDeps() gui.Deps {
 		ProviderLoginAPIKey:       a.providers.LoginAPIKey,
 		ProviderSetEnabled:        a.providers.SetEnabled,
 		ProviderSetAccountEnabled: a.providers.SetAccountEnabled,
+		ProviderSetAccountLabel:   a.providers.SetAccountLabel,
 		ProviderSetTaskEnabled:    a.providers.SetTaskEnabled,
 		ProviderRun: func(ctx context.Context, provider, account, operation string) error {
 			return a.RunProviderAccount(ctx, provider, account, operation)

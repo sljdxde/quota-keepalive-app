@@ -102,11 +102,13 @@ type Deps struct {
 	ProviderLoginAPIKey       func(ctx context.Context, provider string, method int, inputs map[string]string, key string) (providers.LoginView, error)
 	ProviderSetEnabled        func(ctx context.Context, provider string, enabled bool) error
 	ProviderSetAccountEnabled func(ctx context.Context, provider, account string, enabled bool) error
-	ProviderSetTaskEnabled    func(ctx context.Context, provider, account, operation string, enabled bool) error
-	ProviderRun               func(ctx context.Context, provider, account, operation string) error
-	ProviderTestModel         func(ctx context.Context, provider, account, model string) (providers.ModelTestView, error)
-	ProviderDeleteAccount     func(ctx context.Context, provider, account string) error
-	ProviderHistory           func(ctx context.Context, provider, account string, limit int) ([]providers.RunItemView, []providers.QuotaReadingView, error)
+	// ProviderSetAccountLabel 保存账号备注（界面上的账号名），空值表示清除。
+	ProviderSetAccountLabel func(ctx context.Context, provider, account, label string) error
+	ProviderSetTaskEnabled  func(ctx context.Context, provider, account, operation string, enabled bool) error
+	ProviderRun             func(ctx context.Context, provider, account, operation string) error
+	ProviderTestModel       func(ctx context.Context, provider, account, model string) (providers.ModelTestView, error)
+	ProviderDeleteAccount   func(ctx context.Context, provider, account string) error
+	ProviderHistory         func(ctx context.Context, provider, account string, limit int) ([]providers.RunItemView, []providers.QuotaReadingView, error)
 	// Logs 按筛选条件查询日志（logtail）。
 	Logs func(ctx context.Context, filter LogFilter, limit int, cursor int64) (LogPage, error)
 	// AgentStatus 返回宿主接入信息（配对/连通/最近调用/计划指引）。
@@ -520,6 +522,14 @@ func (s *BoundService) ProvidersSetAccountEnabled(provider, account string, enab
 		return errNotWired
 	}
 	return s.deps.ProviderSetAccountEnabled(context.Background(), provider, account, enabled)
+}
+
+// ProvidersSetAccountLabel saves one account's display label (备注).
+func (s *BoundService) ProvidersSetAccountLabel(provider, account, label string) error {
+	if s.deps.ProviderSetAccountLabel == nil {
+		return errNotWired
+	}
+	return s.deps.ProviderSetAccountLabel(context.Background(), provider, account, label)
 }
 
 // ProvidersSetTaskEnabled toggles check-in automation.
