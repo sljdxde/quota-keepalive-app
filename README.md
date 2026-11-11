@@ -20,6 +20,8 @@
 - **自动执行**：内置 launchd / 任务计划程序调度，默认每 2 小时自动签到并执行每日活跃（无需配置，启动时自动安装/修复系统任务）
 - **猫猫旅行（暂时停用）**：WorkBuddy 上游对旅行请求做了账号级风控（403/11140），当前版本隐藏入口并停止自动执行（界面不显示、绑定直接拒绝），代码保留待安全口径确认后恢复
 - **软件更新**：启动后自动检查（之后每 6 小时一次），发现新版本在顶栏出横幅且不打断当前页；设置页可看当前/最新版本、打开更新说明；下载时显示已下载字节与百分比，校验 SHA-256 后退出替换并自动重启，失败自动回滚旧版本
+- **国内镜像源**：设置页可一键切换更新检查与安装包下载走 `ghfast.top` 代理（默认开启），GitHub 直连慢时更新不再卡住；版本号与 SHA-256 仍按官方 feed 校验，镜像只替换下载前缀，不会绕过完整性检查
+- **界面字体**：Windows 走 Segoe UI + 微软雅黑、macOS 走苹方/系统字，全局统一一套字体栈（此前生产端未声明字体，中文回落到宋体，小字号呈点阵感）
 
 ## 安装
 
@@ -30,6 +32,14 @@
 | macOS（Apple Silicon） | `QKA-<version>-arm64.dmg` | 拖入「应用程序」即可（ad-hoc 签名；若系统拦截，右键「打开」或在「隐私与安全性」里放行） |
 | Windows x64（Intel / AMD） | `QKA-<version>-windows-amd64.exe` | 单个 exe：双击进入安装向导，选安装路径后自动装完 |
 | Windows ARM64（骁龙 X 等） | `QKA-<version>-windows-arm64.exe` | 同上，仅架构不同 |
+
+**国内镜像下载**（GitHub 直连慢时用）：把 Release 资产地址的 `https://github.com/` 换成 `https://ghfast.top/` 即可，例如
+
+```
+https://ghfast.top/sljdxde/quota-keepalive-app/releases/download/v0.1.76/QKA-0.1.76-windows-amd64.exe
+```
+
+应用内也内置同一个镜像：设置页「国内镜像源」开关打开后，更新检查与安装包下载自动走该代理（默认开启），版本与 SHA-256 仍按官方 feed 校验。
 
 Windows 版是**单文件自包含安装程序**：下载到的就是一个 exe，双击进入安装向导——选择安装路径（默认 `%LOCALAPPDATA%\Programs\Quota Keepalive`，不需要管理员权限），之后自动完成复制程序、解压运行时（Bun / `adapters/` / `provider-plugins/` 都内嵌在 exe 里，解压到 `%LOCALAPPDATA%\QKA\runtime\<version>\`）、创建开始菜单快捷方式与 `HKCU\...\App Paths\QKA.exe`（Win+R 输 `QKA` 可直接启动）。安装完成后可以立即启动 QKA，下次双击安装目录里的 QKA.exe 直接进托盘，不再弹向导。
 

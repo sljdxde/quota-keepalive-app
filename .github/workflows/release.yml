@@ -149,7 +149,11 @@ jobs:
   # 全平台（darwin/arm64 + darwin/amd64 + windows/amd64 + windows/arm64）。
   publish-macos:
     name: Publish macOS artifacts
-    needs: [macos]
+    # 必须同时等 windows：全平台 feed 要用 Windows 产物拼 URL，而本 job 会
+    # 下载 windows-dist。只 needs [macos] 时，mac 构建通常比 Windows 快几十秒，
+    # 此刻 windows-dist 还没上传，download-artifact 直接报
+    # "Artifact not found for name: windows-dist"（2026-11-11 v0.1.76 实测）。
+    needs: [macos, windows]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
