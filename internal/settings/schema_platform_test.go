@@ -26,13 +26,27 @@ func TestFieldsForPlatformFiltersPlatformSpecificFields(t *testing.T) {
 			t.Fatalf("%s 平台不应展示 show_ball", other)
 		}
 	}
-	if len(darwin) != len(Schema)-1 || len(linux) != len(Schema)-1 {
-		t.Fatalf("非 Windows 平台应只少 show_ball 一项：schema=%d darwin=%d linux=%d",
-			len(Schema), len(darwin), len(linux))
+	if !hasKey(darwin, KeyTokenSpeedMenuBar) {
+		t.Fatal("darwin 平台应展示菜单栏速度样式")
+	}
+	for _, other := range []string{"windows", "linux"} {
+		if hasKey(FieldsForPlatform(other), KeyTokenSpeedMenuBar) {
+			t.Fatalf("%s 平台不应展示菜单栏速度样式", other)
+		}
+	}
+	// windows 少 token_speed_menubar；darwin 少 show_ball；linux 两个都少。
+	if len(darwin) != len(Schema)-1 {
+		t.Fatalf("darwin 平台应只少 show_ball：schema=%d darwin=%d",
+			len(Schema), len(darwin))
+	}
+	if len(linux) != len(Schema)-2 {
+		t.Fatalf("linux 平台应少 show_ball 与 token_speed_menubar：schema=%d linux=%d",
+			len(Schema), len(linux))
 	}
 	// 未声明平台（空串）的项在所有平台可见，顺序保持不变。
-	if len(windows) != len(Schema) {
-		t.Fatalf("windows 平台应包含全部设置项：schema=%d windows=%d", len(Schema), len(windows))
+	if len(windows) != len(Schema)-1 {
+		t.Fatalf("windows 平台应包含除菜单栏样式外的全部设置项：schema=%d windows=%d",
+			len(Schema), len(windows))
 	}
 }
 

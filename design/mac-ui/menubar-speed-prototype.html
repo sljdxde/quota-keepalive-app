@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark light">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA macOS 菜单栏 · 速度显示原型</title>
+<style>
+/* ============================================================
+   QKA macOS 菜单栏速度原型
+   - 菜单栏与面板的视觉取自 panel.html / 002设计内容/00-产品定义与UI.md
+   - 只验证「菜单栏这一格怎么显示 tok/s」和「数字怎么变」
+   ============================================================ */
+:root {
+  color-scheme: dark;
+  --desk-1: #1b2333;
+  --desk-2: #2c2438;
+  --desk-3: #101722;
+  --menu-bg: rgba(28, 28, 32, .62);
+  --menu-fg: #f5f5f7;
+  --menu-fg-dim: rgba(245, 245, 247, .78);
+  --menu-line: rgba(255, 255, 255, .10);
+  --proto-bg: #0b0c0f;
+  --proto-panel: rgba(24, 25, 30, .86);
+  --proto-line: rgba(255, 255, 255, .10);
+  --proto-ink: #ededf1;
+  --proto-ink-2: #a6a7b0;
+
+  /* 面板令牌（对齐 panel.html 深色） */
+  --bg: #1b1c20;
+  --card: #25262c;
+  --card-2: #212227;
+  --pill: #2e2f36;
+  --pill-hover: #383942;
+  --seg-thumb: rgba(255,255,255,.15);
+  --seg-edge: inset 0 .5px 0 rgba(255,255,255,.13), 0 1px 3px rgba(0,0,0,.38);
+  --line: rgba(255,255,255,.09);
+  --line-2: rgba(255,255,255,.06);
+  --glass-border: rgba(255,255,255,.11);
+  --fg: #ededf1;
+  --fg-2: #b9b9c1;
+  --muted: #9c9ca6;
+  --faint: #7c7c87;
+  --accent: #a5b4fc;
+  --accent-soft: #2c2e4a;
+  --accent-fg: #15152b;
+  --green: #6fd99b;
+  --green-soft: #1e3a2b;
+  --red: #f28b82;
+  --red-soft: #45272a;
+  --amber: #f2b544;
+  --amber-soft: #3f3220;
+  --blue: #93c5fd;
+  --blue-soft: #23304a;
+  --title-accent: #a5b4fc;
+  --title-accent-soft: #2c2e4a;
+  --title-icon-muted: #b8b8c1;
+  --shadow: inset 0 .5px 0 rgba(255,255,255,.12), inset 0 0 0 .5px rgba(255,255,255,.08);
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --code: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --fs-3xs: 8.5px;
+  --fs-2xs: 9.5px;
+  --fs-xs: 10.5px;
+  --fs-sm: 11.5px;
+  --fs-md: 12.5px;
+  --fs-base: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 16px;
+  --fs-metric: 18px;
+  --fs-display: 38px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --desk-1: #cfe0ee;
+  --desk-2: #e8dcec;
+  --desk-3: #b9cbdd;
+  --menu-bg: rgba(250, 250, 252, .62);
+  --menu-fg: #1c1c21;
+  --menu-fg-dim: rgba(28, 28, 33, .72);
+  --menu-line: rgba(0, 0, 0, .10);
+  --proto-bg: #eef0f3;
+  --proto-panel: rgba(255, 255, 255, .84);
+  --proto-line: rgba(24, 26, 34, .10);
+  --proto-ink: #1c1c21;
+  --proto-ink-2: #5a5b63;
+
+  --bg: #f2f2f5;
+  --card: #ffffff;
+  --card-2: #f8f8fa;
+  --pill: #ffffff;
+  --pill-hover: #f4f4f7;
+  --seg-thumb: #ffffff;
+  --seg-edge: 0 1px 2px rgba(0,0,0,.14), 0 0 0 .5px rgba(0,0,0,.08);
+  --line: rgba(0,0,0,.09);
+  --line-2: rgba(0,0,0,.06);
+  --glass-border: rgba(255,255,255,.74);
+  --fg: #1c1c21;
+  --fg-2: #4b4b53;
+  --muted: #707079;
+  --faint: #9a9aa3;
+  --accent: #4f46e5;
+  --accent-soft: #eeedfd;
+  --accent-fg: #fff;
+  --green: #137a48;
+  --green-soft: #e4f6ec;
+  --red: #c33b3b;
+  --red-soft: #fbe9e9;
+  --amber: #8a4c08;
+  --amber-soft: #fbf0df;
+  --blue: #315fc4;
+  --blue-soft: #eaf0ff;
+  --title-accent: #4f46e5;
+  --title-accent-soft: #eeedfd;
+  --title-icon-muted: #707079;
+  --shadow: inset 0 .5px 0 rgba(255,255,255,.78), inset 0 0 0 .5px rgba(0,0,0,.12);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  color: var(--proto-ink);
+  background:
+    radial-gradient(circle at 10% -6%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
+    radial-gradient(circle at 94% 3%, color-mix(in srgb, var(--blue) 8%, transparent), transparent 26%),
+    var(--proto-bg);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: 40px;
+}
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---------- 原型控制栏 ---------- */
+.proto-head { max-width: 1180px; margin: 0 auto; padding: 22px 24px 16px; }
+.proto-kicker {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 8px; border-radius: 999px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+}
+.proto-head h1 {
+  margin: 9px 0 0; color: var(--proto-ink);
+  font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: -.035em;
+}
+.proto-head .lede {
+  max-width: 820px; margin: 6px 0 0;
+  color: var(--proto-ink-2); font-size: 12.5px; line-height: 1.55;
+}
+.proto-controls {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin-top: 15px; padding: 9px 10px;
+  border: 1px solid var(--proto-line); border-radius: 12px;
+  background: var(--proto-panel);
+  box-shadow: 0 8px 24px rgba(22, 24, 34, .06);
+  backdrop-filter: blur(12px);
+}
+.ctl-group { display: inline-flex; align-items: center; gap: 7px; }
+.ctl-label { color: var(--proto-ink-2); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.seg {
+  display: inline-flex; padding: 2px; border-radius: 8px;
+  background: color-mix(in srgb, var(--proto-ink) 6%, transparent);
+}
+.seg button {
+  height: 28px; padding: 0 11px; border-radius: 6px;
+  color: var(--proto-ink-2); font-size: 12px; font-weight: 600; white-space: nowrap;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.seg button.on {
+  color: var(--proto-ink); background: var(--seg-thumb); box-shadow: var(--seg-edge);
+}
+.ctl {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 10px; border-radius: 8px;
+  color: var(--proto-ink-2);
+  background: color-mix(in srgb, var(--proto-ink) 4%, transparent);
+  font-size: 11.5px; white-space: nowrap;
+}
+.ctl input[type="range"] { width: 104px; accent-color: var(--accent); }
+.ctl output { min-width: 48px; color: var(--proto-ink); font-family: var(--code); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.ctl button { height: 30px; padding: 0 11px; border-radius: 8px; color: var(--proto-ink-2); background: color-mix(in srgb, var(--proto-ink) 5%, transparent); font-size: 11.5px; font-weight: 600; }
+.ctl button:hover { color: var(--proto-ink); }
+.theme-switch { margin-left: auto; }
+.proto-note {
+  margin-top: 9px; padding: 8px 11px;
+  border-radius: 8px;
+  color: var(--proto-ink-2);
+  background: color-mix(in srgb, var(--proto-ink) 4%, transparent);
+  font-size: 11.5px; line-height: 1.5;
+}
+.proto-note b { color: var(--proto-ink); font-weight: 650; }
+.proto-note code { font-family: var(--code); font-size: 10.5px; }
+
+/* ---------- 桌面舞台 ---------- */
+.stage {
+  position: relative;
+  width: min(1180px, calc(100% - 48px));
+  margin: 0 auto;
+  height: 760px;
+  overflow: hidden;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 78% 18%, color-mix(in srgb, var(--desk-2) 90%, transparent), transparent 46%),
+    radial-gradient(circle at 18% 78%, color-mix(in srgb, var(--desk-1) 92%, transparent), transparent 52%),
+    linear-gradient(150deg, var(--desk-1), var(--desk-3));
+  box-shadow:
+    0 0 0 .5px var(--proto-line),
+    0 24px 70px rgba(10, 12, 20, .28);
+  isolation: isolate;
+}
+
+/* ---------- macOS 菜单栏 ---------- */
+.menubar {
+  position: relative; z-index: 4;
+  display: flex; align-items: center;
+  height: 25px; padding: 0 10px 0 12px;
+  color: var(--menu-fg);
+  background: var(--menu-bg);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border-bottom: .5px solid var(--menu-line);
+  font-size: 12.5px; font-weight: 500;
+  letter-spacing: -.005em;
+}
+.mb-left, .mb-right { display: flex; align-items: center; gap: 0; }
+.mb-left { min-width: 0; }
+.mb-right { margin-left: auto; gap: 2px; }
+.mb-item {
+  height: 25px; padding: 0 9px;
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--menu-fg); border-radius: 4px;
+  font-size: 12.5px; font-weight: 500;
+  white-space: nowrap;
+}
+.mb-item.apple { padding: 0 10px 0 6px; }
+.mb-item.apple svg { width: 13px; height: 13px; display: block; fill: currentColor; }
+.mb-item.bold { font-weight: 700; }
+.mb-icon {
+  width: 25px; height: 25px;
+  display: inline-grid; place-items: center;
+  color: var(--menu-fg); border-radius: 4px;
+}
+.mb-icon svg { width: 15px; height: 15px; display: block; }
+.mb-clock {
+  height: 25px; padding: 0 9px;
+  display: inline-flex; align-items: center;
+  color: var(--menu-fg-dim); font-size: 12px; font-weight: 500;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+/* QKA 状态项：三种显示形态 */
+.status-item {
+  position: relative;
+  height: 25px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 0 7px 0 6px;
+  border-radius: 4px;
+  color: var(--menu-fg);
+  cursor: pointer;
+  transition: background .14s ease;
+}
+.status-item:hover { background: color-mix(in srgb, var(--menu-fg) 12%, transparent); }
+.status-item.open { background: color-mix(in srgb, var(--menu-fg) 18%, transparent); }
+.status-glyph { width: 15px; height: 15px; display: grid; place-items: center; flex: none; }
+.status-glyph svg { width: 15px; height: 15px; display: block; fill: currentColor; }
+.status-glyph.ball svg { fill: none; stroke: currentColor; }
+.status-text {
+  color: var(--menu-fg);
+  font-size: 12px; font-weight: 500;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.status-text .tint-active { color: var(--menu-tint-active, #6fd99b); font-weight: 600; }
+.status-text .tint-idle { color: var(--menu-fg-dim); }
+:root { --menu-tint-active: #5fd394; }
+:root[data-theme="light"] { --menu-tint-active: #0f7a43; }
+.status-text .unit { margin-left: 2px; font-size: 11px; color: var(--menu-fg-dim); }
+
+/* 菜单栏里的逐位滚轮：字号小、行高必须严格等于容器高度 */
+/* 逐位滚轮的位移单位是 em，因此高度必须严格等于 1em（= font-size），
+   写死 px 会让每位滚不到正确位置、显示成半截数字。 */
+.status-roll {
+  display: inline-flex; align-items: flex-start; overflow: hidden;
+  height: 1em; line-height: 1; letter-spacing: 0;
+  color: var(--menu-fg);
+  font-size: 12px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.status-roll .cell {
+  display: block; flex: none;
+  width: .62em; height: 1em; line-height: 1;
+  overflow: hidden; text-align: center; position: relative;
+}
+.status-roll .reel {
+  display: block; line-height: 1;
+  transform: translateY(0);
+  transition: transform var(--roll-duration, 110ms) cubic-bezier(.22, .9, .24, 1);
+  will-change: transform;
+}
+.status-roll .reel > span { display: block; height: 1em; line-height: 1; }
+.status-roll .fix { display: inline-block; line-height: 1; }
+.status-roll .unit { margin-left: 2px; color: var(--menu-fg-dim); font-size: 11px; align-self: center; }
+
+/* 宽度提示：菜单栏空间是硬约束 */
+.status-width {
+  position: absolute; top: 0; left: 0; height: 25px;
+  border-inline: 1px dashed color-mix(in srgb, var(--menu-fg) 34%, transparent);
+  pointer-events: none; opacity: 0; transition: opacity .18s ease;
+}
+.stage.show-widths .status-width { opacity: 1; }
+.status-width-tag {
+  position: absolute; top: 27px; left: 50%; transform: translateX(-50%);
+  padding: 1px 5px; border-radius: 4px;
+  color: var(--menu-fg); background: rgba(0, 0, 0, .62);
+  font: 500 9.5px/1.4 var(--code); white-space: nowrap;
+}
+:root[data-theme="light"] .status-width-tag { color: #fff; }
+
+/* ---------- 面板 ---------- */
+.panel-anchor {
+  position: absolute; z-index: 3;
+  top: 25px;
+  width: 392px;
+}
+.panel-notch {
+  position: absolute; top: -5px;
+  width: 12px; height: 12px;
+  background: var(--bg);
+  border-left: .5px solid var(--glass-border);
+  border-top: .5px solid var(--glass-border);
+  transform: rotate(45deg);
+  border-top-left-radius: 3px;
+  z-index: 2;
+}
+.panel {
+  position: relative;
+  display: flex; flex-direction: column;
+  height: 620px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow), 0 18px 50px rgba(0, 0, 0, .34);
+  overflow: hidden;
+}
+.head {
+  display: flex; align-items: center; gap: 5px;
+  height: 44px; padding: 0 7px 0 13px;
+  flex: none;
+}
+.brand { display: flex; align-items: center; gap: 8px; font-size: var(--fs-lg); font-weight: 700; letter-spacing: .035em; }
+.brand-tile {
+  width: 24px; height: 24px; border-radius: 7px;
+  display: grid; place-items: center;
+  background:
+    radial-gradient(120% 90% at 28% 12%, rgba(255,255,255,.20) 0%, rgba(255,255,255,0) 55%),
+    linear-gradient(145deg, #163a43 0%, #0c2a32 52%, #071a21 100%);
+  box-shadow:
+    0 2px 5px rgba(2,16,21,.35),
+    inset 0 .5px 0 rgba(255,255,255,.24),
+    inset 0 0 0 .5px rgba(188,236,225,.42),
+    inset 0 0 0 1px rgba(236,202,139,.10);
+}
+.brand-tile svg { width: 18px; height: 18px; }
+.brand-name { overflow: hidden; max-width: 155px; text-overflow: ellipsis; white-space: nowrap; }
+.head .spacer { flex: 1; }
+.icon {
+  width: 25px; height: 25px;
+  display: inline-grid; place-items: center;
+  border-radius: 7px; color: var(--muted); background: transparent;
+}
+.icon:hover { color: var(--fg); background: var(--pill); }
+.icon svg { width: 15px; height: 15px; display: block; }
+.tabs {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px;
+  margin: 0 9px 8px; padding: 3px;
+  border: .5px solid var(--line-2); border-radius: 9px;
+  background: color-mix(in srgb, var(--pill) 48%, transparent);
+  flex: none;
+}
+.tab {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-width: 0; height: 27px; border-radius: 7px;
+  color: var(--muted); font-size: var(--fs-sm); font-weight: 620;
+  transition: background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.tab.active { color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge); }
+.tab svg { width: 13px; height: 13px; flex: none; }
+.tab > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-badge {
+  min-width: 15px; height: 15px; padding: 0 4px;
+  border-radius: 999px; display: inline-grid; place-items: center;
+  color: var(--accent); background: var(--accent-soft);
+  font-size: var(--fs-2xs); line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.panel-content { flex: 1; min-height: 0; margin: 0 9px; overflow: hidden; }
+.panel-page { display: none; height: 100%; min-height: 0; overflow: auto; }
+.panel-page.active { display: flex; flex-direction: column; }
+.speed-page { gap: 9px; }
+
+/* 速度卡（照抄 panel.html） */
+.speed-hero {
+  flex: none; min-height: 148px; padding: 14px;
+  border-radius: 12px; background: var(--card);
+  box-shadow: 0 0 0 .5px var(--line), 0 5px 16px rgba(20,22,30,.04);
+}
+.speed-hero.active {
+  box-shadow:
+    0 0 0 .5px color-mix(in srgb, var(--blue) 18%, var(--line)),
+    0 5px 16px rgba(20,22,30,.05);
+}
+.speed-caption {
+  display: flex; align-items: center; gap: 7px;
+  min-width: 0; color: var(--fg-2); font-size: var(--fs-sm); font-weight: 560;
+}
+.speed-live {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--faint); flex: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--faint) 12%, transparent);
+}
+.speed-hero.active .speed-live {
+  background: var(--blue);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 14%, transparent);
+  animation: panel-live 1.2s ease-in-out infinite;
+}
+@keyframes panel-live { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--blue) 5%, transparent); } }
+.speed-caption .spacer { flex: 1; }
+.speed-updated { color: var(--muted); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; }
+.speed-theme { color: var(--muted); font-size: var(--fs-xs); font-weight: 500; }
+.speed-line { display: flex; align-items: center; gap: 7px; min-height: 60px; margin-top: 8px; }
+.speed-line .panel-number {
+  display: inline-flex;
+  color: var(--fg);
+  font-size: var(--fs-display); line-height: .94; font-weight: 730;
+  letter-spacing: -.055em; font-variant-numeric: tabular-nums;
+}
+.speed-line small { color: var(--fg-2); font-size: var(--fs-md); font-weight: 600; }
+.speed-title {
+  margin-left: auto; align-self: center;
+  min-height: 32px; padding: 4px 12px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--title-accent); background: var(--title-accent-soft);
+  font-size: var(--fs-metric); font-weight: 700; white-space: nowrap;
+}
+.speed-title .title-rank-mark { --title-rank-size: 23px; padding: 1px; }
+.speed-title .title-rank-count { display: none; }
+.speed-foot { display: flex; align-items: end; gap: 10px; margin-top: 8px; }
+.speed-sparkline { height: 24px; flex: 1; display: flex; align-items: end; gap: 3px; min-width: 0; }
+.speed-sparkline i {
+  flex: 1; min-width: 2px; height: 22%;
+  border-radius: 99px 99px 2px 2px;
+  background: linear-gradient(to top, color-mix(in srgb, var(--blue) 8%, transparent), color-mix(in srgb, var(--blue) 50%, var(--line)));
+  opacity: .34;
+  transform-origin: bottom;
+  transition: height .32s cubic-bezier(.2,.8,.2,1), opacity .2s ease;
+}
+.speed-sparkline i.hot {
+  background: linear-gradient(to top, color-mix(in srgb, var(--title-accent) 12%, transparent), var(--title-accent));
+  opacity: .76;
+}
+.speed-hero:not(.active) .speed-sparkline i { opacity: .18; }
+.speed-meta {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+  color: var(--muted); font-size: var(--fs-xs); white-space: nowrap;
+}
+.speed-meta b { color: var(--fg-2); font-weight: 650; }
+
+.agent-dir { min-height: 0; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.dir-head {
+  display: flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: var(--fs-2xs); font-weight: 650;
+}
+.dir-head span:first-child { color: var(--fg-2); letter-spacing: .04em; text-transform: uppercase; }
+.dir-head .spacer { flex: 1; }
+.agent-list {
+  min-height: 0; flex: 1; overflow: hidden;
+  border-radius: 10px; background: var(--card);
+  box-shadow: 0 0 0 .5px var(--line);
+}
+.agent-card { padding: 9px 10px; }
+.agent-card + .agent-card { border-top: .5px solid var(--line-2); }
+.agent-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.agent-identity { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.agent-copy { min-width: 0; }
+.agent-name { display: flex; align-items: center; gap: 5px; color: var(--fg); font-size: var(--fs-sm); font-weight: 650; }
+.agent-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-live-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--faint); }
+.source-live-dot.active {
+  background: var(--green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 13%, transparent);
+  animation: panel-live 1.2s ease-in-out infinite;
+}
+.agent-sub {
+  overflow: hidden; margin-top: 2px;
+  color: var(--muted); font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-rate { color: var(--fg-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.agent-rate b { color: var(--fg); font-size: var(--fs-md); font-weight: 680; }
+.agent-rate small { display: block; margin-top: 1px; color: var(--muted); font-size: var(--fs-3xs); }
+.agent-card.generating .agent-rate b { color: var(--blue); }
+.source-logo {
+  width: 21px; height: 21px; flex: none;
+  display: grid; place-items: center;
+  border-radius: 6px; color: var(--blue); background: var(--blue-soft);
+}
+.source-logo svg { width: 14px; height: 14px; }
+.source-logo.dsh { color: #4d6bfe; background: #eef1ff; }
+.source-logo.codex { color: #1f2937; background: #eef2f7; }
+:root[data-theme="dark"] .source-logo.dsh { color: #9db0ff; background: #232a45; }
+:root[data-theme="dark"] .source-logo.codex { color: #d7e2ee; background: #28313d; }
+.agent-sessions { margin: 7px 0 -2px 29px; padding: 4px 0 0; border-top: .5px solid var(--line-2); }
+.agent-session {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; gap: 7px; min-height: 27px;
+}
+.agent-session + .agent-session { border-top: .5px solid var(--line-2); }
+.agent-session-main { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.agent-session-copy { min-width: 0; }
+.agent-session-name { display: block; overflow: hidden; color: var(--fg-2); font-size: var(--fs-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.agent-session-meta { display: block; overflow: hidden; color: var(--muted); font-size: var(--fs-3xs); text-overflow: ellipsis; white-space: nowrap; }
+.agent-session-rate { color: var(--fg-2); font-size: var(--fs-2xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.foot {
+  display: flex; align-items: center; gap: 5px;
+  min-height: 48px; padding: 8px 8px 0 12px;
+  color: var(--fg-2); font-size: var(--fs-md);
+  flex: none;
+}
+.foot .spacer { flex: 1; }
+.text { padding: 0 5px; color: var(--fg-2); background: transparent; font-size: var(--fs-md); white-space: nowrap; }
+.text:hover { color: var(--fg); }
+.text.quiet { color: var(--faint); }
+
+/* ---------- 数字滚轮（面板大数字） ---------- */
+.roll {
+  display: inline-flex; align-items: flex-start; overflow: hidden;
+  line-height: 1; letter-spacing: 0;
+}
+.roll .cell {
+  display: block; flex: none;
+  width: .62em; height: 1em; line-height: 1em;
+  overflow: hidden; text-align: center; position: relative;
+}
+.roll .reel {
+  display: block; line-height: 1em;
+  transform: translateY(0);
+  transition: transform var(--roll-duration, 110ms) cubic-bezier(.22, .9, .24, 1);
+  will-change: transform;
+}
+.roll .reel > span { display: block; height: 1em; line-height: 1em; font-variant-numeric: tabular-nums; }
+.roll .fix { display: inline-block; line-height: 1em; }
+@media (prefers-reduced-motion: reduce) {
+  .roll .reel, .status-roll .reel { transition: none; }
+}
+
+/* ---------- 四形态并排 ---------- */
+.compare {
+  width: min(1180px, calc(100% - 48px));
+  margin: 14px auto 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--proto-line);
+  border-radius: 12px;
+  background: var(--proto-panel);
+}
+.compare-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 10px;
+  color: var(--proto-ink-2); font-size: 11.5px;
+}
+.compare-head b { color: var(--proto-ink); font-size: 12.5px; font-weight: 700; }
+.compare-head .spacer { flex: 1; }
+.compare-value { color: var(--proto-ink-2); font-variant-numeric: tabular-nums; }
+.compare-value b { color: var(--proto-ink); font-variant-numeric: tabular-nums; }
+.compare-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.compare-cell {
+  min-width: 0; padding: 10px 11px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--proto-ink) 5%, transparent);
+}
+.compare-sample {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 25px; padding: 0 7px 0 6px;
+  border-radius: 4px;
+  color: var(--proto-ink);
+  background: color-mix(in srgb, var(--proto-ink) 8%, transparent);
+}
+.compare-sample .status-text { font-size: 12px; }
+.compare-sample .unit { margin-left: 2px; font-size: 11px; color: var(--proto-ink-2); }
+.compare-sample .status-roll { color: var(--proto-ink); }
+.compare-sample .status-glyph { color: var(--proto-ink); }
+.compare-sample .status-glyph svg { width: 15px; height: 15px; }
+.compare-label {
+  display: flex; align-items: baseline; gap: 6px;
+  margin-top: 8px;
+  color: var(--proto-ink); font-size: 11.5px; font-weight: 650;
+}
+.compare-label span {
+  color: var(--proto-ink-2);
+  font: 500 10px/1 var(--code);
+  font-variant-numeric: tabular-nums;
+}
+.compare-cell p { margin: 4px 0 0; color: var(--proto-ink-2); font-size: 10.5px; line-height: 1.5; }
+
+/* ---------- 菜单栏以外的说明区 ---------- */
+.notes {
+  width: min(1180px, calc(100% - 48px));
+  margin: 18px auto 0;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;
+}
+.note-card {
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--proto-line);
+  background: var(--proto-panel);
+}
+.note-card h3 { margin: 0 0 6px; font-size: 12.5px; font-weight: 700; letter-spacing: -.01em; }
+.note-card p { margin: 0; color: var(--proto-ink-2); font-size: 11.5px; line-height: 1.55; }
+.note-card .tagline {
+  display: inline-block; margin-bottom: 6px; padding: 1px 6px;
+  border-radius: 5px; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.note-card.warn .tagline { color: #e0a24a; background: rgba(224, 162, 74, .16); }
+.note-card code { font-family: var(--code); font-size: 10.5px; }
+
+@media (max-width: 900px) {
+  .proto-head, .stage, .notes, .compare { width: auto; margin-inline: 16px; padding-inline: 0; }
+  .stage { height: 700px; }
+  .notes { grid-template-columns: 1fr; }
+  .compare-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .panel-anchor { transform: scale(.92); transform-origin: top left; }
+}
+</style>
+</head>
+<body>
+<header class="proto-head">
+  <span class="proto-kicker">PROTOTYPE · MACOS MENU BAR</span>
+  <h1>macOS 菜单栏：速度数字怎么显示、怎么变</h1>
+  <p class="lede">
+    菜单栏只有 25px 高、横向空间和其他状态项抢，所以「数字跳动」在这里不是纯视觉问题。
+    下面四种形态都在同一格位置对比，底部还有并排宽度对照，面板同步跟着变。
+  </p>
+
+  <div class="proto-controls">
+    <div class="ctl-group">
+      <span class="ctl-label">菜单栏形态</span>
+      <div class="seg" id="form-seg" role="group" aria-label="菜单栏显示形态">
+        <button data-form="text" class="on">纯文本 label</button>
+        <button data-form="roll">图标数字·逐位滚动</button>
+        <button data-form="compact">只显示数字</button>
+        <button data-form="tinted">分段彩色</button>
+      </div>
+    </div>
+    <div class="ctl-group">
+      <span class="ctl-label">节奏</span>
+      <div class="seg" id="mode-seg" role="group" aria-label="刷新节奏">
+        <button data-mode="current">现状</button>
+        <button data-mode="fast">仅提速</button>
+        <button data-mode="optimized" class="on">完整优化</button>
+      </div>
+    </div>
+    <label class="ctl">采样
+      <input id="interval" type="range" min="50" max="1000" step="50" value="200">
+      <output id="interval-out">200 ms</output>
+    </label>
+    <button class="ctl" id="pause" type="button">暂停演示</button>
+    <button class="ctl" id="widths" type="button">显示占用宽度</button>
+    <div class="ctl theme-switch">
+      <button id="theme-light" type="button">浅色</button>
+      <button id="theme-dark" type="button">深色</button>
+    </div>
+  </div>
+
+  <div class="proto-note" id="form-note">
+    <b>纯文本 label</b>：现在产品用的方式，<code>NSStatusItem.button.title</code> 是纯文本，只能整体换字，做不到逐位滚动。
+  </div>
+</header>
+
+<main class="stage" id="stage">
+  <!-- ===================== macOS 菜单栏 ===================== -->
+  <div class="menubar" role="banner">
+    <div class="mb-left">
+      <span class="mb-item apple" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M16.4 12.7c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.9-1.5-.1-2.8.9-3.5.9s-1.9-.9-3.1-.9c-1.6 0-3.1.9-3.9 2.4-1.7 2.9-.4 7.2 1.2 9.6.8 1.2 1.7 2.4 3 2.4 1.2 0 1.6-.8 3.1-.8s1.9.8 3.1.8 2.1-1.2 2.9-2.3c.9-1.3 1.3-2.6 1.3-2.7-.1 0-2.7-1-2.7-4zM14.2 5.6c.6-.8 1.1-1.9 1-3-.9.1-2 .6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 .1 2-.5 2.7-1.3z"/></svg>
+      </span>
+      <span class="mb-item bold">QKA</span>
+      <span class="mb-item">文件</span>
+      <span class="mb-item">编辑</span>
+      <span class="mb-item">显示</span>
+      <span class="mb-item">窗口</span>
+      <span class="mb-item">帮助</span>
+    </div>
+    <div class="mb-right">
+      <span class="mb-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+          <path d="M2 6.2a8.4 8.4 0 0 1 12 0M4.3 8.7a5.2 5.2 0 0 1 7.4 0M6.6 11.1a2.1 2.1 0 0 1 2.8 0"/>
+          <circle cx="8" cy="13.2" r=".9" fill="currentColor" stroke="none"/>
+        </svg>
+      </span>
+      <span class="mb-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+          <rect x="2.5" y="7" width="17" height="10" rx="2.6"/>
+          <rect x="4.6" y="9.1" width="10" height="5.8" rx="1.2" fill="currentColor" stroke="none"/>
+          <path d="M21.2 10.4v3.2"/>
+        </svg>
+      </span>
+
+      <!-- QKA 状态项：形态由 JS 切换 -->
+      <div class="status-item" id="status-item" role="button" tabindex="0" aria-label="Quota Keepalive 速度">
+        <span class="status-width" id="status-width"><span class="status-width-tag" id="status-width-tag">—</span></span>
+        <span class="status-glyph" id="status-glyph" aria-hidden="true"></span>
+        <span class="status-text" id="status-text">0 tok/s</span>
+        <span class="status-roll" id="status-roll" aria-hidden="true" hidden></span>
+      </div>
+
+      <span class="mb-clock" id="mb-clock">00:00</span>
+    </div>
+  </div>
+
+  <!-- ===================== 吸附面板 ===================== -->
+  <div class="panel-anchor" id="panel-anchor">
+    <span class="panel-notch" aria-hidden="true"></span>
+    <div class="panel" role="dialog" aria-label="Quota Keepalive 面板">
+      <div class="head">
+        <div class="brand">
+          <span class="brand-tile" aria-hidden="true">
+            <svg viewBox="0 0 64 64">
+              <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="#F8F1DE" stroke-width="7.4"
+                      stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
+              <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none"
+                    stroke="#FFD06B" stroke-width="6.2" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="brand-name">Quota Keepalive</span>
+        </div>
+        <span class="spacer"></span>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M13.2 6.4A5.5 5.5 0 1 0 13 9.5M13.2 6.4V2.8m0 3.6h-3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M9 2.5h4.5V7M13.2 2.8 8 8M6.5 3H3.8A1.3 1.3 0 0 0 2.5 4.3v7.9a1.3 1.3 0 0 0 1.3 1.3h7.9a1.3 1.3 0 0 0 1.3-1.3v-2.7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+        </span>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <span class="tab" role="tab" aria-selected="false">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M3 8.4 6.2 11.6 13 4.8" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>签到</span>
+        </span>
+        <span class="tab active" role="tab" aria-selected="true">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M2.2 11.7a6 6 0 1 1 11.6 0" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="m8 9 3.1-3.1" stroke="currentColor" stroke-width="1.55" stroke-linecap="round"/><circle cx="8" cy="9" r="1.15" fill="currentColor"/></svg>
+          <span>速度</span>
+          <span class="tab-badge" id="speed-badge">0</span>
+        </span>
+        <span class="tab" role="tab" aria-selected="false">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M5.2 3.2 3.7 1.7 3 5.6M10.8 3.2l1.5-1.5.7 3.9" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><path d="M3.3 8.1c0-2.4 2.1-4.2 4.7-4.2s4.7 1.8 4.7 4.2M4.1 10.2c.9 2 2.2 3 3.9 3s3-1 3.9-3" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="6.2" cy="8.4" r=".7" fill="currentColor"/><circle cx="9.8" cy="8.4" r=".7" fill="currentColor"/></svg>
+          <span>逗宠物</span>
+        </span>
+      </div>
+
+      <div class="panel-content">
+        <section class="panel-page speed-page active" role="tabpanel">
+          <section class="speed-hero active" id="panel-speed" aria-label="实时 Token 速度">
+            <div class="speed-caption">
+              <i class="speed-live" aria-hidden="true"></i>
+              <span id="panel-state">生成中 2</span>
+              <span class="spacer"></span>
+              <span class="speed-updated" id="panel-updated">—</span>
+              <span class="speed-theme" id="panel-theme">交通工具</span>
+            </div>
+            <div class="speed-line">
+              <strong class="panel-number" id="panel-output" role="img">0</strong>
+              <small>tok/s</small>
+              <span class="speed-title">
+                <span id="panel-icon" aria-hidden="true"></span>
+                <span id="panel-title">待机</span>
+              </span>
+            </div>
+            <div class="speed-foot">
+              <div class="speed-sparkline" id="panel-sparkline" aria-hidden="true"></div>
+              <div class="speed-meta">
+                <span><b id="panel-agents">0</b> 个 Agent 活跃</span>
+                <span>今日 <b id="panel-today">0</b></span>
+              </div>
+            </div>
+          </section>
+
+          <div class="agent-dir">
+            <div class="dir-head">
+              <span>Agents</span><span id="dir-count">2 个 Agent</span>
+              <span class="spacer"></span><span id="dir-sessions">最近 10 分钟 · 2 个会话</span>
+            </div>
+            <div class="agent-list">
+              <article class="agent-card generating">
+                <div class="agent-head">
+                  <div class="agent-identity">
+                    <span class="source-logo dsh" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" fill="none"><path d="M2.4 5.6c1.6-1.8 3.1-1.8 4.7 0 1.6 1.8 3.1 1.8 4.7 0 1-.1 1.5.3 1.8.7" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M2.4 9.2c1.6-1.8 3.1-1.8 4.7 0 1.6 1.8 3.1 1.8 4.7 0" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M2.4 12.6c1.6-1.6 3.1-1.6 4.7 0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".55"/></svg>
+                    </span>
+                    <div class="agent-copy">
+                      <div class="agent-name"><i class="source-live-dot active"></i><span>DeepSeek Harness</span></div>
+                      <div class="agent-sub" id="dsh-sub">今日 2.34 亿 · 2 个会话</div>
+                    </div>
+                  </div>
+                  <div class="agent-rate"><b id="dsh-rate">0</b> tok/s<small>正在生成</small></div>
+                </div>
+                <div class="agent-sessions">
+                  <div class="agent-session">
+                    <div class="agent-session-main"><i class="source-live-dot active"></i><div class="agent-session-copy"><span class="agent-session-name">quota-keepalive-agent</span><span class="agent-session-meta">deepseek-v4-pro · 生成中</span></div></div>
+                    <span class="agent-session-rate" id="dsh-session">0 tok/s</span>
+                  </div>
+                  <div class="agent-session">
+                    <div class="agent-session-main"><i class="source-live-dot"></i><div class="agent-session-copy"><span class="agent-session-name">dsh-launcher</span><span class="agent-session-meta">deepseek-v4-pro · 最近活跃</span></div></div>
+                    <span class="agent-session-rate">0 tok/s</span>
+                  </div>
+                </div>
+              </article>
+              <article class="agent-card generating">
+                <div class="agent-head">
+                  <div class="agent-identity">
+                    <span class="source-logo codex" aria-hidden="true">
+                      <svg viewBox="0 0 16 16" fill="none"><path d="m8 1.9 5.2 3v6.2L8 14.1l-5.2-3V4.9L8 1.9Z" stroke="currentColor" stroke-width="1.25"/><path d="m5.7 8 1.5 1.5L10.4 6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
+                    <div class="agent-copy">
+                      <div class="agent-name"><i class="source-live-dot active"></i><span>Codex</span></div>
+                      <div class="agent-sub" id="codex-sub">今日 4,120 万 · 1 个会话</div>
+                    </div>
+                  </div>
+                  <div class="agent-rate"><b id="codex-rate">0</b> tok/s<small>正在生成</small></div>
+                </div>
+                <div class="agent-sessions">
+                  <div class="agent-session">
+                    <div class="agent-session-main"><i class="source-live-dot active"></i><div class="agent-session-copy"><span class="agent-session-name">qka-standalone</span><span class="agent-session-meta">gpt-5.1-codex · 生成中</span></div></div>
+                    <span class="agent-session-rate" id="codex-session">0 tok/s</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="foot">
+        <span>自动刷新</span>
+        <span class="spacer"></span>
+        <button class="text" type="button">打开主窗口</button>
+        <button class="text quiet" type="button">退出</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<section class="compare" aria-label="四种菜单栏形态并排对照">
+  <div class="compare-head">
+    <b>四种形态并排</b>
+    <span>同一速度值下，占用的横向空间与观感差别</span>
+    <span class="spacer"></span>
+    <span class="compare-value">当前 <b id="compare-value">0</b> tok/s</span>
+  </div>
+  <div class="compare-grid">
+    <div class="compare-cell">
+      <div class="compare-sample">
+        <span class="status-glyph" aria-hidden="true" data-glyph="q"></span>
+        <span class="status-text" data-sample="text">0<span class="unit">tok/s</span></span>
+      </div>
+      <div class="compare-label">纯文本 label<span id="w-text">—</span></div>
+      <p>现状。整体换字，无逐位滚动。</p>
+    </div>
+    <div class="compare-cell">
+      <div class="compare-sample">
+        <span class="status-glyph" aria-hidden="true" data-glyph="q"></span>
+        <span class="status-text" data-sample="tinted">0<span class="unit">tok/s</span></span>
+      </div>
+      <div class="compare-label">分段彩色<span id="w-tinted">—</span></div>
+      <p>Wails 原生支持，有速度时数字变绿。</p>
+    </div>
+    <div class="compare-cell">
+      <div class="compare-sample">
+        <span class="status-glyph" aria-hidden="true" data-glyph="q"></span>
+        <span class="status-text" data-sample="compact">0</span>
+      </div>
+      <div class="compare-label">只显示数字<span id="w-compact">—</span></div>
+      <p>省掉单位，横向最省。</p>
+    </div>
+    <div class="compare-cell">
+      <div class="compare-sample">
+        <span class="status-glyph" aria-hidden="true" data-glyph="q"></span>
+        <span class="status-roll" data-sample="roll" aria-hidden="true"></span>
+      </div>
+      <div class="compare-label">图标数字·滚动<span id="w-roll">—</span></div>
+      <p>逐位滚动，但要自绘模板图。</p>
+    </div>
+  </div>
+</section>
+
+<section class="notes">
+  <article class="note-card">
+    <span class="tagline">纯文本 label</span>
+    <h3>现在的方式</h3>
+    <p><code>NSStatusItem.button.title</code> 是纯文本，只能整体替换。可以做数值缓动（每帧写新字符串），但做不到逐位滚动，也没有等宽保证，数字位宽变化时整格会横向抖。</p>
+  </article>
+  <article class="note-card warn">
+    <span class="tagline">需要换实现</span>
+    <h3>图标数字·逐位滚动</h3>
+    <p>把速度数字渲染成模板图交给 <code>NSStatusItem.button.image</code>，才可能在菜单栏里逐位滚动。代价是：图标要按深浅色两套、宽度要自己算，且系统不会帮你对齐其他状态项。</p>
+  </article>
+  <article class="note-card">
+    <span class="tagline">空间账</span>
+    <h3>这格到底能占多宽</h3>
+    <p>菜单栏横向是公共资源。打开「显示占用宽度」可以看到四种形态各占多少（三位数速度、1280 宽视口实测）：带 <code>tok/s</code> 后缀约 83px，纯数字约 55px；滚轮形态宽度相同，但需要自绘位图。</p>
+  </article>
+</section>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===== 与 title-system.js 对齐的称号体系 =====
+  var THRESHOLDS = [0.5, 8, 12, 16, 24, 32, 48, 68, 96, 136, 200, 280, 400];
+  var RANKS = ["步行", "自行车", "电动车", "摩托车", "汽车", "跑车", "高铁", "赛车", "磁悬浮列车", "喷气客机", "战斗机", "高超音速飞机", "火箭"];
+  var CAR_SVG = '<svg class="title-rank-sigil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>' +
+    '<circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>';
+
+  // 菜单栏 glyph：Q 模板（现状）与伙伴剪影
+  var Q_GLYPH = '<svg viewBox="0 0 64 64"><circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="7.4" stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/><path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none" stroke="currentColor" stroke-width="6.2" stroke-linecap="round"/></svg>';
+  var PET_GLYPH = '<svg viewBox="0 0 24 24"><path d="M8.2 5.1c-1.1-.7-2.5-.6-2.9.7-.4 1.3.6 2.4 1.7 2.6M15.8 5.1c1.1-.7 2.5-.6 2.9.7.4 1.3-.6 2.4-1.7 2.6"/><ellipse cx="12" cy="13.4" rx="6.1" ry="5.2"/><circle cx="9.6" cy="12.6" r=".95" fill="var(--menu-bg)"/><circle cx="14.4" cy="12.6" r=".95" fill="var(--menu-bg)"/></svg>';
+
+  var sessions = [
+    { key: "dsh", base: 72, phase: 0.6, tokens: 0, history: [], todayBase: 234000000, pauseLeft: 0, burst: 0, burstLeft: 0 },
+    { key: "codex", base: 38, phase: 2.4, tokens: 0, history: [], todayBase: 41200000, pauseLeft: 0, burst: 0, burstLeft: 0 }
+  ];
+
+  var form = "text";
+  var mode = "optimized";
+  var collectMs = 200;
+  var paused = false;
+  var simSeconds = 0;
+  var lastTick = performance.now();
+  var lastSampleAt = 0;
+  var sampleIndex = 0;
+  var displayRate = 0;
+  var displaySessions = [0, 0];
+  var lastMeasured = 0;
+  var cycleStart = 0;
+  var cycleRates = [];
+  var firstSample = true;
+  var spark = [];
+  for (var s = 0; s < 24; s++) spark.push(0);
+
+  var NOTES = {
+    text: "<b>纯文本 label</b>：现在产品用的方式，<code>NSStatusItem.button.title</code> 是纯文本，只能整体换字，做不到逐位滚动。",
+    roll: "<b>图标数字·逐位滚动</b>：把数字画成模板图交给 <code>button.image</code>，菜单栏里才可能逐位滚动；代价是要维护深浅色两套图与自算宽度。",
+    compact: "<b>只显示数字</b>：省掉 <code>tok/s</code> 后缀，最省横向空间；单位靠 tooltip 和面板补足。",
+    tinted: "<b>分段彩色</b>：Wails 支持 <code>SystemTrayLabelParser</code> 返回带颜色的分段，可以让数字在有速度时变绿。仍是纯文本，不会滚动，但「活着/停了」一眼可见。"
+  };
+
+  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+  function formatRate(value) {
+    var number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return "0";
+    if (number < 10) {
+      var rounded = Math.round(number * 10) / 10;
+      return rounded >= 10 ? "10" : rounded.toFixed(1);
+    }
+    if (number < 1000) return String(Math.round(number));
+    var units = [{ value: 1e9, suffix: "B" }, { value: 1e6, suffix: "M" }, { value: 1e3, suffix: "k" }];
+    for (var u = 0; u < units.length; u++) {
+      var scaled = number / units[u].value;
+      if (scaled >= 1) return (scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(2)) + units[u].suffix;
+    }
+    return String(Math.round(number));
+  }
+  function formatCount(value) {
+    var number = Math.max(0, Number(value) || 0);
+    if (number >= 1e8) {
+      var scaled = number / 1e8;
+      return (scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)).replace(/\.0+$/, "") + " 亿";
+    }
+    if (number >= 1e4) {
+      var scaled2 = number / 1e4;
+      return (scaled2 >= 100 ? scaled2.toFixed(0) : scaled2.toFixed(1)).replace(/\.0$/, "") + " 万";
+    }
+    return String(Math.round(number));
+  }
+  function clockText(date) {
+    return date.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  // ===== 数字滚轮 =====
+  function setRoll(el, value, opts) {
+    if (!el) return;
+    var options = opts || {};
+    var text = String(value);
+    if (el.dataset.text === text && el.querySelector(".reel")) return;
+    var chars = text.split("");
+    var needRebuild = el.dataset.len !== String(chars.length) || !el.querySelector(".reel");
+    if (needRebuild) {
+      el.innerHTML = chars.map(function (ch) {
+        if (ch < "0" || ch > "9") return '<span class="fix">' + ch + "</span>";
+        return '<span class="cell"><span class="reel">' +
+          "0123456789".split("").map(function (d) { return "<span>" + d + "</span>"; }).join("") +
+          "</span></span>";
+      }).join("");
+      el.dataset.len = String(chars.length);
+      var reels = Array.prototype.slice.call(el.querySelectorAll(".reel"));
+      var index = 0;
+      chars.forEach(function (ch) {
+        if (ch < "0" || ch > "9") return;
+        reels[index].style.transition = "none";
+        reels[index].style.transform = "translateY(" + (-Number(ch)) + "em)";
+        index++;
+      });
+      void el.offsetHeight;
+      reels.forEach(function (reel) { reel.style.transition = ""; });
+    } else {
+      var reels2 = Array.prototype.slice.call(el.querySelectorAll(".reel"));
+      var index2 = 0;
+      chars.forEach(function (ch) {
+        if (ch < "0" || ch > "9") return;
+        reels2[index2].style.transform = "translateY(" + (-Number(ch)) + "em)";
+        index2++;
+      });
+    }
+    el.dataset.text = text;
+    if (options.unit) {
+      var unit = el.querySelector(".unit");
+      if (!unit) {
+        unit = document.createElement("span");
+        unit.className = "unit";
+        unit.textContent = options.unit;
+        el.appendChild(unit);
+      }
+    }
+  }
+
+  function titleFor(rate, active) {
+    if (!active && rate < THRESHOLDS[0]) return { level: 0, name: "待机", next: THRESHOLDS[0], progress: 0 };
+    var level = 0;
+    for (var i = 0; i < THRESHOLDS.length; i++) {
+      if (rate >= THRESHOLDS[i]) level = i + 1;
+    }
+    if (level === 0) return { level: 0, name: "待机", next: THRESHOLDS[0], progress: 0 };
+    var lower = THRESHOLDS[level - 1];
+    var upper = level < THRESHOLDS.length ? THRESHOLDS[level] : null;
+    var progress = upper === null ? 1 : clamp((rate - lower) / (upper - lower), 0, 1);
+    return { level: level, name: RANKS[level - 1], next: upper, progress: progress };
+  }
+  function rankMarkup(progress) {
+    return '<span class="title-rank-mark" style="--title-rank:' + (progress * 100).toFixed(1) + '%">' +
+      '<span class="title-rank-orb">' + CAR_SVG + "</span></span>";
+  }
+
+  // ===== 模拟流式 token 到达 =====
+  function advance(dt) {
+    simSeconds += dt;
+    sessions.forEach(function (session) {
+      if (session.pauseLeft > 0) {
+        session.pauseLeft -= dt;
+      } else if (simSeconds > 4 && Math.random() < dt / 11) {
+        session.pauseLeft = 1.6 + Math.random() * 2.4;
+      }
+      if (Math.random() < dt / 5) {
+        session.burst = 10 + Math.random() * 16;
+        session.burstLeft = 0.9 + Math.random() * 0.8;
+      }
+      if (session.burstLeft > 0) session.burstLeft -= dt;
+      var wobble = Math.sin(simSeconds * 0.68 + session.phase) * 0.10 +
+        Math.sin(simSeconds * 1.71 + session.phase * 2.1) * 0.05;
+      var burst = session.burstLeft > 0 ? session.burst : 0;
+      var rate = session.pauseLeft > 0 ? 0 : Math.max(0, session.base * (1 + wobble) + burst);
+      session.rate = rate;
+      session.tokens += rate * dt;
+      session.history.push({ t: simSeconds, tokens: session.tokens });
+      while (session.history.length > 2 && session.history[0].t < simSeconds - 3.2) session.history.shift();
+    });
+  }
+  function windowRate(session) {
+    var cutoff = simSeconds - 1.5;
+    var base = session.history.length ? session.history[0] : null;
+    for (var i = 0; i < session.history.length; i++) {
+      if (session.history[i].t >= cutoff) { base = session.history[i]; break; }
+    }
+    if (!base) return 0;
+    var elapsed = simSeconds - base.t;
+    if (elapsed <= 0) return 0;
+    return Math.max(0, (session.tokens - base.tokens) / elapsed);
+  }
+  function measuredRates() {
+    return sessions.map(function (session) { return windowRate(session); });
+  }
+
+  function publish(measured, rates) {
+    sampleIndex++;
+    lastMeasured = measured;
+    if (firstSample) {
+      displaySessions = rates.slice();
+      displayRate = measured;
+      firstSample = false;
+    } else if (mode === "optimized") {
+      for (var i = 0; i < sessions.length; i++) {
+        displaySessions[i] += (rates[i] - displaySessions[i]) * 0.52;
+      }
+      displayRate = displaySessions.reduce(function (sum, value) { return sum + value; }, 0);
+    } else {
+      displaySessions = rates.slice();
+      displayRate = measured;
+    }
+    render();
+  }
+
+  function sampleNow() {
+    var rates = measuredRates();
+    var measured = rates.reduce(function (sum, value) { return sum + value; }, 0);
+    if (mode === "current") {
+      cycleRates.push(rates);
+      if (sampleIndex === 0) {
+        cycleStart = simSeconds;
+        publish(measured, rates);
+        return;
+      }
+      if (simSeconds - cycleStart >= 4.8) {
+        var length = cycleRates.length || 1;
+        var average = sessions.map(function (_, index) {
+          var sum = 0;
+          cycleRates.forEach(function (snapshot) { sum += snapshot[index] || 0; });
+          return sum / length;
+        });
+        cycleRates = [];
+        cycleStart = simSeconds;
+        publish(average.reduce(function (sum, value) { return sum + value; }, 0), average);
+      }
+      return;
+    }
+    publish(measured, rates);
+  }
+
+  // ===== 渲染 =====
+  function renderStatusItem(rate, active) {
+    var glyph = document.getElementById("status-glyph");
+    var textEl = document.getElementById("status-text");
+    var rollEl = document.getElementById("status-roll");
+    var digits = formatRate(rate);
+
+    glyph.innerHTML = active ? PET_GLYPH : Q_GLYPH;
+    glyph.className = "status-glyph" + (active ? "" : "");
+
+    if (form === "roll") {
+      textEl.hidden = true;
+      rollEl.hidden = false;
+      rollEl.classList.add("status-roll");
+      setRoll(rollEl, digits, { unit: "tok/s" });
+    } else if (form === "compact") {
+      textEl.hidden = false;
+      rollEl.hidden = true;
+      textEl.className = "status-text";
+      textEl.textContent = digits;
+      textEl.title = digits + " tok/s";
+    } else if (form === "tinted") {
+      textEl.hidden = false;
+      rollEl.hidden = true;
+      textEl.className = "status-text";
+      textEl.innerHTML = '<span class="' + (active ? "tint-active" : "tint-idle") + '">' +
+        digits + '</span><span class="unit">tok/s</span>';
+    } else {
+      textEl.hidden = false;
+      rollEl.hidden = true;
+      textEl.className = "status-text";
+      textEl.innerHTML = digits + '<span class="unit">tok/s</span>';
+    }
+
+    // 宽度测量（给「显示占用宽度」用）
+    var item = document.getElementById("status-item");
+    item.setAttribute("aria-label", "Quota Keepalive 速度 " + digits + " tok/s");
+    var width = Math.round(item.getBoundingClientRect().width);
+    document.getElementById("status-width").style.width = width + "px";
+    document.getElementById("status-width-tag").textContent = width + "px";
+    return width;
+  }
+
+  function renderPanel(rate, active, now) {
+    var title = titleFor(rate, active);
+    var panel = document.getElementById("panel-speed");
+    panel.classList.toggle("active", active);
+    document.getElementById("panel-state").textContent = active
+      ? "生成中 " + displaySessions.filter(function (v) { return v > 2; }).length
+      : "当前空闲";
+    document.getElementById("panel-updated").textContent = clockText(now);
+    var panelOutput = document.getElementById("panel-output");
+    panelOutput.classList.add("roll");
+    panelOutput.setAttribute("aria-hidden", "false");
+    panelOutput.setAttribute("aria-label", formatRate(rate) + " tok/s");
+    setRoll(panelOutput, formatRate(rate));
+    document.getElementById("panel-title").textContent = title.name;
+    document.getElementById("panel-icon").innerHTML = rankMarkup(title.progress);
+    document.getElementById("panel-agents").textContent =
+      String(displaySessions.filter(function (v) { return v > 2; }).length);
+    document.getElementById("panel-today").textContent =
+      formatCount(sessions[0].todayBase + sessions[0].tokens + sessions[1].todayBase + sessions[1].tokens);
+    document.getElementById("speed-badge").textContent = formatRate(rate);
+
+    var dshRate = displaySessions[0] || 0;
+    var codexRate = displaySessions[1] || 0;
+    document.getElementById("dsh-rate").textContent = formatRate(dshRate);
+    document.getElementById("codex-rate").textContent = formatRate(codexRate);
+    document.getElementById("dsh-session").textContent = formatRate(dshRate) + " tok/s";
+    document.getElementById("codex-session").textContent = formatRate(codexRate) + " tok/s";
+    document.getElementById("dsh-sub").textContent =
+      "今日 " + formatCount(sessions[0].todayBase + sessions[0].tokens) + " · 2 个会话";
+    document.getElementById("codex-sub").textContent =
+      "今日 " + formatCount(sessions[1].todayBase + sessions[1].tokens) + " · 1 个会话";
+
+    var el = document.getElementById("panel-sparkline");
+    if (!el.children.length) {
+      for (var i = 0; i < 24; i++) el.appendChild(document.createElement("i"));
+    }
+    spark.shift();
+    spark.push(rate);
+    var max = Math.max.apply(null, spark.concat([1]));
+    Array.prototype.forEach.call(el.children, function (bar, index) {
+      bar.style.height = Math.max(8, spark[index] / max * 100) + "%";
+      bar.classList.toggle("hot", index === spark.length - 1 && spark[index] > 0);
+    });
+  }
+
+  // 四种形态并排：同一速度值，分别渲染并量宽度
+  function renderCompare(rate, active) {
+    var digits = formatRate(rate);
+    document.getElementById("compare-value").textContent = digits;
+
+    var textSample = document.querySelector('[data-sample="text"]');
+    textSample.innerHTML = digits + '<span class="unit">tok/s</span>';
+
+    var tintSample = document.querySelector('[data-sample="tinted"]');
+    tintSample.innerHTML = '<span class="' + (active ? "tint-active" : "tint-idle") + '">' +
+      digits + '</span><span class="unit">tok/s</span>';
+
+    document.querySelector('[data-sample="compact"]').textContent = digits;
+
+    var rollSample = document.querySelector('[data-sample="roll"]');
+    rollSample.classList.add("status-roll");
+    setRoll(rollSample, digits, { unit: "tok/s" });
+
+    ["text", "tinted", "compact", "roll"].forEach(function (key) {
+      var sample = document.querySelector('[data-sample="' + key + '"]');
+      var cell = sample.closest(".compare-sample");
+      var width = Math.round(cell.getBoundingClientRect().width);
+      document.getElementById("w-" + key).textContent = width + "px";
+    });
+  }
+
+  function render() {
+    var rate = Math.max(0, displayRate);
+    var active = rate >= 0.05;
+    var now = new Date();
+    renderStatusItem(rate, active);
+    renderPanel(rate, active, now);
+    renderCompare(rate, active);
+    document.getElementById("mb-clock").textContent = clockText(now);
+  }
+
+  // ===== 主循环 =====
+  window.setInterval(function () {
+    var now = performance.now();
+    var dt = Math.min(0.12, (now - lastTick) / 1000);
+    lastTick = now;
+    if (paused) return;
+    advance(dt);
+    var gap = mode === "current" ? 0.5 : collectMs / 1000;
+    if (simSeconds - lastSampleAt >= gap) {
+      lastSampleAt = simSeconds;
+      sampleNow();
+    }
+  }, 50);
+
+  // ===== 控件 =====
+  var formButtons = Array.prototype.slice.call(document.querySelectorAll("#form-seg button"));
+  formButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      form = button.dataset.form;
+      formButtons.forEach(function (item) { item.classList.toggle("on", item === button); });
+      document.getElementById("form-note").innerHTML = NOTES[form];
+      document.getElementById("status-text").dataset.text = "";
+      document.getElementById("status-roll").dataset.text = "";
+      document.getElementById("status-roll").dataset.len = "";
+      document.getElementById("status-text").textContent = "";
+      render();
+      anchorPanel();
+    });
+  });
+
+  var modeButtons = Array.prototype.slice.call(document.querySelectorAll("#mode-seg button"));
+  modeButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      mode = button.dataset.mode;
+      modeButtons.forEach(function (item) { item.classList.toggle("on", item === button); });
+      firstSample = true;
+      lastSampleAt = simSeconds;
+      cycleStart = simSeconds;
+      cycleRates = [];
+      displayRate = 0;
+      displaySessions = [0, 0];
+      sampleIndex = 0;
+      document.getElementById("interval").disabled = mode === "current";
+      document.getElementById("interval-out").textContent =
+        mode === "current" ? "按响应" : collectMs + " ms";
+      document.getElementById("panel-output").dataset.text = "";
+      document.getElementById("panel-output").dataset.len = "";
+      document.getElementById("panel-output").textContent = "0";
+      render();
+    });
+  });
+
+  var intervalInput = document.getElementById("interval");
+  intervalInput.addEventListener("input", function () {
+    collectMs = Number(intervalInput.value);
+    document.getElementById("interval-out").textContent = collectMs + " ms";
+    document.documentElement.style.setProperty("--roll-duration", Math.max(90, Math.min(420, collectMs * 0.55)) + "ms");
+  });
+  document.documentElement.style.setProperty("--roll-duration", "110ms");
+
+  document.getElementById("pause").addEventListener("click", function () {
+    paused = !paused;
+    this.textContent = paused ? "继续演示" : "暂停演示";
+  });
+  document.getElementById("widths").addEventListener("click", function () {
+    var on = document.getElementById("stage").classList.toggle("show-widths");
+    this.textContent = on ? "隐藏占用宽度" : "显示占用宽度";
+  });
+  document.getElementById("theme-light").addEventListener("click", function () {
+    document.documentElement.dataset.theme = "light";
+  });
+  document.getElementById("theme-dark").addEventListener("click", function () {
+    document.documentElement.dataset.theme = "dark";
+  });
+
+  // 面板锚点：对齐到状态项中心，向下 8px（panelGap）
+  function anchorPanel() {
+    var item = document.getElementById("status-item");
+    var anchor = document.getElementById("panel-anchor");
+    var stage = document.getElementById("stage");
+    var itemRect = item.getBoundingClientRect();
+    var stageRect = stage.getBoundingClientRect();
+    var center = itemRect.left - stageRect.left + itemRect.width / 2;
+    var width = 392;
+    var left = clamp(center - width / 2, 6, stageRect.width - width - 6);
+    anchor.style.left = left + "px";
+    document.querySelector(".panel-notch").style.left = clamp(center - left - 6, 14, width - 26) + "px";
+  }
+
+  // ===== 启动 =====
+  for (var seed = 0; seed < 100; seed++) advance(0.05);
+  simSeconds = 0;
+  sessions.forEach(function (session) {
+    session.pauseLeft = 0;
+    session.burstLeft = 0;
+    session.history = [{ t: 0, tokens: 0 }];
+    session.tokens = 0;
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-glyph="q"]'), function (el) {
+    el.innerHTML = Q_GLYPH;
+  });
+  render();
+  anchorPanel();
+  window.addEventListener("resize", anchorPanel);
+})();
+</script>
+</body>
+</html>

@@ -1868,6 +1868,44 @@
   .speed-title-picker:hover { color: var(--fg); background: var(--pill-hover); }
   .speed-title-picker svg { width: 12px; height: 12px; }
   .speed-sub { margin-top: 10px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
+  /* 速度页的显示设置条：采样频率 / 数字动效 / 菜单栏样式。
+     放在速度主卡与指标卡之间，用户调完立刻能在上面看到效果。 */
+  .speed-settings {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
+    margin: 0 0 12px; padding: 8px 12px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--card-2) 72%, transparent);
+    box-shadow: inset 0 0 0 .5px var(--line-2);
+  }
+  .speed-setting { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  .speed-setting[hidden] { display: none; }
+  .speed-setting-label { color: var(--muted); font-size: var(--fs-2xs); font-weight: 650; letter-spacing: .04em; white-space: nowrap; }
+  .speed-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--pill); }
+  .speed-seg button {
+    height: 22px; padding: 0 8px; border: 0; border-radius: 5px;
+    color: var(--fg-2); background: transparent;
+    font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
+    transition: background .14s ease, color .14s ease, box-shadow .14s ease;
+  }
+  .speed-seg button:hover { color: var(--fg); }
+  .speed-seg button.active {
+    color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge);
+  }
+  .speed-seg button:disabled { opacity: .5; }
+  /* 主窗口大数字的滚轮：字号由 .speed-number 决定。letter-spacing 与
+     line-height 必须归零/归 1，否则每列宽度和字形推进对不上、滚不到位。 */
+  .speed-number.roll {
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 720px) {
+    .speed-settings { gap: 6px 10px; }
+    .speed-setting-label { display: none; }
+  }
+
   .speed-rank-panel {
     position: relative; z-index: 1; min-width: 0;
     display: grid; align-content: center; justify-items: stretch; gap: 8px;
@@ -2638,6 +2676,7 @@
 <link rel="stylesheet" href="assets/title-system.css">
 <link rel="stylesheet" href="assets/perf-mode.css">
 <link rel="stylesheet" href="assets/qka-ui.css">
+<link rel="stylesheet" href="assets/speed-display.css">
 </head>
 <body>
   <div class="window">
@@ -2835,6 +2874,33 @@
               <span id="speed-rank-progress">等待测速</span>
             </div>
           </aside>
+        </div>
+        <div class="speed-settings" id="speed-settings" aria-label="速度显示设置">
+          <div class="speed-setting">
+            <span class="speed-setting-label">采样</span>
+            <div class="speed-seg" id="speed-poll-seg" role="radiogroup" aria-label="采样频率">
+              <button type="button" data-value="200" role="radio" aria-checked="false">200ms</button>
+              <button type="button" data-value="300" role="radio" aria-checked="false">300ms</button>
+              <button type="button" data-value="500" role="radio" aria-checked="true" class="active">500ms</button>
+              <button type="button" data-value="750" role="radio" aria-checked="false">750ms</button>
+            </div>
+          </div>
+          <div class="speed-setting">
+            <span class="speed-setting-label">数字</span>
+            <div class="speed-seg" id="speed-display-seg" role="radiogroup" aria-label="数字显示方式">
+              <button type="button" data-value="roll" role="radio" aria-checked="true" class="active">逐位滚轮</button>
+              <button type="button" data-value="fade" role="radio" aria-checked="false">平滑缓动</button>
+              <button type="button" data-value="direct" role="radio" aria-checked="false">直接替换</button>
+            </div>
+          </div>
+          <div class="speed-setting" id="speed-menubar-setting" hidden>
+            <span class="speed-setting-label">菜单栏</span>
+            <div class="speed-seg" id="speed-menubar-seg" role="radiogroup" aria-label="菜单栏速度样式">
+              <button type="button" data-value="label" role="radio" aria-checked="true" class="active">纯文本</button>
+              <button type="button" data-value="tinted" role="radio" aria-checked="false">分段彩色</button>
+              <button type="button" data-value="compact" role="radio" aria-checked="false">只显示数字</button>
+            </div>
+          </div>
         </div>
         <div class="metric-grid">
           <div class="metric-card">
@@ -3248,6 +3314,14 @@
     UI_SCALE_SETTING,
     UI_SCALE_STORAGE_KEY,
   } from "./assets/ui-scale.js";
+import { setRoll } from "./assets/odometer.js";
+import {
+  FADE_DURATION_MS,
+  fadeValue,
+  normalizeSpeedDisplay,
+  rollDurationFor,
+  shouldAnimateSpeed,
+} from "./assets/speed-display.js";
 import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.js";
   import {
     TIERS,
@@ -4889,6 +4963,17 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   let latestTitleActive = false;
   let lastTitleLabel = "";
   let lastSpeedReadout = 0;
+  // 速度显示设置：采样频率、数字动效、菜单栏样式。三个窗口共用同一份设置，
+  // 保存后由 token-speed-settings-changed 事件同步过来。
+  const SPEED_POLL_KEY = "token_speed_poll";
+  const SPEED_DISPLAY_KEY = "token_speed_display";
+  const SPEED_MENUBAR_KEY = "token_speed_menubar";
+  let speedPollMillis = 500;
+  let speedDisplayMode = "roll";
+  let speedMenubarStyle = "label";
+  let speedFadeFrame = 0;
+  let speedFadeValue = 0;
+  let speedSeenOnce = false;
   const titlePickerDialog = document.getElementById("title-picker-dialog");
 
   function escapeHTML(value) {
@@ -5095,6 +5180,84 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
   };
 
+  // ---------- 速度显示设置条 ----------
+  // 三个设置项都写回 settings.json：采样频率由 Go 侧立即应用到轮询，
+  // 数字动效与菜单栏样式由本页与面板各自读取。改完立即重渲染一次，
+  // 用户不用等下一轮速度事件就能看到效果。
+  function speedSegButtons(id) {
+    const group = document.getElementById(id);
+    return group ? Array.from(group.querySelectorAll("button")) : [];
+  }
+
+  function paintSpeedSeg(id, value) {
+    speedSegButtons(id).forEach(function (button) {
+      const active = button.dataset.value === String(value);
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-checked", active ? "true" : "false");
+    });
+  }
+
+  async function applySpeedSetting(key, value, segId) {
+    const buttons = speedSegButtons(segId);
+    buttons.forEach(function (button) { button.disabled = true; });
+    paintSpeedSeg(segId, value);
+    try {
+      await Bound.SettingsSetString(key, value);
+      if (key === SPEED_POLL_KEY) {
+        speedPollMillis = Number(value) || speedPollMillis;
+        document.documentElement.style.setProperty(
+          "--roll-duration", rollDurationFor(speedPollMillis) + "ms");
+      }
+      if (key === SPEED_DISPLAY_KEY) {
+        speedDisplayMode = normalizeSpeedDisplay(value);
+        speedSeenOnce = false;
+        renderSpeedNumber(latestTitleSpeed);
+      }
+      if (key === SPEED_MENUBAR_KEY) speedMenubarStyle = value;
+    } catch (_) {
+      // 保存失败就回滚到设置里的值，别让界面显示一个没生效的选择。
+      await loadSpeedSettings();
+    } finally {
+      buttons.forEach(function (button) { button.disabled = false; });
+    }
+  }
+
+  function bindSpeedSeg(id, key) {
+    speedSegButtons(id).forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (button.classList.contains("active")) return;
+        applySpeedSetting(key, button.dataset.value, id);
+      });
+    });
+  }
+
+  async function loadSpeedSettings() {
+    try {
+      const values = asJSON(await Bound.SettingsGet());
+      speedPollMillis = Number(values[SPEED_POLL_KEY]) || 500;
+      speedDisplayMode = normalizeSpeedDisplay(values[SPEED_DISPLAY_KEY]);
+      speedMenubarStyle = values[SPEED_MENUBAR_KEY] || "label";
+      paintSpeedSeg("speed-poll-seg", speedPollMillis);
+      paintSpeedSeg("speed-display-seg", speedDisplayMode);
+      paintSpeedSeg("speed-menubar-seg", speedMenubarStyle);
+      // 菜单栏样式只在 macOS 有意义；其它平台隐藏这一行。
+      const menuSetting = document.getElementById("speed-menubar-setting");
+      if (menuSetting) menuSetting.hidden = !isMac;
+      document.documentElement.style.setProperty(
+        "--roll-duration", rollDurationFor(speedPollMillis) + "ms");
+    } catch (_) {
+      // 读取失败保留默认值：设置条仍可点击，保存时会再校验一次。
+    }
+  }
+
+  bindSpeedSeg("speed-poll-seg", SPEED_POLL_KEY);
+  bindSpeedSeg("speed-display-seg", SPEED_DISPLAY_KEY);
+  bindSpeedSeg("speed-menubar-seg", SPEED_MENUBAR_KEY);
+  Events.On("token-speed-settings-changed", function () {
+    loadSpeedSettings();
+  });
+  loadSpeedSettings();
+
   Events.On("title-theme-changed", function (event) {
     currentTitleTheme = normalizeTitleTheme(event && event.data);
     draftTitleTheme = currentTitleTheme;
@@ -5141,6 +5304,71 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return logo;
   }
 
+  // ---------- 速度数字渲染（三种显示方式） ----------
+  function speedReducedMotion() {
+    return !!(window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  function renderSpeedNumber(target) {
+    const el = document.getElementById("speed-output");
+    if (!el) return;
+    const text = compactTokenRate(target);
+    el.setAttribute("aria-label", text + " tok/s");
+    if (speedFadeFrame) {
+      cancelAnimationFrame(speedFadeFrame);
+      speedFadeFrame = 0;
+    }
+    const animate = shouldAnimateSpeed(speedDisplayMode, {
+      first: !speedSeenOnce,
+      reducedMotion: speedReducedMotion(),
+    });
+    speedSeenOnce = true;
+
+    if (speedDisplayMode === "roll") {
+      el.classList.add("roll");
+      el.classList.remove("is-ticking");
+      el.style.removeProperty("--roll-duration");
+      setRoll(el, text);
+      return;
+    }
+
+    // fade / direct 都是纯文本：先拆掉滚轮结构，否则会残留 0-9 的列。
+    if (el.classList.contains("roll")) {
+      el.classList.remove("roll");
+      el.removeAttribute("data-text");
+      el.removeAttribute("data-len");
+    }
+    if (!animate) {
+      el.textContent = text;
+      speedFadeValue = target;
+      return;
+    }
+    if (speedDisplayMode === "direct") {
+      el.textContent = text;
+      speedFadeValue = target;
+      el.classList.remove("is-ticking");
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          el.classList.add("is-ticking");
+        });
+      });
+      return;
+    }
+    // fade：从上一个值插值到目标值，结束时落到精确值。
+    const from = speedFadeValue || 0;
+    const started = performance.now();
+    function step(now) {
+      const progress = Math.min(1, (now - started) / FADE_DURATION_MS);
+      const value = progress >= 1 ? target : fadeValue(from, target, progress);
+      el.textContent = compactTokenRate(value);
+      speedFadeValue = value;
+      if (progress < 1) speedFadeFrame = requestAnimationFrame(step);
+      else speedFadeFrame = 0;
+    }
+    speedFadeFrame = requestAnimationFrame(step);
+  }
+
   function renderTokenSpeed(raw) {
     const view = raw ? asJSON(raw) : null;
     if (!view) {
@@ -5167,17 +5395,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const gaugeMax = titleThresholds[titleThresholds.length - 1];
     const speedProgress = Math.max(0, Math.min(100, output / gaugeMax * 100));
     hero.style.setProperty("--speed-progress", speedProgress.toFixed(1) + "%");
-    const speedNumber = document.getElementById("speed-output");
-    speedNumber.textContent = compactTokenRate(output);
-    if (output !== lastSpeedReadout && lastSpeedReadout > 0) {
-      speedNumber.classList.remove("is-ticking");
-      // 双 rAF 重启动画，避免 void offsetWidth 的强制同步 reflow。
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          speedNumber.classList.add("is-ticking");
-        });
-      });
-    }
+    renderSpeedNumber(output);
     lastSpeedReadout = output;
     document.getElementById("speed-input").textContent =
       compactTokenRate(view.input_tokens_per_second);

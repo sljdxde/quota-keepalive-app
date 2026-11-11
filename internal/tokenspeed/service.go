@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"qka/internal/applog"
@@ -169,6 +170,11 @@ type Service struct {
 
 	started bool
 	done    chan struct{}
+
+	// livePollNanos 是「活跃时」轮询间隔的纳秒值。设置页允许在运行中调整
+	// 采样频率，无需重启服务；0 表示沿用 cfg.PollInterval。用 atomic 是因为
+	// 写入来自 GUI 线程、读取来自轮询 goroutine。
+	livePollNanos atomic.Int64
 }
 
 // New creates a service. Call Start to begin polling.
@@ -246,12 +252,35 @@ func (s *Service) nextPollInterval() time.Duration {
 	active := s.snapshot.Active || s.snapshot.GeneratingAgents > 0
 	s.snapshotMu.RUnlock()
 	if active {
-		return s.cfg.PollInterval
+		return s.livePollInterval()
 	}
 	if s.cfg.IdlePollInterval > 0 {
 		return s.cfg.IdlePollInterval
 	}
+	return s.livePollInterval()
+}
+
+// livePollInterval 返回当前生效的活跃轮询间隔：设置页改过就用新值，
+// 否则用启动时的配置。
+func (s *Service) livePollInterval() time.Duration {
+	if nanos := s.livePollNanos.Load(); nanos > 0 {
+		return time.Duration(nanos)
+	}
 	return s.cfg.PollInterval
+}
+
+// SetPollInterval 在运行中调整活跃轮询间隔，下一次轮询立即按新值调度。
+// 非正值表示忽略（保留当前值），避免设置项被清空时把轮询打成忙等。
+func (s *Service) SetPollInterval(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	s.livePollNanos.Store(int64(interval))
+}
+
+// PollInterval 返回当前生效的活跃轮询间隔，供设置页回显与诊断使用。
+func (s *Service) PollInterval() time.Duration {
+	return s.livePollInterval()
 }
 
 // Wait blocks until the polling goroutine exits. It is safe to call after Start.

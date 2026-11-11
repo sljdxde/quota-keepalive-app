@@ -114,6 +114,8 @@ func (a *App) guiDeps() gui.Deps {
 	tokenSpeed := tokenspeed.New(tokenspeed.DefaultConfig())
 	freeTokensService := freetokens.NewService()
 	tokenSpeed.SetTitleTheme(st.GetString("title_theme"))
+	// 采样频率来自设置（默认 500ms）；设置页改动后由 AfterSaveSettings 继续更新。
+	tokenSpeed.SetPollInterval(st.SpeedPollInterval())
 	updateService := a.updateService()
 	// 下载进度推给前端：设置页在安装时显示百分比，不再只是一个「下载中」。
 	updateService.Progress = func(downloaded, total int64) {
@@ -140,6 +142,8 @@ func (a *App) guiDeps() gui.Deps {
 		SaveSettings:   state.saveSettings,
 		AfterSaveSettings: func(st *settings.Settings) error {
 			tokenSpeed.SetTitleTheme(st.GetString("title_theme"))
+			// 采样频率是运行时可调项：改完下一次轮询就按新间隔调度。
+			tokenSpeed.SetPollInterval(st.SpeedPollInterval())
 			return state.afterSaveSettings(st)
 		},
 		ScheduleGet: scheduleManager.Get,

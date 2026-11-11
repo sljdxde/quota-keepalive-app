@@ -7,6 +7,14 @@ import {
   evolutionStageForDailyTokens,
   pokemonById,
 } from "./pokemon-art.js";
+import { setRoll } from "./odometer.js";
+import {
+  FADE_DURATION_MS,
+  fadeValue,
+  normalizeSpeedDisplay,
+  rollDurationFor,
+  shouldAnimateSpeed,
+} from "./speed-display.js";
 import { nextGroupExpansion } from "./group-collapse.js";
 import { aimForClientPoint } from "./pet-gaze.js";
 import { resolvePetGesture } from "./bar-gesture.js";
@@ -56,6 +64,11 @@ let pendingSpeedSnapshot = null;
 let animationFrame = 0;
 let animatedOutput = 0;
 let speedSeen = false;
+// 速度显示设置与主窗口共用同一份：采样频率、数字动效、菜单栏样式。
+const SPEED_POLL_KEY = "token_speed_poll";
+const SPEED_DISPLAY_KEY = "token_speed_display";
+let speedPollMillis = 500;
+let speedDisplayMode = "roll";
 let speedHistorySeeded = false;
 let selectedPetId = readStoredString(petSelectedStorageKey, "bulbasaur");
 let petMessageIndex = 0;
@@ -1027,27 +1040,61 @@ function formatUpdated(value) {
   });
 }
 
+// animateOutput 按设置里的「数字显示方式」渲染面板大数字：
+// roll 逐位滚轮、fade 平滑缓动、direct 直接替换。
 function animateOutput(target) {
+  const el = document.getElementById("panel-speed-output");
+  if (!el) return;
   if (animationFrame) cancelAnimationFrame(animationFrame);
   const reduced = window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (!speedSeen || reduced) {
+  const animate = shouldAnimateSpeed(speedDisplayMode, {
+    first: !speedSeen,
+    reducedMotion: reduced,
+  });
+  const text = compactTokenRate(target);
+  el.setAttribute("aria-label", text + " tok/s");
+
+  if (speedDisplayMode === "roll") {
+    el.classList.add("roll");
+    el.style.removeProperty("--roll-duration");
+    setRoll(el, text);
     animatedOutput = target;
-    document.getElementById("panel-speed-output").textContent = compactTokenRate(target);
+    speedSeen = true;
+    return;
+  }
+
+  // fade / direct 是纯文本：拆掉滚轮结构，否则会残留 0-9 的列。
+  if (el.classList.contains("roll")) {
+    el.classList.remove("roll");
+    el.removeAttribute("data-text");
+    el.removeAttribute("data-len");
+  }
+  if (!animate) {
+    el.textContent = text;
+    animatedOutput = target;
+    speedSeen = true;
+    return;
+  }
+  if (speedDisplayMode === "direct") {
+    el.textContent = text;
+    animatedOutput = target;
     speedSeen = true;
     return;
   }
   const startValue = animatedOutput;
   const started = performance.now();
   function step(now) {
-    const progress = Math.min(1, (now - started) / 360);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    animatedOutput = startValue + (target - startValue) * eased;
-    document.getElementById("panel-speed-output").textContent =
-      compactTokenRate(animatedOutput);
+    const progress = Math.min(1, (now - started) / FADE_DURATION_MS);
+    const value = progress >= 1
+      ? target
+      : fadeValue(startValue, target, progress);
+    el.textContent = compactTokenRate(value);
+    animatedOutput = value;
     if (progress < 1) animationFrame = requestAnimationFrame(step);
     else animationFrame = 0;
   }
+  speedSeen = true;
   animationFrame = requestAnimationFrame(step);
 }
 
@@ -2155,6 +2202,26 @@ Events.On("tokenspeed-changed", function (event) {
   }
   pendingSpeedSnapshot = event.data;
 });
+// ---------- 速度显示设置（与主窗口共用同一份 settings.json） ----------
+async function loadSpeedDisplaySettings() {
+  try {
+    const values = asJSON(await Bound.SettingsGet());
+    speedPollMillis = Number(values[SPEED_POLL_KEY]) || 500;
+    speedDisplayMode = normalizeSpeedDisplay(values[SPEED_DISPLAY_KEY]);
+    document.documentElement.style.setProperty(
+      "--roll-duration", rollDurationFor(speedPollMillis) + "ms");
+    // 设置变了就按新方式重画一次，不用等下一轮速度事件。
+    speedSeen = false;
+    animateOutput(latestSpeedOutput);
+  } catch (_) {
+    // 读取失败保留默认值：面板仍可用，只是动效按默认方式。
+  }
+}
+Events.On("token-speed-settings-changed", function () {
+  loadSpeedDisplaySettings();
+});
+loadSpeedDisplaySettings();
+
 Events.On("theme-changed", function (event) {
   applyTheme(event && event.data);
 });

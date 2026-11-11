@@ -234,6 +234,18 @@ func (s *BoundService) SettingsSetString(key, value string) error {
 			}
 		}
 	}
+	if settings.IsTokenSpeedKey(key) {
+		// 采样频率 / 数字显示 / 菜单栏样式都会改变「速度看起来怎样」，
+		// 保存后立刻广播一次，三个窗口不用等下一轮轮询。
+		if app := application.Get(); app != nil {
+			app.Event.Emit("token-speed-settings-changed", value)
+			if s.deps.TokenSpeedGet != nil {
+				if snapshot, err := s.deps.TokenSpeedGet(context.Background()); err == nil {
+					app.Event.Emit("tokenspeed-changed", snapshot)
+				}
+			}
+		}
+	}
 	return nil
 }
 

@@ -2,6 +2,11 @@
 // 原子写入、备份、schema 校验，面板与 MCP 呈现同一状态。
 package settings
 
+import (
+	"strconv"
+	"time"
+)
+
 // FieldType 是设置项类型。
 type FieldType string
 
@@ -136,6 +141,44 @@ var Schema = []Field{
 		},
 	},
 	{
+		Key:         "token_speed_poll",
+		Type:        FieldSelect,
+		Label:       "速度采样频率",
+		Description: "本机 Agent 日志的扫描间隔。越快数字越跟手，但磁盘与 CPU 开销也越大；省电或低配机器建议放慢。",
+		Default:     "500",
+		Options: []Option{
+			{Value: "200", Label: "灵敏（200ms）"},
+			{Value: "300", Label: "较快（300ms）"},
+			{Value: "500", Label: "平衡（500ms）"},
+			{Value: "750", Label: "省电（750ms）"},
+		},
+	},
+	{
+		Key:         "token_speed_display",
+		Type:        FieldSelect,
+		Label:       "速度数字显示",
+		Description: "数字变化时的动效：逐位滚轮最像仪表，平滑缓动最安静，直接替换最省事。",
+		Default:     "roll",
+		Options: []Option{
+			{Value: "roll", Label: "逐位滚轮"},
+			{Value: "fade", Label: "平滑缓动"},
+			{Value: "direct", Label: "直接替换"},
+		},
+	},
+	{
+		Key:         "token_speed_menubar",
+		Type:        FieldSelect,
+		Label:       "菜单栏速度样式",
+		Description: "菜单栏那一格怎么显示 tok/s。分段彩色会在有速度时把数字染成绿色；只显示数字最省横向空间。",
+		Default:     "label",
+		Platform:    "darwin",
+		Options: []Option{
+			{Value: "label", Label: "纯文本"},
+			{Value: "tinted", Label: "分段彩色"},
+			{Value: "compact", Label: "只显示数字"},
+		},
+	},
+	{
 		Key:         "show_dock_icon",
 		Type:        FieldBool,
 		Label:       "在 Dock 中显示图标",
@@ -185,4 +228,63 @@ func FieldsForPlatform(goos string) []Field {
 		}
 	}
 	return fields
+}
+
+// Token 速度相关设置的 key 与可选值。前端与后端都从这里取，避免字符串散落。
+const (
+	// KeyTokenSpeedPoll 是本机 Agent 日志的扫描间隔（毫秒，字符串形式）。
+	KeyTokenSpeedPoll = "token_speed_poll"
+	// KeyTokenSpeedDisplay 是速度数字的显示方式。
+	KeyTokenSpeedDisplay = "token_speed_display"
+	// KeyTokenSpeedMenuBar 是 macOS 菜单栏速度样式。
+	KeyTokenSpeedMenuBar = "token_speed_menubar"
+)
+
+// 菜单栏速度样式。
+const (
+	// MenuBarSpeedLabel 是纯文本 label（含 tok/s）。
+	MenuBarSpeedLabel = "label"
+	// MenuBarSpeedTinted 是分段彩色（有速度时数字染色）。
+	MenuBarSpeedTinted = "tinted"
+	// MenuBarSpeedCompact 是只显示数字。
+	MenuBarSpeedCompact = "compact"
+)
+
+// SpeedPollInterval 返回速度采样间隔；值非法时回退到 500ms。
+// 允许范围 100ms-5s：更快没有实际收益（数据源本身按响应落盘），
+// 更慢会让界面明显滞后。
+func (s *Settings) SpeedPollInterval() time.Duration {
+	millis, err := strconv.Atoi(s.GetString(KeyTokenSpeedPoll))
+	if err != nil || millis < 100 || millis > 5000 {
+		millis = 500
+	}
+	return time.Duration(millis) * time.Millisecond
+}
+
+// MenuBarSpeedStyle 返回菜单栏速度样式；未知值回退到纯文本。
+func (s *Settings) MenuBarSpeedStyle() string {
+	return normalizedChoice(s.GetString(KeyTokenSpeedMenuBar), []string{
+		MenuBarSpeedLabel, MenuBarSpeedTinted, MenuBarSpeedCompact,
+	}, MenuBarSpeedLabel)
+}
+
+// normalizedChoice 返回 allowed 中的 value，不在其中时返回 fallback。
+func normalizedChoice(value string, allowed []string, fallback string) string {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value
+		}
+	}
+	return fallback
+}
+
+// IsTokenSpeedKey 报告 key 是否属于「速度显示」相关设置。前端与 GUI 用它在
+// 保存后触发即时刷新，避免为一堆无关设置项也广播速度事件。
+func IsTokenSpeedKey(key string) bool {
+	switch key {
+	case KeyTokenSpeedPoll, KeyTokenSpeedDisplay, KeyTokenSpeedMenuBar:
+		return true
+	default:
+		return false
+	}
 }

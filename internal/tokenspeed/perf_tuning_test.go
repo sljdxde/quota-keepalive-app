@@ -147,3 +147,40 @@ func TestDefaultConfigSetsPerformanceWindows(t *testing.T) {
 		t.Fatalf("默认目录扫描间隔 = %v，want 3s", cfg.WalkInterval)
 	}
 }
+
+// TestSetPollIntervalTakesEffectAtRuntime 确认设置页能在运行中改采样频率：
+// 改完下一次调度就用新值，非法值不会把轮询打成忙等。
+func TestSetPollIntervalTakesEffectAtRuntime(t *testing.T) {
+	service := New(Config{PollInterval: 750 * time.Millisecond, IdlePollInterval: 2 * time.Second})
+	if got := service.PollInterval(); got != 750*time.Millisecond {
+		t.Fatalf("初始间隔 = %v，want 750ms", got)
+	}
+
+	service.SetPollInterval(200 * time.Millisecond)
+	if got := service.PollInterval(); got != 200*time.Millisecond {
+		t.Fatalf("调整后间隔 = %v，want 200ms", got)
+	}
+
+	// 活跃状态下 nextPollInterval 必须返回新值（否则设置项等于没生效）。
+	service.snapshotMu.Lock()
+	service.snapshot.Active = true
+	service.snapshotMu.Unlock()
+	if got := service.nextPollInterval(); got != 200*time.Millisecond {
+		t.Fatalf("活跃时的间隔 = %v，want 200ms", got)
+	}
+
+	// 空闲时仍用 IdlePollInterval，不被采样频率影响。
+	service.snapshotMu.Lock()
+	service.snapshot.Active = false
+	service.snapshotMu.Unlock()
+	if got := service.nextPollInterval(); got != 2*time.Second {
+		t.Fatalf("空闲时的间隔 = %v，want 2s", got)
+	}
+
+	// 非正值被忽略，保留上一次的有效值。
+	service.SetPollInterval(0)
+	service.SetPollInterval(-time.Second)
+	if got := service.PollInterval(); got != 200*time.Millisecond {
+		t.Fatalf("非法值应被忽略，实际 %v", got)
+	}
+}

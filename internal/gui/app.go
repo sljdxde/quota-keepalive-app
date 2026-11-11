@@ -20,6 +20,7 @@ import (
 	"qka/internal/applog"
 	"qka/internal/procquit"
 	"qka/internal/selfupdate"
+	"qka/internal/settings"
 	"qka/internal/status"
 	"qka/internal/tokenspeed"
 )
@@ -47,10 +48,13 @@ type App struct {
 	ballMenuFocus  *panelFocusGuard
 	theme          string
 	tokenSpeed     *tokenspeed.Service
-	updateCheck    func(context.Context) (selfupdate.Status, error)
-	status         func(context.Context) (status.View, error)
-	providersWarm  func(context.Context) error
-	windowMu       sync.Mutex
+	// settings 读取当前设置：菜单栏速度样式、采样频率都在运行中可能被改，
+	// 不能只在启动时读一次。
+	settings      func() *settings.Settings
+	updateCheck   func(context.Context) (selfupdate.Status, error)
+	status        func(context.Context) (status.View, error)
+	providersWarm func(context.Context) error
+	windowMu      sync.Mutex
 	// barStateMu 串行化悬浮球状态文件的读写与贴边状态字段。
 	barStateMu sync.Mutex
 	// barDocked 是当前贴边侧（"" / "left" / "right"）；barRestoreX/Y 是贴边前
@@ -135,8 +139,12 @@ func New(deps Deps) *App {
 		theme: theme, tokenSpeed: deps.TokenSpeed,
 		status: deps.Status, providersWarm: deps.ProvidersWarm,
 		updateCheck: deps.UpdateCheck,
+		settings:    deps.Settings,
 		dockApply:   dockApply,
 	}
+	// 采样频率是运行时可调的设置项：启动时先按已保存的值生效，
+	// 之后由设置页的保存回调继续更新。
+	applyTokenSpeedPoll(result.tokenSpeed, deps.Settings)
 	// 悬浮球显隐的真实实现；测试可替换这两个字段验证策略。
 	result.barShow = result.showBar
 	result.barHide = result.hideBar
@@ -254,6 +262,7 @@ func New(deps Deps) *App {
 	// 托盘：平台对应的图标、吸附面板（点击切换、失焦即隐）、菜单。
 	tray := wails.SystemTray.New()
 	applyTrayIcon(tray, goos)
+	installMenuBarLabelParser()
 	tray.SetTooltip("Quota Keepalive")
 	tray.SetLabel("0 tok/s")
 	// 单击托盘：异步切换窗口（原因同上，不能在托盘消息处理器里同步操作窗口）。
@@ -1793,21 +1802,49 @@ func statusNeedsAttention(view status.View) bool {
 	return false
 }
 
+// tokenSpeedPublishInterval 是速度快照向界面广播的最小间隔。
+// 它跟随「采样频率」设置：采样 200ms 却仍按 750ms 广播，等于把用户刚调密的
+// 频率又压回去。上限 200ms 是为了不给 WebView 制造无意义的空转。
+func tokenSpeedPublishInterval(sample time.Duration) time.Duration {
+	const floor = 200 * time.Millisecond
+	if sample < floor {
+		return floor
+	}
+	if sample > time.Second {
+		return time.Second
+	}
+	return sample
+}
+
 func (a *App) monitorTokenSpeed(ctx context.Context) {
-	ticker := time.NewTicker(750 * time.Millisecond)
+	// 广播节奏跟随设置：用户把采样调到 200ms，界面就该每 200ms 收到一次。
+	interval := tokenSpeedPublishInterval(a.tokenSpeedSampleInterval())
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	lastLabel := ""
+	lastTooltip := ""
 	lastSignature := ""
+	lastInterval := interval
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if next := tokenSpeedPublishInterval(a.tokenSpeedSampleInterval()); next != lastInterval {
+				ticker.Reset(next)
+				lastInterval = next
+			}
 			snapshot := a.tokenSpeed.Snapshot()
-			label := tokenspeed.FormatSpeed(snapshot.OutputTokensPerSecond) + " tok/s"
+			style := a.menuBarSpeedStyle()
+			label := menuBarLabel(style, snapshot.OutputTokensPerSecond)
 			if label != lastLabel {
 				a.tray.SetLabel(label)
 				lastLabel = label
+			}
+			// compact 样式不显示单位，tooltip 必须把「tok/s」补回来。
+			if tooltip := menuBarTooltip(style, snapshot.OutputTokensPerSecond); tooltip != lastTooltip {
+				a.tray.SetTooltip(tooltip)
+				lastTooltip = tooltip
 			}
 			// 内容没变就不广播：此前每 750ms 无条件 Emit，常驻悬浮球与面板
 			// 的 WebView2 渲染进程因此永远无法空闲（实测 CPU 空转主源）。
@@ -1821,6 +1858,34 @@ func (a *App) monitorTokenSpeed(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// tokenSpeedSampleInterval 返回当前生效的采样间隔；没有设置来源时用默认值。
+func (a *App) tokenSpeedSampleInterval() time.Duration {
+	if a.tokenSpeed != nil {
+		return a.tokenSpeed.PollInterval()
+	}
+	if a.settings != nil {
+		return a.settings().SpeedPollInterval()
+	}
+	return 500 * time.Millisecond
+}
+
+// menuBarSpeedStyle 返回当前菜单栏速度样式；没有设置来源时用纯文本。
+func (a *App) menuBarSpeedStyle() string {
+	if a.settings == nil {
+		return settings.MenuBarSpeedLabel
+	}
+	return a.settings().MenuBarSpeedStyle()
+}
+
+// applyTokenSpeedPoll 把「速度采样频率」设置应用到速度服务。
+// 设置来源或服务缺失时安全跳过（测试与零值 App）。
+func applyTokenSpeedPoll(service *tokenspeed.Service, readSettings func() *settings.Settings) {
+	if service == nil || readSettings == nil {
+		return
+	}
+	service.SetPollInterval(readSettings().SpeedPollInterval())
 }
 
 // tokenSpeedSignature 把快照收敛成内容指纹。UpdatedAt 每轮都变，必须排除，

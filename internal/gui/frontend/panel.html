@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="color-scheme" content="light dark">
 <link rel="stylesheet" href="assets/title-system.css">
+<link rel="stylesheet" href="assets/speed-display.css">
 <script>
   (function () {
     var theme = new URLSearchParams(location.search).get("theme");
@@ -230,6 +231,16 @@
     min-width: 1.6ch; color: var(--fg);
     font-size: var(--fs-display); line-height: .94; font-weight: 730;
     letter-spacing: -.055em; font-variant-numeric: tabular-nums;
+  }
+  /* 滚轮状态：位移单位是 em，行高必须为 1、字距必须为 0，
+     否则每位滚不到正确位置（会露出半截数字）。 */
+  /* 特异性要压过后面的 .speed-hero .speed-line strong（它会把 display 改成
+     inline-block、字距改成 -.065em，滚轮就滚不到位了）。 */
+  .speed-hero .speed-line strong.roll {
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1;
+    letter-spacing: 0;
   }
   .speed-line small { color: var(--fg-2); font-size: var(--fs-md); font-weight: 600; }
   .speed-line .speed-title {

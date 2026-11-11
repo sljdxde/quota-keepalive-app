@@ -1,0 +1,50 @@
+/* 速度数字的逐位滚轮（odometer）。
+   主窗口速度页与菜单栏面板共用这一份：两边字号差很多（56px / 38px），
+   所以所有尺寸都用 em，跟着 font-size 走。
+
+   取自 design/win-ui/prototype.html 的 setRoll 实现，配合 assets/odometer.js。
+   要点：位移单位是 em，容器与 cell 的高度必须严格等于 1em，
+   否则每位滚不到正确位置、露出半截数字。 */
+.roll {
+  display: inline-flex;
+  align-items: flex-start;
+  overflow: hidden;
+  line-height: 1;
+  /* 字距必须为 0：否则每列宽度和字形推进对不上，数字会串位。 */
+  letter-spacing: 0;
+}
+
+.roll .cell {
+  display: block;
+  flex: none;
+  width: .62em;
+  height: 1em;
+  line-height: 1em;
+  overflow: hidden;
+  text-align: center;
+  position: relative;
+}
+
+.roll .reel {
+  display: block;
+  line-height: 1em;
+  transform: translateY(0);
+  transition: transform var(--roll-duration, 110ms) cubic-bezier(.22, .9, .24, 1);
+  will-change: transform;
+}
+
+.roll .reel > span {
+  display: block;
+  height: 1em;
+  line-height: 1em;
+  font-variant-numeric: tabular-nums;
+}
+
+.roll .fix {
+  display: inline-block;
+  line-height: 1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roll .reel { transition: none; }
+}
