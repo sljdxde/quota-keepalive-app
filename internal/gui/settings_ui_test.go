@@ -56,6 +56,11 @@ func TestSettingsPageUsesFullProductNameAndAlignedSections(t *testing.T) {
 		`class="settings-choice settings-actions"`,
 		`.settings-choice.settings-actions button {`,
 		`border: 1px solid var(--line);`,
+		// 软件更新卡片里的「国内镜像源」开关（schema 隐藏字段，专用界面呈现）。
+		`id="settings-update-mirror"`,
+		`Bound.SettingsSet("update_domestic_mirror", next)`,
+		`if (field.hidden) return;`,
+		`已开启国内镜像源`,
 	)
 	requireStrings(t, settingsPage, "独立设置页",
 		"Quota Keepalive 使用同一份声明式配置",

@@ -22,6 +22,9 @@ const (
 	// DefaultFeedURL is updated by the release pipeline. A local override keeps
 	// development and controlled acceptance tests away from the network.
 	DefaultFeedURL = "https://github.com/sljdxde/quota-keepalive-app/releases/latest/download/feed.json"
+	// DomesticMirror 是国内镜像前缀：打开「国内镜像源」后 feed 与安装包都走
+	// 这个 GitHub 代理，版本与 SHA-256 仍按官方 feed 校验。
+	DomesticMirror = "https://ghfast.top/"
 	maxFeedBytes   = 1 << 20
 	// releasePagePrefix 是更新说明的官方地址前缀。
 	releasePagePrefix = "https://github.com/sljdxde/quota-keepalive-app/releases/tag/"
@@ -92,7 +95,11 @@ type stagedRelease struct {
 type Service struct {
 	CurrentVersion string
 	FeedURL        string
-	Mirror         string
+	// Mirror 是旧的环境变量镜像：只替换协议+主机，保留路径（反向代理）。
+	Mirror string
+	// MirrorPrefix 是前缀式镜像（如 https://ghfast.top/）：拼在完整 GitHub
+	// 地址前面，同时作用于 feed 与安装包。
+	MirrorPrefix   string
 	StateDir       string
 	Client         HTTPDoer
 	Platform       string
@@ -121,6 +128,11 @@ func New(currentVersion, configDir string) *Service {
 func (s *Service) feedURL() string {
 	if value := strings.TrimSpace(s.FeedURL); value != "" {
 		return value
+	}
+	if prefix := strings.TrimSpace(s.MirrorPrefix); prefix != "" {
+		if mirrored, err := prefixMirror(DefaultFeedURL, prefix); err == nil {
+			return mirrored
+		}
 	}
 	return DefaultFeedURL
 }
@@ -173,6 +185,11 @@ func (s *Service) fetchRelease(ctx context.Context) (Status, Release, error) {
 		return status, Release{}, errors.New("selfupdate: feed is too large")
 	}
 	release, err := selectRelease(body, s.platform(), s.CurrentVersion, s.Mirror)
+	if err == nil && strings.TrimSpace(s.MirrorPrefix) != "" {
+		if mirrored, mirrorErr := prefixMirror(release.URL, s.MirrorPrefix); mirrorErr == nil {
+			release.URL = mirrored
+		}
+	}
 	if errors.Is(err, ErrNoUpdate) {
 		status.Message = "当前已是最新版本"
 		return status, Release{}, nil

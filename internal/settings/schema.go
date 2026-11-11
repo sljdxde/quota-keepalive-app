@@ -33,6 +33,9 @@ type Field struct {
 	// Platform 限定该设置项只在指定平台展示（"" 表示全平台）。取值同 runtime.GOOS：
 	// "windows" / "darwin" / "linux"。设置值本身仍全平台读写，只是表单不展示。
 	Platform string `json:"platform,omitempty"`
+	// Hidden 表示不进入通用设置表单，由专门界面（如软件更新卡片）呈现。
+	// 设置值仍参与 schema 校验与读写。
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // DefaultBool 返回布尔项的默认值；非布尔项返回 false。
@@ -160,6 +163,14 @@ var Schema = []Field{
 		Label:       "系统通知",
 		Description: "执行完成后发送系统通知；默认关闭，不打扰。",
 		Default:     false,
+	},
+	{
+		Key:         "update_domestic_mirror",
+		Type:        FieldBool,
+		Label:       "国内镜像源",
+		Description: "开启后更新检查与安装包下载走 ghfast.top 代理；版本与 SHA-256 仍按官方 feed 校验。",
+		Default:     false,
+		Hidden:      true,
 	},
 }
 

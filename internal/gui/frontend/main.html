@@ -2929,7 +2929,6 @@
         <div class="page-head">
           <div class="copy">
             <h1>设置</h1>
-            <p>外观、启动、日志与软件更新统一由 Quota Keepalive 管理。</p>
           </div>
         </div>
         <div class="settings-stack">
@@ -2970,6 +2969,15 @@
             <dt>最新版本</dt><dd id="settings-update-latest">尚未检查</dd>
             <dt>说明</dt><dd id="settings-update-message">检查官方更新源后可下载安装。</dd>
           </dl>
+          <div class="settings-row">
+            <span class="settings-copy">
+              <b>国内镜像源</b>
+              <small>开启后更新检查与安装包下载走 ghfast.top 代理；版本与 SHA-256 仍按官方 feed 校验，留空默认官方 GitHub。</small>
+            </span>
+            <span class="settings-switch">
+              <input type="checkbox" id="settings-update-mirror" aria-label="国内镜像源">
+            </span>
+          </div>
           <div class="settings-row">
             <span class="settings-copy">
               <b>安装更新</b>
@@ -4002,8 +4010,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       document.getElementById("settings-update-current").textContent =
         values.__qka_version || "dev";
       applyAppearance(values);
+      const mirror = document.getElementById("settings-update-mirror");
+      if (mirror) mirror.checked = !!values.update_domestic_mirror;
       body.innerHTML = "";
       schema.forEach(function (field) {
+        if (field.hidden) return; // 由软件更新卡片里的专用开关呈现
         let row;
         if (field.type === "select") row = settingsSelectRow(field, values[field.key]);
         else if (field.type === "text") row = settingsTextRow(field, values[field.key]);
@@ -4017,6 +4028,29 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       settingsMessage("设置读取失败。", true);
     }
   }
+
+  // 国内镜像源：开关直接写设置；检查/安装每次都重读设置，切换后立即生效。
+  (function initUpdateMirrorToggle() {
+    const control = document.getElementById("settings-update-mirror");
+    if (!control) return;
+    control.onchange = async function () {
+      const next = control.checked;
+      control.disabled = true;
+      settingsMessage("");
+      try {
+        await Bound.SettingsSet("update_domestic_mirror", next);
+        settingsMessage(next
+          ? "已开启国内镜像源，正在重新检查更新…"
+          : "已关闭国内镜像源，正在重新检查更新…");
+        checkUpdate();
+      } catch (_) {
+        control.checked = !next;
+        settingsMessage("设置保存失败；已恢复为当前生效值。", true);
+      } finally {
+        control.disabled = false;
+      }
+    };
+  })();
 
   let updateAvailable = false;
   let updateInstalling = false;

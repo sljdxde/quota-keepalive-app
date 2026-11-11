@@ -792,3 +792,71 @@ func TestPathWithinHandlesAbsFailures(t *testing.T) {
 		t.Fatal("candidate absolute path failure must reject")
 	}
 }
+
+func TestDomesticMirrorWrapsFeedAndArtifact(t *testing.T) {
+	artifact := "https://github.com/sljdxde/quota-keepalive-app/releases/download/v0.1.70/QKA-0.1.70-arm64.dmg"
+	feed := releaseFeed("0.1.70", "darwin/arm64", "QKA-0.1.70-arm64.dmg",
+		artifact, strings.Repeat("a", 64), true)
+	var requested []string
+	svc := &Service{
+		CurrentVersion: "0.1.69",
+		Platform:       "darwin/arm64",
+		MirrorPrefix:   DomesticMirror,
+		Client: doerFunc(func(req *http.Request) (*http.Response, error) {
+			requested = append(requested, req.URL.String())
+			return response(200, bytes.NewReader(feed)), nil
+		}),
+	}
+	status, release, err := svc.fetchRelease(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Available || release.Version != "0.1.70" {
+		t.Fatalf("status = %+v release = %+v", status, release)
+	}
+	wantFeed := DomesticMirror + DefaultFeedURL
+	if len(requested) != 1 || requested[0] != wantFeed {
+		t.Fatalf("feed url = %v, want %q", requested, wantFeed)
+	}
+	if release.URL != DomesticMirror+artifact {
+		t.Fatalf("artifact url = %q", release.URL)
+	}
+}
+
+func TestDomesticMirrorOffKeepsOfficialURLs(t *testing.T) {
+	artifact := "https://github.com/sljdxde/quota-keepalive-app/releases/download/v0.1.70/QKA-0.1.70-arm64.dmg"
+	feed := releaseFeed("0.1.70", "darwin/arm64", "QKA-0.1.70-arm64.dmg",
+		artifact, strings.Repeat("a", 64), true)
+	var requested []string
+	svc := &Service{
+		CurrentVersion: "0.1.69",
+		Platform:       "darwin/arm64",
+		Client: doerFunc(func(req *http.Request) (*http.Response, error) {
+			requested = append(requested, req.URL.String())
+			return response(200, bytes.NewReader(feed)), nil
+		}),
+	}
+	_, release, err := svc.fetchRelease(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(requested) != 1 || requested[0] != DefaultFeedURL {
+		t.Fatalf("feed url = %v", requested)
+	}
+	if release.URL != artifact {
+		t.Fatalf("artifact url = %q", release.URL)
+	}
+}
+
+func TestPrefixMirrorValidation(t *testing.T) {
+	if _, err := prefixMirror("https://github.com/a", "ghfast.top/"); !errors.Is(err, ErrBadMirror) {
+		t.Fatalf("relative prefix should be rejected: %v", err)
+	}
+	if _, err := prefixMirror("ftp://example/a", "https://ghfast.top/"); !errors.Is(err, ErrBadMirror) {
+		t.Fatalf("non-http url should be rejected: %v", err)
+	}
+	got, err := prefixMirror("https://github.com/a/b", "https://ghfast.top/")
+	if err != nil || got != "https://ghfast.top/https://github.com/a/b" {
+		t.Fatalf("prefixMirror = %q, %v", got, err)
+	}
+}

@@ -140,3 +140,23 @@ func TestSetStringValidatesTypeAndOptions(t *testing.T) {
 		t.Fatalf("对 select 项写 bool 应返回 ErrWrongType，实际 %v", err)
 	}
 }
+
+func TestHiddenUpdateMirrorSettingIsEditable(t *testing.T) {
+	st := Default()
+	if st.Get("update_domestic_mirror") {
+		t.Fatal("国内镜像源默认应关闭")
+	}
+	spec := field("update_domestic_mirror")
+	if spec == nil || !spec.Hidden || spec.Type != FieldBool {
+		t.Fatalf("update_domestic_mirror schema = %+v", spec)
+	}
+	if err := st.Set("update_domestic_mirror", true); err != nil {
+		t.Fatal(err)
+	}
+	if !st.Get("update_domestic_mirror") {
+		t.Fatal("设置后应读回 true")
+	}
+	if st.Values()["update_domestic_mirror"] != true {
+		t.Fatal("Values 应包含镜像开关")
+	}
+}

@@ -21,6 +21,7 @@ import (
 	"qka/internal/runlock"
 	"qka/internal/schedule"
 	"qka/internal/scheduler"
+	"qka/internal/selfupdate"
 	"qka/internal/settings"
 	"qka/internal/tokenspeed"
 	"qka/internal/workbuddy"
@@ -146,8 +147,14 @@ func (a *App) guiDeps() gui.Deps {
 			return scheduleManager.SetEnabled(ctx, enabled)
 		},
 		ScheduleSetConfig: scheduleManager.SetConfig,
-		UpdateCheck:       updateService.Check,
-		UpdateInstall:     updateService.DownloadAndApply,
+		UpdateCheck: func(ctx context.Context) (selfupdate.Status, error) {
+			applyUpdateMirror(updateService, state.currentSettings())
+			return updateService.Check(ctx)
+		},
+		UpdateInstall: func(ctx context.Context) (selfupdate.Status, error) {
+			applyUpdateMirror(updateService, state.currentSettings())
+			return updateService.DownloadAndApply(ctx)
+		},
 		QuitApp: func() {
 			if app := application.Get(); app != nil {
 				app.Quit()

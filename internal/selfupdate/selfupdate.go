@@ -110,3 +110,18 @@ func applyMirror(url, mirror string) (string, error) {
 func newer(target, current string) bool {
 	return compareVersions(target, current) > 0
 }
+
+// prefixMirror 把完整 GitHub 地址拼到镜像前缀后面（如
+// https://ghfast.top/ + https://github.com/.../QKA.dmg）。只接受 http(s)
+// 前缀与绝对 URL；版本与哈希不经过镜像，照旧由 feed 校验。
+func prefixMirror(rawURL, prefix string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	prefix = strings.TrimSpace(prefix)
+	if !strings.HasPrefix(rawURL, "https://") && !strings.HasPrefix(rawURL, "http://") {
+		return "", ErrBadMirror
+	}
+	if !strings.HasPrefix(prefix, "https://") && !strings.HasPrefix(prefix, "http://") {
+		return "", ErrBadMirror
+	}
+	return strings.TrimRight(prefix, "/") + "/" + rawURL, nil
+}
