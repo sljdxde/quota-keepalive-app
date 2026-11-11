@@ -223,6 +223,65 @@ func TestPlanValidateOmitsDisabledAccountTasks(t *testing.T) {
 	t.Fatal("同一账号仍应保留启用的签到计划项")
 }
 
+// seedProvider 写入一条供应商行：enabled=0 表示用户在「应用管理」里停用了
+// 该供应商，它的账号不应再出现在状态投影和执行计划里。
+func seedProvider(t *testing.T, st *store.Store, id string, enabled bool) {
+	t.Helper()
+	flag := 0
+	if enabled {
+		flag = 1
+	}
+	_, err := st.DB().ExecContext(context.Background(),
+		`INSERT INTO providers (id, name, enabled, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?)`,
+		id, id, flag, "2026-10-29T14:00:00Z", "2026-10-29T14:00:00Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStatusSkipsDisabledProviders(t *testing.T) {
+	st, svc := setup(t)
+	seedProvider(t, st, "qoder-cn", false)
+
+	view, err := svc.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Accounts) != 0 {
+		t.Fatalf("停用供应商的账号不应出现在状态中: %+v", view.Accounts)
+	}
+	if view.Enabled {
+		t.Fatal("只剩停用供应商时状态不应标记 enabled")
+	}
+}
+
+func TestStatusKeepsAccountsOfEnabledProviders(t *testing.T) {
+	st, svc := setup(t)
+	seedProvider(t, st, "qoder-cn", true)
+
+	view, err := svc.Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Accounts) != 2 {
+		t.Fatalf("启用供应商的账号应保留，实际 %d 个", len(view.Accounts))
+	}
+}
+
+func TestPlanValidateOmitsDisabledProviders(t *testing.T) {
+	st, svc := setup(t)
+	seedProvider(t, st, "qoder-cn", false)
+
+	plan, err := svc.PlanValidate(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Items) != 0 {
+		t.Fatalf("停用供应商的账号不得进入执行计划: %+v", plan.Items)
+	}
+}
+
 func TestStatusIncludesActivityTask(t *testing.T) {
 	st, svc := setup(t)
 	seedOp(t, st, "q_1", "keepalive", "failed_retryable")

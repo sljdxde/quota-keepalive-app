@@ -35,9 +35,17 @@ type accountRow struct {
 }
 
 func (s *Service) accounts(ctx context.Context) ([]accountRow, error) {
+	// 只投影「会被调度」的账号：供应商停用后它的账号不再参与自动执行
+	// （providers.runAllViewLocked 与 ensureEnabled 都按 providers.enabled
+	// 拦截），状态页也必须一致，否则面板会把已停用供应商的旧失败记录当成
+	// 「需处理」。用 LEFT JOIN + COALESCE：providers 行还没同步出来时
+	// （全新安装首次刷新）不误藏账号，只有显式 enabled=0 才排除。
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT target, id, display_name, masked_identity, enabled
-		 FROM accounts ORDER BY target, id`)
+		`SELECT a.target, a.id, a.display_name, a.masked_identity, a.enabled
+		 FROM accounts a
+		 LEFT JOIN providers p ON p.id = a.target
+		 WHERE COALESCE(p.enabled, 1) = 1
+		 ORDER BY a.target, a.id`)
 	if err != nil {
 		return nil, err
 	}
