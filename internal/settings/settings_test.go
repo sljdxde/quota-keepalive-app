@@ -143,20 +143,20 @@ func TestSetStringValidatesTypeAndOptions(t *testing.T) {
 
 func TestHiddenUpdateMirrorSettingIsEditable(t *testing.T) {
 	st := Default()
-	if st.Get("update_domestic_mirror") {
-		t.Fatal("国内镜像源默认应关闭")
+	if !st.Get("update_domestic_mirror") {
+		t.Fatal("国内镜像源默认应开启")
 	}
 	spec := field("update_domestic_mirror")
 	if spec == nil || !spec.Hidden || spec.Type != FieldBool {
 		t.Fatalf("update_domestic_mirror schema = %+v", spec)
 	}
-	if err := st.Set("update_domestic_mirror", true); err != nil {
+	if err := st.Set("update_domestic_mirror", false); err != nil {
 		t.Fatal(err)
 	}
-	if !st.Get("update_domestic_mirror") {
-		t.Fatal("设置后应读回 true")
+	if st.Get("update_domestic_mirror") {
+		t.Fatal("设置后应读回 false")
 	}
-	if st.Values()["update_domestic_mirror"] != true {
+	if st.Values()["update_domestic_mirror"] != false {
 		t.Fatal("Values 应包含镜像开关")
 	}
 }

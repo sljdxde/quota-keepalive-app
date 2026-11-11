@@ -168,8 +168,8 @@ var Schema = []Field{
 		Key:         "update_domestic_mirror",
 		Type:        FieldBool,
 		Label:       "国内镜像源",
-		Description: "开启后更新检查与安装包下载走 ghfast.top 代理；版本与 SHA-256 仍按官方 feed 校验。",
-		Default:     false,
+		Description: "默认开启：更新检查与安装包下载走 ghfast.top 代理；版本与 SHA-256 仍按官方 feed 校验。",
+		Default:     true,
 		Hidden:      true,
 	},
 }

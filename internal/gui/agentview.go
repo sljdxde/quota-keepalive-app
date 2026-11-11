@@ -23,6 +23,12 @@ type LogEntry struct {
 	State     string `json:"state"`
 	Level     string `json:"level"`
 	Message   string `json:"message"`
+	// AccountIdentity 是该账号的真实标识（邮箱/手机号/账号名），AccountMasked
+	// 是脱敏值；日志页按隐私开关二选一。取不到时留空，前端退回 account_id。
+	AccountIdentity string `json:"account_identity,omitempty"`
+	AccountMasked   string `json:"account_masked,omitempty"`
+	// TargetName 是供应商展示名（WorkBuddy / CodeArts），失败时前端退回 target。
+	TargetName string `json:"target_name,omitempty"`
 }
 
 // LogPage 是日志页一页。

@@ -566,6 +566,17 @@ func (s *Service) CachedListView(ctx context.Context) (View, error) {
 	return s.List(ctx)
 }
 
+// PeekView 返回当前缓存的供应商投影（只读、不触发运行时）。日志页用它把
+// 账号 key 换成真实账号标识，缓存为空时返回 false，调用方保留原始值。
+func (s *Service) PeekView() (View, bool) {
+	s.viewMu.Lock()
+	defer s.viewMu.Unlock()
+	if s.viewCache == nil {
+		return View{}, false
+	}
+	return cloneView(*s.viewCache), true
+}
+
 func (s *Service) storeView(view View) {
 	s.viewMu.Lock()
 	s.viewCache = &view

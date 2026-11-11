@@ -61,6 +61,13 @@ func TestSettingsPageUsesFullProductNameAndAlignedSections(t *testing.T) {
 		`Bound.SettingsSet("update_domestic_mirror", next)`,
 		`if (field.hidden) return;`,
 		`已开启国内镜像源`,
+		// 镜像开关是软件更新标题右侧的紧凑胶囊，不再单独占一行。
+		`class="settings-inline-toggle"`,
+		`<span>国内镜像</span>`,
+		`.settings-inline-toggle .settings-switch {`,
+		// GitHub 超时给出可操作提示。
+		`function updateErrorMessage(`,
+		`连接 GitHub 超时；可打开下方「国内镜像源」后重试。`,
 	)
 	requireStrings(t, settingsPage, "独立设置页",
 		"Quota Keepalive 使用同一份声明式配置",

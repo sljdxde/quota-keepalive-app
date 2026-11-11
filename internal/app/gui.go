@@ -415,7 +415,47 @@ func (s *guiState) logs(ctx context.Context, filter gui.LogFilter, limit int, cu
 			Operation: e.Operation, State: e.State, Level: e.Level, Message: e.Message,
 		})
 	}
+	// 日志里存的是供应商 key（如 codearts#u90nyn）；用已缓存的供应商投影把
+	// 它换成真实账号标识与供应商展示名，缓存为空就保留原值（不为此启动运行时）。
+	if s.app.providers != nil {
+		if view, ok := s.app.providers.PeekView(); ok {
+			out.Entries = enrichLogIdentities(out.Entries, view)
+		}
+	}
 	return out, nil
+}
+
+// enrichLogIdentities 把日志行的供应商 id / 账号 key 换成展示名与真实标识；
+// 供应商投影里没有的条目保持原值，界面上再退回 key。
+func enrichLogIdentities(entries []gui.LogEntry, view providers.View) []gui.LogEntry {
+	names := map[string]string{}
+	type pair struct{ identity, masked string }
+	identities := map[string]pair{}
+	for _, provider := range view.Providers {
+		if provider.ID != "" && provider.Name != "" {
+			names[provider.ID] = provider.Name
+		}
+		for _, account := range provider.Accounts {
+			identity := account.Identity
+			if identity == "" {
+				identity = account.MaskedIdentity
+			}
+			if identity == "" {
+				continue
+			}
+			identities[provider.ID+"|"+account.Key] = pair{
+				identity: identity, masked: account.MaskedIdentity,
+			}
+		}
+	}
+	for i := range entries {
+		entry := &entries[i]
+		entry.TargetName = names[entry.Target]
+		if hit, ok := identities[entry.Target+"|"+entry.AccountID]; ok {
+			entry.AccountIdentity, entry.AccountMasked = hit.identity, hit.masked
+		}
+	}
+	return entries
 }
 
 func (s *guiState) agentStatus(context.Context) (gui.AgentView, error) {

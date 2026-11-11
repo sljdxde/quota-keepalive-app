@@ -1486,3 +1486,26 @@ func TestRedactMessageCoversIdentityLeaks(t *testing.T) {
 		}
 	}
 }
+
+// PeekView 只读缓存：缓存为空时不触发运行时，缓存有值时返回投影。
+func TestPeekViewServesCachedProjectionOnly(t *testing.T) {
+	f := newFixture(t)
+	if _, ok := f.service.PeekView(); ok {
+		t.Fatal("未加载过供应商时不应有缓存投影")
+	}
+	cached := View{Providers: []ProviderView{{
+		ID: "codearts", Name: "CodeArts",
+		Accounts: []AccountView{{Key: "codearts", Identity: "hw083749283", MaskedIdentity: "****9283"}},
+	}}}
+	f.service.storeView(cached)
+	view, ok := f.service.PeekView()
+	if !ok || len(view.Providers) != 1 || view.Providers[0].Accounts[0].Identity != "hw083749283" {
+		t.Fatalf("缓存投影 = %+v ok=%v", view, ok)
+	}
+	// 返回的是副本：改它不影响缓存。
+	view.Providers[0].Name = "changed"
+	again, _ := f.service.PeekView()
+	if again.Providers[0].Name == "changed" {
+		t.Fatal("PeekView 应返回副本")
+	}
+}

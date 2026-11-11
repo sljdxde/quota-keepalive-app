@@ -24,12 +24,33 @@ func TestLogsUseTopLevelCategoryTabs(t *testing.T) {
 		`model_test: "model_test"`,
 		`model_test: "模型测试"`,
 		"appendLogs(true)",
-		"maskLogAccount(e.account_id)",
-		`return "****" + text.slice(-4)`,
+		// 账号展示与应用管理同一口径：默认完整显示，可切马赛克。
+		`id="logs-privacy"`,
+		"function syncLogsPrivacyButton(",
+		"function loadLogsIdentityIndex(",
+		"function logAccountText(",
+		"logAccountText(e.target, e.account_id, identityIndex,",
+		"hideAccountIdentities ? e.account_masked : e.account_identity",
+		"logTargetText(e.target, identityIndex, e.target_name)",
+		"mosaicIdentityNode(accountText)",
+		"account.identity || account.masked_identity",
+		"function logTimeParts(",
+		"logTargetText(e.target, identityIndex, e.target_name)",
+		"messageText.indexOf(opName) !== 0",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("日志页缺少顶部分类能力 %q", want)
 		}
+	}
+	styleData, err := frontendFS.ReadFile("frontend/assets/qka-ui.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(styleData), "grid-template-columns: 90px 116px minmax(0,1fr) 56px") {
+		t.Error("日志行应为日期/时间两行预留更宽的列")
+	}
+	if strings.Contains(page, "maskLogAccount") {
+		t.Error("日志账号不应再固定打码；改为可切换的完整/马赛克展示")
 	}
 	if strings.Contains(page, `id="log-operation"`) {
 		t.Error("日志类别不应继续使用底部操作输入框")

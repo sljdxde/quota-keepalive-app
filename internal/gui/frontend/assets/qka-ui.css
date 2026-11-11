@@ -200,9 +200,11 @@
 
 /* ---------------- 日志（原型 .logs / .log-row） ---------------- */
 .logs { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--card); }
-.log-row { display: grid; grid-template-columns: 64px 96px minmax(0,1fr) 64px; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line2); font-size: var(--fs-sm); align-items: baseline; }
+.log-row { display: grid; grid-template-columns: 90px 116px minmax(0,1fr) 56px; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line2); font-size: var(--fs-sm); align-items: center; }
 .log-row:first-child { border-top: 0; }
-.log-row time { color: var(--ink3); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.log-row time { display: flex; flex-direction: column; gap: 1px; color: var(--ink3); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.3; }
+.log-row time .d { color: var(--ink2); }
+.log-row time .t { color: var(--ink3); font-variant-numeric: tabular-nums; }
 .log-row .tgt { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-row .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-row .lv { justify-self: end; font-size: var(--fs-xs); font-weight: 560; }

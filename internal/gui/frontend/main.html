@@ -1008,6 +1008,26 @@
   .settings-copy b { display: block; font-size: var(--fs-md); font-weight: 600; }
   .settings-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
   .settings-switch { position: relative; width: 34px; height: 20px; margin-left: auto; flex: none; }
+  /* 软件更新标题右侧的紧凑镜像开关：胶囊里放文字 + 小拨杆，不再单独占一行。 */
+  .settings-inline-toggle {
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 26px; padding: 0 9px; flex: none;
+    border-radius: 999px;
+    background: var(--bg2);
+    box-shadow: inset 0 0 0 .5px var(--line);
+    color: var(--fg-2); font-size: var(--fs-sm); font-weight: 560;
+    cursor: pointer;
+  }
+  .settings-inline-toggle:hover { color: var(--fg); }
+  .settings-inline-toggle .settings-switch {
+    margin-left: 0; width: 28px; height: 16px;
+  }
+  .settings-inline-toggle .settings-switch::after {
+    width: 12px; height: 12px;
+  }
+  .settings-inline-toggle .settings-switch:has(input:checked)::after {
+    transform: translateX(12px);
+  }
   .settings-switch input { position: absolute; inset: 0; z-index: 1; margin: 0; opacity: 0; cursor: pointer; }
   .settings-switch::before {
     content: ""; position: absolute; inset: 0; border-radius: 999px;
@@ -2718,6 +2738,7 @@
             <p>保存可核查的执行证据；默认滚动保留 48 小时。</p>
           </div>
           <div class="end">
+            <button type="button" class="text" id="logs-privacy" aria-pressed="false">隐藏账号</button>
             <span class="pill" id="logs-count">最近 50 条</span>
           </div>
         </div>
@@ -2962,6 +2983,12 @@
               <b id="settings-update-title">软件更新</b>
               <small>只读取 Quota Keepalive 官方 feed；下载后校验 SHA-256，退出时替换并自动重启。</small>
             </div>
+            <label class="settings-inline-toggle" title="更新检查与安装包下载走 ghfast.top 代理；版本与 SHA-256 仍按官方 feed 校验">
+              <span>国内镜像</span>
+              <span class="settings-switch settings-switch-sm">
+                <input type="checkbox" id="settings-update-mirror" aria-label="国内镜像源">
+              </span>
+            </label>
             <span class="pill" id="settings-update-state">读取中</span>
           </div>
           <dl class="settings-status">
@@ -2969,15 +2996,6 @@
             <dt>最新版本</dt><dd id="settings-update-latest">尚未检查</dd>
             <dt>说明</dt><dd id="settings-update-message">检查官方更新源后可下载安装。</dd>
           </dl>
-          <div class="settings-row">
-            <span class="settings-copy">
-              <b>国内镜像源</b>
-              <small>开启后更新检查与安装包下载走 ghfast.top 代理；版本与 SHA-256 仍按官方 feed 校验，留空默认官方 GitHub。</small>
-            </span>
-            <span class="settings-switch">
-              <input type="checkbox" id="settings-update-mirror" aria-label="国内镜像源">
-            </span>
-          </div>
           <div class="settings-row">
             <span class="settings-copy">
               <b>安装更新</b>
@@ -3417,6 +3435,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       }
       if (btn.dataset.tab === "settings") renderSettings();
       if (btn.dataset.tab === "freetokens") loadFreeTokens(false);
+      if (btn.dataset.tab === "logs") {
+        // 进日志页时重取一次账号索引：启动时供应商运行时可能还没就绪。
+        resetLogsIdentityIndex();
+        appendLogs(true);
+      }
     };
   });
   tabs[0].setAttribute("aria-current", "page");
@@ -4149,6 +4172,16 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (pendingUpdateStatus) renderUpdate(pendingUpdateStatus);
   };
 
+  // updateErrorMessage 把底层网络错误翻译成能操作的话：GitHub 连不上时提示
+  // 去开国内镜像源，而不是把 Go 的 timeout 原文丢给用户。
+  function updateErrorMessage(err) {
+    const raw = err && err.message ? String(err.message) : "";
+    if (/deadline exceeded|Client\.Timeout|timeout|context deadline/i.test(raw)) {
+      return "连接 GitHub 超时；可打开下方「国内镜像源」后重试。";
+    }
+    return raw || "无法读取官方更新源。";
+  }
+
   async function checkUpdate() {
     const button = document.getElementById("settings-update-check");
     button.disabled = true;
@@ -4160,9 +4193,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       state.textContent = "检查失败";
       state.className = "pill warn";
       document.getElementById("settings-update-message").textContent =
-        (err && err.message ? String(err.message) : "") || "无法读取官方更新源。";
+        updateErrorMessage(err);
     } finally {
       button.disabled = false;
+      // 开关提示「正在重新检查…」只用于过渡；检查结束后清掉，避免一直停在
+      // “正在检查”的错觉（状态由右侧 pill 与说明行表达）。
+      settingsMessage("");
     }
   }
 
@@ -6126,6 +6162,16 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return span;
   }
 
+  function syncLogsPrivacyButton() {
+    const button = document.getElementById("logs-privacy");
+    if (!button) return;
+    button.textContent = hideAccountIdentities ? "显示账号" : "隐藏账号";
+    button.setAttribute("aria-pressed", hideAccountIdentities ? "true" : "false");
+    button.title = hideAccountIdentities
+      ? "点击恢复显示日志里的账号标识"
+      : "点击把日志里的账号标识换成马赛克";
+  }
+
   function syncAccountPrivacyButton() {
     const button = document.getElementById("agent-modal-privacy");
     if (!button) return;
@@ -6142,10 +6188,17 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       localStorage.setItem(ACCOUNT_PRIVACY_STORAGE_KEY, hideAccountIdentities ? "1" : "0");
     } catch (_) {}
     syncAccountPrivacyButton();
+    syncLogsPrivacyButton();
     if (agentModalProvider) {
       fillAgentModal(agentModalProvider);
     }
+    const logsPage = document.getElementById("logs");
+    if (logsPage && logsPage.classList.contains("active")) {
+      appendLogs(true);
+    }
   }
+
+  document.getElementById("logs-privacy").onclick = toggleAccountPrivacy;
 
   // accountIdentityText 取完整账号标识（邮箱/手机/账号名）；后端没给完整值
   // 时回落到脱敏值，保证「显示账号」不会出现空白。
@@ -7400,36 +7453,78 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (state === "manual_required") return { cls: "warn", label: "警告" };
     return { cls: "info", label: "信息" };
   }
+  // logTimeParts 把 UTC 时间戳换成北京时间的「MM-DD / HH:mm:ss」两行；
+  // 日志保留 48 小时，年份只在 title 里给全，避免窄列放不下。
+  function logTimeParts(ts) {
+    const raw = String(ts || "");
+    const date = new Date(raw);
+    if (!raw || Number.isNaN(date.getTime())) {
+      return { date: raw || "—", time: "", title: raw };
+    }
+    const pad = function (value) { return String(value).padStart(2, "0"); };
+    const monthDay = pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+    const clock = pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+    const title = date.getFullYear() + "-" + monthDay + " " + clock;
+    return { date: monthDay, time: clock, title: title };
+  }
+
   function appendLogs(reset) {
     const container = document.getElementById("logs-body");
     if (reset) {
       logCursor = 0;
       container.innerHTML = "";
     }
-    Bound.LogsTail(
-      document.getElementById("log-target").value,
-      document.getElementById("log-account").value,
-      logCategoryOperations[logCategory] || "",
-      document.getElementById("log-state").value,
-      50, logCursor
-    ).then(function (raw) {
-      const page = asJSON(raw);
+    Promise.all([
+      Bound.LogsTail(
+        document.getElementById("log-target").value,
+        document.getElementById("log-account").value,
+        logCategoryOperations[logCategory] || "",
+        document.getElementById("log-state").value,
+        50, logCursor
+      ),
+      loadLogsIdentityIndex(),
+    ]).then(function (results) {
+      const page = asJSON(results[0]);
+      const identityIndex = results[1];
       (page.entries || []).forEach(function (e) {
         const row = document.createElement("div");
         row.className = "log-row";
         const time = document.createElement("time");
-        time.textContent = String(e.ts || "");
+        const when = logTimeParts(e.ts);
+        const day = document.createElement("span");
+        day.className = "d";
+        day.textContent = when.date;
+        const clock = document.createElement("span");
+        clock.className = "t";
+        clock.textContent = when.time;
+        time.appendChild(day);
+        time.appendChild(clock);
+        time.title = when.title;
         row.appendChild(time);
         const tgt = document.createElement("span");
         tgt.className = "tgt";
-        tgt.textContent = targetLabel[e.target] || e.target || "—";
+        tgt.textContent = logTargetText(e.target, identityIndex, e.target_name);
+        tgt.title = tgt.textContent;
         row.appendChild(tgt);
         const msg = document.createElement("span");
         msg.className = "msg";
-        const prefix = e.account_id ? maskLogAccount(e.account_id) + " · " : "";
-        const opTxt = opLabel[e.operation] ? opLabel[e.operation] + " · " : "";
-        msg.textContent = prefix + opTxt + (e.message || "—");
-        msg.title = msg.textContent;
+        const accountText = logAccountText(e.target, e.account_id, identityIndex,
+          hideAccountIdentities ? e.account_masked : e.account_identity);
+        if (accountText) {
+          if (hideAccountIdentities) {
+            msg.appendChild(mosaicIdentityNode(accountText));
+            msg.appendChild(document.createTextNode(" "));
+          } else {
+            msg.appendChild(document.createTextNode(accountText));
+            msg.appendChild(document.createTextNode(" · "));
+          }
+        }
+        const messageText = e.message || "—";
+        const opName = opLabel[e.operation] || "";
+        // 日志正文常已以「签到 · …」开头，别再把操作名重复一遍。
+        const opTxt = opName && messageText.indexOf(opName) !== 0 ? opName + " · " : "";
+        msg.appendChild(document.createTextNode(opTxt + messageText));
+        msg.title = hideAccountIdentities && accountText ? "" : msg.textContent;
         row.appendChild(msg);
         const lv = logLevelFor(e.state);
         const lvEl = document.createElement("span");
@@ -7451,13 +7546,75 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
   document.getElementById("log-query").onclick = function () { appendLogs(true); };
   document.getElementById("logs-more").onclick = function () { appendLogs(false); };
+  syncLogsPrivacyButton();
 
 
-  function maskLogAccount(value) {
-    const text = String(value || "");
-    if (!text) return "—";
-    if (text.length <= 4) return "****" + text;
-    return "****" + text.slice(-4);
+  // 日志里的账号和应用管理保持同一口径：优先用供应商视图里的完整标识
+  // （邮箱/手机号/账号名），拿不到才退回日志里的账号 key；默认完整展示，
+  // 点「隐藏账号」后才换成马赛克。
+  let logsIdentityIndex = null;
+  let logsIdentityPromise = null;
+
+  function resetLogsIdentityIndex() {
+    logsIdentityIndex = null;
+    logsIdentityPromise = null;
+  }
+
+  function buildLogsIdentityIndex(view) {
+    const accounts = new Map();
+    const targets = new Map();
+    ((view && view.providers) || []).forEach(function (provider) {
+      const id = String(provider.id || "");
+      const name = String(provider.name || "");
+      if (id && name) targets.set(id, name);
+      (provider.accounts || []).forEach(function (account) {
+        const identity = account.identity || account.masked_identity || account.key || "";
+        const key = String(account.key || account.id || "");
+        if (!identity || !key) return;
+        if (id) accounts.set(id + "|" + key, identity);
+      });
+    });
+    return { accounts: accounts, targets: targets };
+  }
+
+  function loadLogsIdentityIndex() {
+    if (logsIdentityIndex) return Promise.resolve(logsIdentityIndex);
+    if (logsIdentityPromise) return logsIdentityPromise;
+    // 应用管理页已经取过供应商视图时直接复用，不再多打一次运行时。
+    if (providersSnapshot) {
+      logsIdentityIndex = buildLogsIdentityIndex(asJSON(providersSnapshot));
+      return Promise.resolve(logsIdentityIndex);
+    }
+    logsIdentityPromise = Bound.ProvidersList().then(function (raw) {
+      logsIdentityIndex = buildLogsIdentityIndex(asJSON(raw) || {});
+      logsIdentityPromise = null;
+      return logsIdentityIndex;
+    }).catch(function () {
+      // 启动早期运行时可能还没起来：这次不缓存失败，下次渲染再重试，
+      // 否则日志账号会一直停在原始 key 上。
+      logsIdentityPromise = null;
+      return { accounts: new Map(), targets: new Map() };
+    });
+    return logsIdentityPromise;
+  }
+
+  function logAccountText(target, accountID, index, backendIdentity) {
+    const key = String(accountID || "");
+    if (!key) return "";
+    // 后端按需带上真实标识；取不到再用前端索引兜底，最后才退回原始 key。
+    if (backendIdentity) return displayAccountIdentity(backendIdentity);
+    const accounts = index && index.accounts;
+    const hit = accounts && (accounts.get(String(target || "") + "|" + key) ||
+      accounts.get(String(target || "").toLowerCase() + "|" + key));
+    return hit ? displayAccountIdentity(hit) : key;
+  }
+
+  function logTargetText(target, index, backendName) {
+    const raw = String(target || "");
+    if (!raw) return "—";
+    if (backendName) return targetLabel[raw] || backendName;
+    const targets = index && index.targets;
+    return targetLabel[raw] || (targets && targets.get(raw)) || raw;
   }
 
   document.getElementById("refresh-all").onclick = function () {
