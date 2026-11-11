@@ -3219,6 +3219,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     actionLabel,
     dealMeta,
     filterDeals,
+    findDealProvider,
     heroText,
     kindLabel,
   } from "./assets/free-tokens.js";
@@ -7492,6 +7493,35 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return avatar;
   }
 
+  // configureFreeTokenDeal 把「去配置 / 去登录 / 去应用管理」直接落到对应
+  // 供应商的详情弹层：停用的插件也能看到登录/启用入口，而不是只把应用管理
+  // 按关键词过滤后停在「没有匹配的应用」。
+  async function configureFreeTokenDeal(deal) {
+    openTab("apps");
+    let view = null;
+    try {
+      view = await loadProviders();
+    } catch (_) {
+      return;
+    }
+    const provider = findDealProvider(view && view.providers, deal);
+    if (!provider) {
+      // 插件没注册出来（版本差异/加载失败）时保留原来的搜索过滤兜底。
+      const search = document.getElementById("apps-search");
+      if (search && deal.qka_provider) {
+        search.value = deal.qka_provider;
+        renderApps();
+      }
+      return;
+    }
+    await openAgentModal(provider);
+    if (!provider.enabled) {
+      showAccountsMessage("该供应商当前已停用：先打开右上角开关启用，再登录/添加账号。");
+    } else if (!provider.signed_in && !(provider.accounts || []).length) {
+      showAccountsMessage("该供应商还没有账号：点「＋ 添加账号」完成登录。");
+    }
+  }
+
   function freeTokenActionButton(deal) {
     const label = actionLabel(deal.action);
     if (!label) return null;
@@ -7501,12 +7531,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     button.textContent = label;
     button.onclick = function (event) {
       event.stopPropagation();
-      openTab("apps");
-      const search = document.getElementById("apps-search");
-      if (search && deal.qka_provider) {
-        search.value = deal.qka_provider;
-        renderApps();
-      }
+      void configureFreeTokenDeal(deal);
     };
     return button;
   }

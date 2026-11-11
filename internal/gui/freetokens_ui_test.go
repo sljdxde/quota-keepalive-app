@@ -48,6 +48,7 @@ func TestFreeTokensPageShipped(t *testing.T) {
 		`export function dealMeta(`,
 		`export function filterDeals(`,
 		`export function heroText(`,
+		`export function findDealProvider(`,
 	)
 
 	bindings, err := frontendFS.ReadFile("frontend/bindings/qka/internal/gui/boundservice.js")

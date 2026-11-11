@@ -116,3 +116,25 @@ export function heroText(summary) {
   const source = summary || {};
   return formatYuan(source.today_yuan) + " 今日可得 · " + summaryText(source);
 }
+
+// findDealProvider 在应用管理的供应商列表里找出免费额度条目对应的那条。
+// 优先按 provider id（插件 target），其次按 QKA 展示名；找不到返回 null，
+// 调用方再回落到搜索过滤。大小写/空值都做归一，避免插件改名后点「去配置」
+// 跳过去只看到「没有匹配的应用」。
+export function findDealProvider(providers, deal) {
+  const list = Array.isArray(providers) ? providers : [];
+  const providerId = String((deal && deal.qka_provider_id) || "").trim().toLowerCase();
+  const providerName = String((deal && deal.qka_provider) || "").trim().toLowerCase();
+  if (providerId) {
+    const byId = list.find(function (item) {
+      return String((item && item.id) || "").trim().toLowerCase() === providerId;
+    });
+    if (byId) return byId;
+  }
+  if (providerName) {
+    return list.find(function (item) {
+      return String((item && item.name) || "").trim().toLowerCase() === providerName;
+    }) || null;
+  }
+  return null;
+}

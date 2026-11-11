@@ -5,6 +5,7 @@ import {
   actionLabel,
   dealMeta,
   filterDeals,
+  findDealProvider,
   formatEndsAt,
   formatYuan,
   heroText,
@@ -96,4 +97,19 @@ test("summary/hero 文案", function () {
   assert.equal(summaryText(summary), "已配置可用 2 · 有插件待配置 3 · 暂无插件 26");
   assert.equal(summaryText(null), "已配置可用 0 · 有插件待配置 0 · 暂无插件 0");
   assert.equal(heroText(summary), "¥201 今日可得 · 已配置可用 2 · 有插件待配置 3 · 暂无插件 26");
+});
+
+test("findDealProvider 优先按插件 id、其次按展示名匹配", function () {
+  const providers = [
+    { id: "zcode", name: "ZCode", enabled: false },
+    { id: "trae-cn", name: "Trae", enabled: true },
+  ];
+  assert.equal(findDealProvider(providers, { qka_provider_id: "zcode" }).id, "zcode");
+  assert.equal(findDealProvider(providers, { qka_provider_id: "ZCODE" }).id, "zcode");
+  assert.equal(findDealProvider(providers, { qka_provider: "zcode" }).id, "zcode");
+  assert.equal(findDealProvider(providers, { qka_provider: "Trae" }).id, "trae-cn");
+  // id 不匹配时按展示名兜底；都找不到返回 null，调用方再回落搜索过滤。
+  assert.equal(findDealProvider(providers, { qka_provider_id: "missing", qka_provider: "ZCode" }).id, "zcode");
+  assert.equal(findDealProvider(providers, { qka_provider_id: "missing" }), null);
+  assert.equal(findDealProvider(null, { qka_provider_id: "zcode" }), null);
 });
