@@ -32,6 +32,14 @@
   --fs-md: 12.5px; --fs-base: 13px; --fs-lg: 14px; --fs-xl: 16px;
   --fs-2xl: 18px; --fs-3xl: 20px;
   --page-x: 24px; --page-max: 1000px;
+  /* 字体栈：与 design/win-ui/prototype.html、magpie 同一套。此前生产端从未
+     声明字体，Windows 上中文落到宋体、西文落到 Times 系默认字体，小字号下
+     呈点阵感（「像素太低」的根因）；显式声明后 Windows 走 Segoe UI + 微软
+     雅黑，mac 继续走苹方/系统字。 */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
+          system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+          "Noto Sans CJK SC", sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
 
   /* 桥接旧变量名 → 新令牌（保持旧组件同步换肤） */
   --fg: var(--ink);
@@ -107,7 +115,13 @@
 
 .hidden { display: none !important; }
 .muted { color: var(--ink3); }
-.num, .mono { font-variant-numeric: tabular-nums; }
+/* 字体落地：html 声明一次全页继承；表单控件 UA 默认不继承字体，只补 family，
+   不动各处已有的字号/行高/字重；等宽场景统一 var(--mono)。 */
+html { font-family: var(--font); }
+button, input, select, textarea, optgroup { font-family: inherit; }
+code, pre, kbd { font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-variant-numeric: tabular-nums; font-family: var(--mono); }
 
 /* ---------------- 通用按钮（原型 .btn / .text） ---------------- */
 .btn {
@@ -202,7 +216,7 @@
 .logs { border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; background: var(--card); }
 .log-row { display: grid; grid-template-columns: 90px 116px minmax(0,1fr) 56px; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--line2); font-size: var(--fs-sm); align-items: center; }
 .log-row:first-child { border-top: 0; }
-.log-row time { display: flex; flex-direction: column; gap: 1px; color: var(--ink3); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px; line-height: 1.3; }
+.log-row time { display: flex; flex-direction: column; gap: 1px; color: var(--ink3); font-family: var(--mono); font-size: 11.5px; line-height: 1.3; }
 .log-row time .d { color: var(--ink2); }
 .log-row time .t { color: var(--ink3); font-variant-numeric: tabular-nums; }
 .log-row .tgt { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
