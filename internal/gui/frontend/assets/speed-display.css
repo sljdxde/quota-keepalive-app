@@ -23,6 +23,9 @@
   overflow: hidden;
   text-align: center;
   position: relative;
+  /* 位数变化时列宽展开/收起（85↔128、999→1.0k）：odometer.js 内联
+     width:0ch 起止，这里提供过渡曲线。 */
+  transition: width .32s cubic-bezier(.22, .9, .24, 1), opacity .32s ease;
 }
 
 .roll .reel {
@@ -43,8 +46,11 @@
 .roll .fix {
   display: inline-block;
   line-height: 1em;
+  transition: width .32s cubic-bezier(.22, .9, .24, 1), opacity .32s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .roll .reel { transition: none; }
+  .roll .reel,
+  .roll .cell,
+  .roll .fix { transition: none; }
 }
