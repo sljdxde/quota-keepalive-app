@@ -12,8 +12,8 @@ export const titleThemeHues = {
   sound: 270, student: 148, career: 44, space: 246,
 };
 
-// 称号阶梯按红线缩放：基准 400 tok/s 时就是下面的经典阶梯，红线调到
-// agent-speed 默认的 2000 时整条阶梯放大 5 倍（步行 0.5 → 火箭 2000）。
+// 称号阶梯按红线缩放：基准 400 tok/s 时就是下面的经典阶梯；QKA 默认
+// 红线 500 时整条阶梯放大 1.25 倍（步行 0.5 → 火箭 500）。
 // 用 let + setTitleRedline 让三个窗口共用的这一份阈值始终跟设置同步。
 export const TITLE_THRESHOLD_RATIOS = [
   0, 0.02, 0.03, 0.04, 0.06, 0.08, 0.12, 0.17, 0.24, 0.34, 0.5, 0.7, 1,
@@ -30,7 +30,7 @@ export let titleThresholds = [
  * @param {number} redline
  */
 export function setTitleRedline(redline) {
-  const r = Number(redline) > 0 ? Number(redline) : 2000;
+  const r = Number(redline) > 0 ? Number(redline) : 500;
   titleThresholds = TITLE_THRESHOLD_RATIOS.map((ratio, index) =>
     index === 0 ? 0.5 : Math.round(ratio * r * 100) / 100);
 }

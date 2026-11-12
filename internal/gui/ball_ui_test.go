@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+
+	"qka/internal/settings"
+	"qka/internal/tokenspeed"
 )
 
 // 悬浮球换成 agent-speed 的 LED 仪表（spec/DESIGN.md §2）：canvas 画 36 段
@@ -364,10 +367,11 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	if opts.BackgroundType != application.BackgroundTypeTransparent {
 		t.Errorf("悬浮球窗口应使用全透明背景（Transparent），避免系统材质在球四周留下一圈背景框，实际 %v", opts.BackgroundType)
 	}
-	// 无边框窗口不能再保留原生装饰：DisableFramelessWindowDecorations 为 false
-	// 时 Wails 会把 DWM 边框延伸进客户区，方形窗口上就是一块白底 + 右上角 ×。
-	if !opts.Windows.DisableFramelessWindowDecorations {
-		t.Error("悬浮球窗口必须关闭原生装饰（DisableFramelessWindowDecorations）")
+	// 白色标题栏（白底 + ×）用 DwmExtendFrameIntoClientArea(0) 清边距去掉
+	// （见 clearDwmFrame），不开 DisableFramelessWindowDecorations——后者会
+	// 连带改动透明窗口的 DComp 预置。
+	if opts.Windows.DisableFramelessWindowDecorations {
+		t.Error("不该用 DisableFramelessWindowDecorations（会破坏透明合成）")
 	}
 	if !opts.Windows.HiddenOnTaskbar {
 		t.Error("悬浮球窗口不应出现在任务栏")
@@ -559,7 +563,7 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
 		`ball.style.setProperty("--dock-y"`,
-		`orb.setSize(Math.round(window.innerWidth / 1.9))`,
+		`orb.setSize(Math.round((ball.clientWidth || window.innerWidth) / 1.9))`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("贴边态页面缺少 %q", want)
@@ -621,5 +625,33 @@ func TestPopoverWindowsCancelWindowClosing(t *testing.T) {
 			!strings.Contains(window, "event.Cancel()") {
 			t.Errorf("%s 创建的弹出窗口缺少 WindowClosing 取消销毁钩子", ensure)
 		}
+	}
+}
+
+// 红线默认值三处必须一致：Go 侧 DefaultRedline、设置项 Default、前端共享
+// 常量 DEFAULT_REDLINE。任一处漂移都会让「仪表看着不亮」或「设置页显示与
+// 实际生效值不符」这类问题重现。
+func TestRedlineDefaultsStayInSync(t *testing.T) {
+	if tokenspeed.DefaultRedline != 500 {
+		t.Fatalf("Go 侧默认红线应为 500，实际 %v", tokenspeed.DefaultRedline)
+	}
+	var field *settings.Field
+	for i := range settings.Schema {
+		if settings.Schema[i].Key == settings.KeyTokenSpeedRedline {
+			field = &settings.Schema[i]
+		}
+	}
+	if field == nil {
+		t.Fatal("设置 schema 缺少速度红线项")
+	}
+	if field.Default != "500" {
+		t.Errorf("设置页默认红线应为 500，实际 %q", field.Default)
+	}
+	viz, err := frontendFS.ReadFile("frontend/assets/tokenspeed-viz.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(viz), "export const DEFAULT_REDLINE = 500;") {
+		t.Error("前端 DEFAULT_REDLINE 应为 500")
 	}
 }

@@ -45,8 +45,10 @@ export function createAgentSpeedOrb(options) {
     ? !!opts.reduceMotion
     : (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-  // ---------- 红线与称号阶梯（原型写死 R=2000，这里可变） ----------
-  let R = Number(opts.redline) > 0 ? Number(opts.redline) : 2000;
+  // ---------- 红线与称号阶梯（原型写死 R=2000，这里默认 500） ----------
+  // 红线默认 500（与 Go 侧 DefaultRedline 一致）；原型写死 2000，
+  // 对 QKA 的日常速度偏高。
+  let R = Number(opts.redline) > 0 ? Number(opts.redline) : 500;
   const TITLE_RATIOS = [0, .02, .03, .04, .06, .08, .12, .17, .24, .34, .5, .7, 1];
   const TITLE_NAMES = ["步行", "自行車", "電動自行車", "摩托車", "汽車", "跑車", "高鐵",
     "賽車", "磁浮列車", "噴射客機", "戰鬥機", "極音速飛機", "火箭"];
@@ -479,15 +481,18 @@ void main(){
   // ---------- sizing ----------
   let dpr = 1, W = 0;
   function resize() {
-    // clip 模式：画布就是圆本身（QKA 悬浮球窗口是圆形区域，外部看不见）；
-    // 非 clip 模式按原型留 1.9S 给光晕与粒子铺开（预览页 / 速度页用）。
+    // clip 模式：画布就是圆本身（QKA 悬浮球窗口是圆形区域，外部看不见）。
+    // 非 clip 模式画布 = 1.9S，与 agent-speed 原型完全一致：外圈光环到
+    // 0.75S、彗星与火花更远，1.5S 会把它们裁掉。
     const rect = (stage && stage.getBoundingClientRect) ? stage.getBoundingClientRect() : null;
     const boxW = rect ? rect.width : st.size;
     const boxH = rect ? rect.height : st.size;
-    st.S = Math.max(16, Math.min(st.size, boxW || st.size, boxH || st.size));
+    // st.size 是**球径**（不是窗口）。曾经用 min(size, boxW) 把窗口尺寸当成
+    // 球径，232px 的画布塞进 122px 窗口，球被放大到窗外、只剩一片底色。
+    st.S = clip
+      ? Math.max(16, Math.min(st.size, boxW || st.size, boxH || st.size))
+      : Math.max(16, st.size);
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    // 窗口 = 1.9S：与 agent-speed 原型画布完全一致（原型 W = round(S*1.9)）。
-    // 外圈光环到 0.75S、彗星与火花更远，窗口按 1.5S 会把它们裁掉。
     W = Math.round(st.S * (clip ? 1 : 1.9));
     const px = Math.round(W * dpr);
     for (const c of [glCanvas, fxCanvas]) {

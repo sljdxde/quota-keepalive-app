@@ -169,14 +169,15 @@ var Schema = []Field{
 		Key:         "token_speed_redline",
 		Type:        FieldSelect,
 		Label:       "速度红线",
-		Description: "热谱、档位与称号阶梯都按这条红线缩放。默认 2000 tok/s（与 agent-speed 一致）：多数会话落在 20–400，只有真正的高吞吐才会点亮半环以上。",
-		Default:     "2000",
+		Description: "热谱、档位与称号阶梯都按这条红线缩放。默认 500 tok/s：多数会话落在 10–60，红线圈在 500 时仪表在十几 tok/s 就能看见点亮，200 左右过半环。",
+		Default:     "500",
 		Options: []Option{
-			{Value: "400", Label: "400（旧口径）"},
+			{Value: "300", Label: "300"},
+			{Value: "400", Label: "400"},
+			{Value: "500", Label: "500（默认）"},
 			{Value: "800", Label: "800"},
 			{Value: "1200", Label: "1200"},
-			{Value: "1600", Label: "1600"},
-			{Value: "2000", Label: "2000（默认）"},
+			{Value: "2000", Label: "2000（agent-speed 默认）"},
 		},
 	},
 	{
@@ -269,11 +270,11 @@ const (
 // SpeedPollInterval 返回速度采样间隔；值非法时回退到 500ms。
 // 允许范围 100ms-5s：更快没有实际收益（数据源本身按响应落盘），
 // 更慢会让界面明显滞后。
-// SpeedRedline 返回速度红线（tok/s）；非法值回退到默认 2000。
+// SpeedRedline 返回速度红线（tok/s）；非法值回退到默认 500。
 func (s *Settings) SpeedRedline() float64 {
 	value, err := strconv.ParseFloat(s.GetString(KeyTokenSpeedRedline), 64)
 	if err != nil || value < 50 || value > 20000 {
-		return 2000
+		return 500
 	}
 	return value
 }

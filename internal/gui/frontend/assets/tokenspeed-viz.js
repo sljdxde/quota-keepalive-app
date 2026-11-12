@@ -21,6 +21,10 @@ export const WHITE_HOT = "#FFF7D6";
 
 // SPEED_TITLE_RATIOS 是 13 档称号相对红线的比例；红线 400 时即 QKA 原有的
 // 0.5/8/12/…/400 阶梯，因此改红线只是整体缩放，档位含义不变。
+// DEFAULT_REDLINE 是红线默认值（tok/s）。与 Go 侧 tokenspeed.DefaultRedline
+// 保持一致：500 让 10–60 tok/s 的日常会话也能看见仪表点亮。
+export const DEFAULT_REDLINE = 500;
+
 export const SPEED_TITLE_RATIOS = [
   0, 0.02, 0.03, 0.04, 0.06, 0.08, 0.12, 0.17, 0.24, 0.34, 0.5, 0.7, 1.0,
 ];
@@ -90,14 +94,14 @@ export function mixWithWhiteHot(h, amount) {
 // heatForSpeed 返回速度在红线下的热度 h = min(1,(v/R)^0.6)。
 export function heatForSpeed(value, redline) {
   const v = Math.max(0, Number(value) || 0);
-  const r = Number(redline) > 0 ? Number(redline) : 2000;
+  const r = Number(redline) > 0 ? Number(redline) : DEFAULT_REDLINE;
   if (v <= 0) return 0;
   return Math.min(1, Math.pow(v / r, 0.6));
 }
 
 // titleThresholdsFor 返回按红线缩放的 13 档称号阈值（与 Go 侧同源）。
 export function titleThresholdsFor(redline) {
-  const r = Number(redline) > 0 ? Number(redline) : 2000;
+  const r = Number(redline) > 0 ? Number(redline) : DEFAULT_REDLINE;
   return SPEED_TITLE_RATIOS.map((ratio, index) =>
     index === 0 ? 0.5 : Math.round(ratio * r * 100) / 100);
 }
@@ -129,7 +133,7 @@ export function formatSpeed(value) {
 // 该档阈值的 90%，且候选档必须稳定 0.8s 才生效（DESIGN §1）。返回的 level
 // 是 0（怠速）到 13。
 export function createLevelTracker(thresholds, holdMs = 800) {
-  const ladder = Array.isArray(thresholds) && thresholds.length ? thresholds : titleThresholdsFor(2000);
+  const ladder = Array.isArray(thresholds) && thresholds.length ? thresholds : titleThresholdsFor(DEFAULT_REDLINE);
   let level = 0;
   let candidate = 0;
   let candidateSince = 0;
@@ -184,7 +188,7 @@ export function createLevelTracker(thresholds, holdMs = 800) {
 // effectTierFor 返回五档特效等级：0 怠速 / 1 巡航 / 2 加速 / 3 狂飙 / 4 极限。
 export function effectTierFor(value, redline) {
   const v = Math.max(0, Number(value) || 0);
-  const r = Number(redline) > 0 ? Number(redline) : 2000;
+  const r = Number(redline) > 0 ? Number(redline) : DEFAULT_REDLINE;
   if (v < 0.5) return 0;
   if (v >= EFFECT_TIER_RATIOS[2] * r) return 4;
   if (v >= EFFECT_TIER_RATIOS[1] * r) return 3;
@@ -213,7 +217,7 @@ export function drawLedStrip(canvas, options) {
   const segmentWidth = (width - gap * (segments - 1)) / segments;
   const radius = Math.min(2, segmentWidth / 2);
   const value = Math.max(0, Number(options && options.value) || 0);
-  const redline = Number(options && options.redline) > 0 ? Number(options.redline) : 2000;
+  const redline = Number(options && options.redline) > 0 ? Number(options.redline) : DEFAULT_REDLINE;
   const heat = heatForSpeed(value, redline);
   const lit = value < 0.5 ? 0 : heat * segments;
 
@@ -256,7 +260,7 @@ export function drawSparkline(canvas, series, options) {
   ctx.clearRect(0, 0, width, height);
 
   const values = Array.isArray(series) ? series : [];
-  const redline = Number(options && options.redline) > 0 ? Number(options.redline) : 2000;
+  const redline = Number(options && options.redline) > 0 ? Number(options.redline) : DEFAULT_REDLINE;
   const peak = Number(options && options.peak);
   let maxValue = Math.max(redline * 0.05, Number(peak) || 0);
   for (const value of values) maxValue = Math.max(maxValue, Number(value) || 0);

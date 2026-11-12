@@ -209,7 +209,7 @@ h1 { font-size: 19px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
           <small>下一级</small>
           <b id="hero-next">—</b>
         </div>
-        <div class="hero-phrase" id="hero-redline">红线 2000 tok/s</div>
+        <div class="hero-phrase" id="hero-redline">红线 500 tok/s</div>
       </div>
     </div>
   </div>
@@ -273,7 +273,7 @@ h1 { font-size: 19px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
   import { drawLedStrip, formatSpeed, heatColor, heatForSpeed } from "../../internal/gui/frontend/assets/tokenspeed-viz.js";
 
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const REDLINE = 2000;
+  const REDLINE = 500;
   const TITLES = ["步行", "自行车", "电动车", "摩托车", "汽车", "跑车", "高铁", "赛车",
     "磁悬浮列车", "喷气客机", "战斗机", "高超音速飞机", "火箭"];
   const RATIOS = [0, .02, .03, .04, .06, .08, .12, .17, .24, .34, .5, .7, 1];

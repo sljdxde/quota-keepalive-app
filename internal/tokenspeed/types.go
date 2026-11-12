@@ -67,9 +67,11 @@ type Config struct {
 	Now     func() time.Time
 }
 
-// DefaultRedline 是红线默认值。agent-speed 的默认红线是 2000 tok/s：多数
-// 真实会话落在 20–400 之间，红线只在真正的高吞吐时点亮。
-const DefaultRedline = 2000.0
+// DefaultRedline 是红线默认值。agent-speed 默认 2000 tok/s，但那是给「单会话
+// 峰值上千」的机器标定的；QKA 实测多数会话落在 10–60 tok/s，2000 会让仪表
+// 长期只有 1–5% 热度（球几乎不亮、称号不变色）。400 是原来的口径，500 在
+// 它之上留了一点余量：30 tok/s 约 25% 热度、200 tok/s 就过半环。
+const DefaultRedline = 500.0
 
 // Built-in speed-title themes used by the QKA title icon library.
 const (

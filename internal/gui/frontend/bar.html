@@ -112,6 +112,7 @@
   } from "./assets/speed-display.js";
   import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
   import {
+    DEFAULT_REDLINE,
     createSpeedThrottle,
     formatSpeed,
     heatColor,
@@ -173,9 +174,11 @@
     titleEl: document.getElementById("speed-title"),
     // 称号文字来自快照（跟随称号主题 + 红线），核只负责字号与排布。
     hostTitle: true,
-    size: Math.round((window.innerWidth || 122) / 1.9),
+    // 球径 = 容器（= 窗口）/ 1.9。用元素尺寸而不是 innerWidth，
+    // 页面有内边距时也不会算错。
+    size: Math.round((ball.clientWidth || window.innerWidth || 122) / 1.9),
     clip: false,
-    redline: 2000,
+    redline: DEFAULT_REDLINE,
     readoutOffset: -50,
     reduceMotion: reducedMotion,
     onText: writeSpeedText,
@@ -196,7 +199,7 @@
     if (!view) return;
     const speed = Number(view.output_tokens_per_second) || 0;
     const active = Boolean(view.active);
-    const redline = Number(view.redline_tokens_per_second) || 2000;
+    const redline = Number(view.redline_tokens_per_second) || DEFAULT_REDLINE;
     ball.classList.toggle("idle", !active);
     ball.classList.toggle("live", active);
 
@@ -250,7 +253,7 @@
     ball.style.setProperty("--dock-x", shift.x + "px");
     ball.style.setProperty("--dock-y", shift.y + "px");
     ball.dataset.dock = side;
-    orb.setSize(Math.round(window.innerWidth / 1.9));
+    orb.setSize(Math.round((ball.clientWidth || window.innerWidth) / 1.9));
     if (docked && !dockPoll) {
       dockPoll = setInterval(syncDocked, 500);
     } else if (!docked && dockPoll) {

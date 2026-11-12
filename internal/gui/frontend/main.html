@@ -1759,8 +1759,8 @@
   }
   .speed-hero {
     position: relative; overflow: hidden;
-    display: grid; grid-template-columns: 112px minmax(0, 1fr) 176px;
-    gap: 22px; align-items: center;
+    display: grid; grid-template-columns: 213px minmax(0, 1fr) 176px;
+    gap: 14px; align-items: center;
     margin-bottom: 12px; padding: 22px 24px;
     border-radius: 16px;
     background:
@@ -1776,8 +1776,9 @@
   /* 速度页 hero 的球体：与悬浮球同一个渲染核（agent-speed 的丝绸核心 +
      36 段 LED 环 + 彗星），特效强度按规格降到「柔和」——它是一块常驻仪表，
      不该比悬浮球还吵。 */
+  /* 容器 = 1.9 × 球径：渲染核把光晕、彗星与火花画到球外，容器小会裁掉。 */
   .speed-orb {
-    position: relative; width: 112px; height: 112px;
+    position: relative; width: 213px; height: 213px;
     display: grid; place-items: center;
   }
   .speed-orb canvas {
@@ -3337,6 +3338,7 @@ import {
 } from "./assets/speed-display.js";
 import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
 import {
+  DEFAULT_REDLINE,
   createSpeedThrottle,
   drawLedStrip,
   formatSpeed,
@@ -5318,7 +5320,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     size: 112,
     clip: false,
     level: 1,
-    redline: 2000,
+    redline: DEFAULT_REDLINE,
     reduceMotion: !!(window.matchMedia &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches),
   });
@@ -5427,7 +5429,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const generating = Number(view.generating_agents) || 0;
     const hero = document.getElementById("speed-hero");
     hero.classList.toggle("active", active);
-    const redline = Number(view.redline_tokens_per_second) || 2000;
+    const redline = Number(view.redline_tokens_per_second) || DEFAULT_REDLINE;
     setTitleRedline(redline);
     const heat = heatForSpeed(output, redline);
     // hero 球体与悬浮球共用同一渲染核：丝绸核心 + 36 段热谱环 + 彗星。
