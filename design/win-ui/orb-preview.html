@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA 悬浮球 · agent-speed 渲染核对照</title>
+<style>
+  :root {
+    --stage: #0b0d14; --panel: #12161f; --panel-line: #232a38;
+    --ink: #eef2f8; --ink-dim: #8b94a6; --accent: #38BDF8;
+    --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          "PingFang TC", "Microsoft JhengHei", sans-serif;
+    --num: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 22px 26px 40px; background: #07080c; color: var(--ink);
+         font: 400 13px/1.5 var(--ui); -webkit-font-smoothing: antialiased; }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 650; letter-spacing: -.01em; }
+  .sub { color: var(--ink-dim); font-size: 12px; margin-bottom: 18px; }
+  .row { display: flex; gap: 18px; flex-wrap: wrap; }
+  .stage { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid var(--panel-line);
+           isolation: isolate; background:
+             radial-gradient(700px 400px at 20% 10%, #1b2140 0%, transparent 60%),
+             radial-gradient(600px 400px at 85% 90%, #261833 0%, transparent 60%), #0a0c13; }
+  .stage.big { width: 420px; height: 420px; }
+  .stage.small { width: 172px; height: 172px; }
+  .orb-wrap { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  .orb-wrap canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+  .readout { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center;
+             pointer-events: none; display: grid; justify-items: center; font-family: var(--num); }
+  .value { font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; line-height: 1.1;
+           white-space: nowrap; font-family: var(--num); }
+  .unit { font-weight: 500; letter-spacing: .5px; line-height: 1.2; }
+  .title { font-weight: 600; letter-spacing: 1.6px; line-height: 1.2; transition: color .3s ease; }
+  .peak-pill { position: absolute; left: 50%; font-weight: 700; color: #3a2400; white-space: nowrap;
+               border-radius: 999px; background: linear-gradient(180deg, #ffe58a, #ffb020);
+               box-shadow: 0 0 18px #ffb02088, 0 0 2px #fff;
+               transform: translate(-50%, -50%) scale(.2); opacity: 0; pointer-events: none; }
+  .cap { font-size: 11px; color: var(--ink-dim); margin-top: 8px; letter-spacing: .02em; }
+  .col { display: flex; flex-direction: column; align-items: center; }
+
+  .controls { margin-top: 20px; background: var(--panel); border: 1px solid var(--panel-line);
+              border-radius: 14px; padding: 14px 16px; display: grid; gap: 12px; max-width: 760px; }
+  .ctl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .ctl > label { font-size: 12px; color: var(--ink-dim); min-width: 52px; }
+  .speed-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; }
+  .speed-line strong { font-family: var(--num); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .speed-line span { font-size: 12.5px; color: var(--ink-dim); }
+  input[type=range] { width: 100%; accent-color: var(--accent); height: 26px; }
+  .seg { display: inline-flex; background: #0c0f17; border: 1px solid var(--panel-line); border-radius: 10px; padding: 2px; }
+  .seg button { appearance: none; border: 0; background: transparent; color: var(--ink-dim);
+                font: 600 12.5px var(--ui); padding: 6px 11px; border-radius: 8px; cursor: pointer; }
+  .seg button.on { background: #262c40; color: var(--ink); }
+  .btn { appearance: none; border: 1px solid var(--panel-line); background: #1a1f2d; color: var(--ink);
+         cursor: pointer; font: 600 12.5px var(--ui); padding: 7px 12px; border-radius: 10px; }
+  .btn.gold { border-color: #6b5320; background: linear-gradient(180deg, #3a2d10, #2a200b); color: #ffd56a; }
+  .tier { font-size: 12px; font-weight: 650; letter-spacing: .8px; padding: 3px 9px; border-radius: 999px;
+          border: 1px solid currentColor; }
+  /* ---- 速度页 hero 模拟：112px 球体 + 44px 热谱数字 + 36 段 LED 条 ---- */
+  .hero { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 22px;
+          align-items: center; margin-top: 22px; padding: 20px 22px;
+          background: var(--panel); border: 1px solid var(--panel-line); border-radius: 14px;
+          max-width: 760px; }
+  .hero-orb { position: relative; width: 112px; height: 112px; }
+  .hero-orb canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  .hero-kicker { display: flex; align-items: center; gap: 7px; color: var(--ink-dim); font-size: 12px; font-weight: 600; }
+  .hero-kicker .dot { width: 6px; height: 6px; border-radius: 50%; background: #35c287; }
+  .hero-readout { display: flex; align-items: baseline; gap: 9px; margin-top: 6px; }
+  .hero-num { font-family: var(--num); font-size: 44px; font-weight: 700; line-height: .94;
+              letter-spacing: -.04em; font-variant-numeric: tabular-nums; transition: color .3s ease; }
+  .hero-unit { color: var(--ink-dim); font-size: 14px; font-weight: 600; }
+  .hero-title { font-size: 12px; font-weight: 650; letter-spacing: .08em; margin-left: 6px; }
+  .hero-strip { position: relative; margin-top: 12px; max-width: 470px; }
+  .hero-strip canvas { display: block; width: 100%; height: 14px; }
+  .hero-peak { position: absolute; top: -15px; transform: translateX(-50%);
+               font: 600 9px/1 var(--num); color: #f2b544; white-space: nowrap; opacity: 0;
+               transition: opacity .25s ease; }
+  .hero-peak.show { opacity: 1; }
+  .notes { color: var(--ink-dim); font-size: 12px; margin-top: 18px; max-width: 780px; padding-left: 1.1em; }
+  .notes li { margin: 3px 0; }
+</style>
+</head>
+<body>
+  <h1>QKA 悬浮球 · agent-speed 渲染核</h1>
+  <div class="sub">左侧 148px 球体（与 agent-speed 同尺寸、完整 1.9S 光晕），右侧 52px（QKA 实际球径，画布即圆）</div>
+
+  <div class="row">
+    <div class="col">
+      <div class="stage big" id="stage-big">
+        <div class="orb-wrap" id="wrap-big">
+          <canvas id="gl-big"></canvas>
+          <canvas id="fx-big"></canvas>
+          <div class="readout" id="readout-big">
+            <span class="value" id="value-big">0</span>
+            <span class="unit" id="unit-big">tok/s</span>
+            <span class="title" id="title-big">待機</span>
+          </div>
+          <div class="peak-pill" id="pill-big">新紀錄 NEW PEAK</div>
+        </div>
+      </div>
+      <div class="cap">148px · 完整效果（对照 agent-speed）</div>
+    </div>
+    <div class="col">
+      <div class="stage small" id="stage-small">
+        <div class="orb-wrap" id="wrap-small">
+          <canvas id="gl-small"></canvas>
+          <canvas id="fx-small"></canvas>
+          <div class="readout" id="readout-small">
+            <span class="value" id="value-small">0</span>
+            <span class="unit" id="unit-small">tok/s</span>
+            <span class="title" id="title-small">待機</span>
+          </div>
+        </div>
+      </div>
+      <div class="cap">52px · QKA 球径（clip 模式）</div>
+    </div>
+    <div class="col">
+      <div class="stage small" id="stage-tiny">
+        <div class="orb-wrap" id="wrap-tiny">
+          <canvas id="gl-tiny"></canvas>
+          <canvas id="fx-tiny"></canvas>
+          <div class="readout" id="readout-tiny">
+            <span class="value" id="value-tiny">0</span>
+          </div>
+        </div>
+      </div>
+      <div class="cap">36px · 贴边态</div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-orb" id="hero-orb">
+      <canvas id="hero-gl"></canvas>
+      <canvas id="hero-fx"></canvas>
+    </div>
+    <div class="hero-main">
+      <div class="hero-kicker"><i class="dot"></i><span>ZCode 正在生成</span></div>
+      <div class="hero-readout">
+        <span class="hero-num" id="hero-num">0</span>
+        <span class="hero-unit">tok/s</span>
+        <span class="hero-title" id="hero-title">待机</span>
+      </div>
+      <div class="hero-strip">
+        <canvas id="hero-strip-canvas"></canvas>
+        <span class="hero-peak" id="hero-peak">今日峰值</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="ctl">
+      <div class="speed-line">
+        <strong id="speedNum">0</strong>
+        <span>tok/s · <span class="tier" id="tier">待機</span></span>
+      </div>
+      <input id="speed" type="range" min="0" max="2400" step="1" value="0">
+    </div>
+    <div class="ctl">
+      <label>红线</label>
+      <div class="seg" id="segRedline">
+        <button data-v="400">400</button>
+        <button data-v="800">800</button>
+        <button data-v="1200">1200</button>
+        <button data-v="2000" class="on">2000</button>
+      </div>
+      <label>强度</label>
+      <div class="seg" id="segLevel">
+        <button data-v="0">关</button>
+        <button data-v="1" class="on">标准</button>
+        <button data-v="1.6">极致</button>
+      </div>
+      <button class="btn" id="pulse">回应完成</button>
+      <button class="btn gold" id="peak">破纪录</button>
+      <button class="btn" id="demo">自动示范</button>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li>渲染核逐字移植自 agent-speed 的 <code>spec/prototypes/led-effects.html</code>（MIT © zoefix）：片元着色器、粒子发射、电弧/闪电几何、热度弹簧、档位迟滞全部原样保留。</li>
+    <li>改动只有三处：DOM 改成传入（可空）、演示时间轴换成 <code>setState/pulse/peak</code> 入口、新增 clip 模式（画布即圆，给 QKA 的圆形球窗用）。</li>
+    <li>148px 与 agent-speed 默认球同尺寸，可直接和他们的原型并排比对；52px 是 QKA 现在的球径。</li>
+  </ul>
+
+<script type="module">
+  import { createAgentSpeedOrb } from "../../internal/gui/frontend/assets/orb-agent-speed.js";
+  import { drawLedStrip, formatSpeed, heatColor, heatForSpeed } from "../../internal/gui/frontend/assets/tokenspeed-viz.js";
+
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const big = createAgentSpeedOrb({
+    stage: document.getElementById("stage-big"),
+    glCanvas: document.getElementById("gl-big"),
+    fxCanvas: document.getElementById("fx-big"),
+    readout: document.getElementById("readout-big"),
+    valueEl: document.getElementById("value-big"),
+    unitEl: document.getElementById("unit-big"),
+    titleEl: document.getElementById("title-big"),
+    pillEl: document.getElementById("pill-big"),
+    size: 148, clip: false, redline: 2000, reduceMotion: reduce,
+  });
+  const small = createAgentSpeedOrb({
+    stage: document.getElementById("stage-small"),
+    glCanvas: document.getElementById("gl-small"),
+    fxCanvas: document.getElementById("fx-small"),
+    readout: document.getElementById("readout-small"),
+    valueEl: document.getElementById("value-small"),
+    unitEl: document.getElementById("unit-small"),
+    titleEl: document.getElementById("title-small"),
+    size: 52, clip: true, redline: 2000, readoutOffset: -50, reduceMotion: reduce,
+  });
+  const tiny = createAgentSpeedOrb({
+    stage: document.getElementById("stage-tiny"),
+    glCanvas: document.getElementById("gl-tiny"),
+    fxCanvas: document.getElementById("fx-tiny"),
+    readout: document.getElementById("readout-tiny"),
+    valueEl: document.getElementById("value-tiny"),
+    size: 36, clip: true, redline: 2000, reduceMotion: reduce,
+  });
+  const orbs = [big, small, tiny];
+
+  const heroOrb = createAgentSpeedOrb({
+    stage: document.getElementById("hero-orb"),
+    glCanvas: document.getElementById("hero-gl"),
+    fxCanvas: document.getElementById("hero-fx"),
+    size: 112, clip: false, redline: 2000, reduceMotion: reduce,
+  });
+  const heroNum = document.getElementById("hero-num");
+  const heroTitle = document.getElementById("hero-title");
+  const heroStrip = document.getElementById("hero-strip-canvas");
+  const heroPeak = document.getElementById("hero-peak");
+  let peakToday = 0;
+  window.__orbs = orbs; // 供调试观察内部状态
+
+  const speedEl = document.getElementById("speed");
+  const speedNum = document.getElementById("speedNum");
+  const tierEl = document.getElementById("tier");
+  const TIER_NAMES = ["待機", "巡航", "加速", "狂飆", "極限"];
+  let redline = 2000;
+  let auto = false, autoT = 0, lastFrame = performance.now();
+
+  function push(value) {
+    for (const orb of orbs) orb.setState({ value, redline });
+    heroOrb.setState({ value, redline });
+    peakToday = Math.max(peakToday, value);
+    drawLedStrip(heroStrip, { value, redline, peak: peakToday });
+    const h = heatForSpeed(value, redline);
+    const heatCss = heatColor(h);
+    heroNum.textContent = formatSpeed(value);
+    heroNum.style.color = h >= 0.25 ? heatCss : "";
+    heroNum.style.textShadow = h >= 0.55 ? "0 0 " + (18 + 22 * h).toFixed(0) + "px " + heatColor(h, 0.55) : "";
+    heroTitle.textContent = bottomTitle(value);
+    heroTitle.style.color = h >= 0.25 ? heatCss : "var(--ink-dim)";
+    const peakPct = Math.min(100, heatForSpeed(peakToday, redline) * 100);
+    heroPeak.style.left = peakPct.toFixed(1) + "%";
+    heroPeak.classList.toggle("show", peakToday > 0 && value >= 0.5);
+  }
+
+  const LADDER = [["步行", 0], ["自行车", 0.02], ["电动车", 0.03], ["摩托车", 0.04], ["汽车", 0.06],
+    ["跑车", 0.08], ["高铁", 0.12], ["赛车", 0.17], ["磁悬浮列车", 0.24], ["喷气客机", 0.34],
+    ["战斗机", 0.5], ["高超音速飞机", 0.7], ["火箭", 1]];
+  function bottomTitle(value) {
+    if (!(value >= 0.5)) return "待机";
+    let name = LADDER[0][0];
+    for (const [label, ratio] of LADDER) if (value >= ratio * redline) name = label;
+    return name;
+  }
+
+  // 原型演示时间轴（0→90→260→520→900→1500→2350→回落），照抄。
+  const DEMO = [[0, 0], [3, 0], [6, 90], [9, 260], [12, 520], [15, 900], [18, 1500], [21, 2350],
+                [27, 2200], [30, 1300], [33, 0], [36, 0]];
+  function demoTarget(t) {
+    t %= 36;
+    for (let i = 1; i < DEMO.length; i++) {
+      if (t <= DEMO[i][0]) {
+        const [t0, a] = DEMO[i - 1], [t1, b] = DEMO[i];
+        const k = (t - t0) / (t1 - t0), s = k * k * (3 - 2 * k);
+        return a + (b - a) * s;
+      }
+    }
+    return 0;
+  }
+
+  function frame(now) {
+    const dt = Math.min(.05, (now - lastFrame) / 1000);
+    lastFrame = now;
+    if (auto) {
+      const prev = autoT % 36;
+      autoT += dt;
+      if (prev < 22 && autoT % 36 >= 22) orbs.forEach((orb) => orb.peak());
+      const target = demoTarget(autoT) * (1 + .04 * Math.sin(autoT * 2.3) + .03 * Math.sin(autoT * 5.1));
+      speedEl.value = String(Math.round(target));
+      push(target);
+    }
+    const v = Number(speedEl.value);
+    speedNum.textContent = Math.round(v).toLocaleString("en-US");
+    const tier = big.state.tier;
+    tierEl.textContent = TIER_NAMES[tier] || "待機";
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  speedEl.addEventListener("input", () => { auto = false; push(Number(speedEl.value)); });
+  document.getElementById("pulse").addEventListener("click", () => orbs.forEach((orb) => orb.pulse(1)));
+  document.getElementById("peak").addEventListener("click", () => orbs.forEach((orb) => orb.peak()));
+  document.getElementById("demo").addEventListener("click", () => { auto = !auto; autoT = 0; });
+
+  document.getElementById("segRedline").addEventListener("click", (event) => {
+    const button = event.target.closest("button"); if (!button) return;
+    event.currentTarget.querySelectorAll("button").forEach((node) => node.classList.toggle("on", node === button));
+    redline = Number(button.dataset.v);
+    push(Number(speedEl.value));
+  });
+  document.getElementById("segLevel").addEventListener("click", (event) => {
+    const button = event.target.closest("button"); if (!button) return;
+    event.currentTarget.querySelectorAll("button").forEach((node) => node.classList.toggle("on", node === button));
+    const level = Number(button.dataset.v);
+    orbs.forEach((orb) => orb.setLevel(level));
+  });
+
+  push(Number(speedEl.value));
+</script>
+</body>
+</html>

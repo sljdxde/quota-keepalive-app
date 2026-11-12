@@ -61,8 +61,15 @@ type Config struct {
 	// WalkInterval 是完整重启目录扫描的最小间隔；两次扫描之间只对已知文件做
 	// 增量 stat/读取。为 0 时每轮都重扫（测试默认，保证新建文件立刻可见）。
 	WalkInterval time.Duration
-	Now          func() time.Time
+	// Redline 是红线速率（tok/s）：热谱、档位与称号阈值按它缩放。为 0 时用
+	// DefaultRedline（与 agent-speed 的默认红线 2000 一致）。
+	Redline float64
+	Now     func() time.Time
 }
+
+// DefaultRedline 是红线默认值。agent-speed 的默认红线是 2000 tok/s：多数
+// 真实会话落在 20–400 之间，红线只在真正的高吞吐时点亮。
+const DefaultRedline = 2000.0
 
 // Built-in speed-title themes used by the QKA title icon library.
 const (
@@ -122,6 +129,12 @@ func TitleThemeOptions() []TitleThemeOption {
 
 // TitleThemeCatalog returns every built-in theme with its full title ladder.
 func TitleThemeCatalog() []TitleThemeDefinition {
+	return titleCatalogFor(0)
+}
+
+// titleCatalogFor 返回按红线缩放的称号目录：界面直接用阈值画档位刻度。
+func titleCatalogFor(redline float64) []TitleThemeDefinition {
+	thresholds := TitleThresholdsFor(redline)
 	options := TitleThemeOptions()
 	out := make([]TitleThemeDefinition, 0, len(options))
 	for _, option := range options {
@@ -130,7 +143,7 @@ func TitleThemeCatalog() []TitleThemeDefinition {
 			ID:         option.ID,
 			Label:      option.Label,
 			Idle:       spec.idle,
-			Thresholds: append([]float64(nil), titleThresholds[:]...),
+			Thresholds: append([]float64(nil), thresholds[:]...),
 			Titles:     append([]string(nil), spec.titles[:]...),
 		})
 	}
@@ -157,6 +170,20 @@ type Snapshot struct {
 	// 提示「另有 N 个未使用」，不再为它们各占一行空白卡片。
 	IdleSourceCount int    `json:"idle_source_count"`
 	UpdatedAt       string `json:"updated_at"`
+
+	// PeakTodayTokensPerSecond 是今日实时速率的峰值（agent-speed 口径：运行
+	// 期间观测到的最大值），供速度页的「今日峰值」标记与破纪录庆祝使用。
+	PeakTodayTokensPerSecond float64 `json:"peak_today_tokens_per_second"`
+	// EstimatedShare 是当前速率里来自「在飞估算」的比例 0-1；界面据此提示
+	// 数字中有多少是估算（真实数据到齐后会自动被实测替换）。
+	EstimatedShare float64 `json:"estimated_share"`
+	// ResponseSeq 每完成一条响应就递增；界面比对序号变化来播放「响应完成」
+	// 冲击波（轮询快照没有事件通道，用序号充当轻量事件）。
+	ResponseSeq int64 `json:"response_seq"`
+	// PeakSeq 每庆祝一次新峰值就递增（已按冷却去抖）。
+	PeakSeq int64 `json:"peak_seq"`
+	// Redline 是当前红线速率（tok/s）：热谱、档位与称号阈值都按它缩放。
+	Redline float64 `json:"redline_tokens_per_second"`
 }
 
 // SourceSnapshot is one agent family's contribution to the live window.
@@ -357,6 +384,26 @@ var titleThresholds = [13]float64{
 	0.5, 8, 12, 16, 24, 32, 48, 68, 96, 136, 200, 280, 400,
 }
 
+// titleRatios 是 13 档称号相对红线的比例（取自 agent-speed 的 DESIGN §1），
+// 基准红线 400 tok/s 时正好等于 titleThresholds。
+var titleRatios = [13]float64{
+	0, 0.02, 0.03, 0.04, 0.06, 0.08, 0.12, 0.17, 0.24, 0.34, 0.5, 0.7, 1.0,
+}
+
+// TitleThresholdsFor 返回按红线缩放的 13 档阈值：称号阶梯随红线整体缩放，
+// 改红线不会改变「第几档」的含义。
+func TitleThresholdsFor(redline float64) [13]float64 {
+	out := titleThresholds
+	if redline <= 0 {
+		redline = DefaultRedline
+	}
+	out[0] = 0.5
+	for i := 1; i < len(out); i++ {
+		out[i] = math.Round(titleRatios[i]*redline*100) / 100
+	}
+	return out
+}
+
 // NormalizeTitleTheme maps unknown or empty IDs to the default theme.
 func NormalizeTitleTheme(theme string) string {
 	if _, ok := builtInTitles[theme]; ok {
@@ -374,14 +421,22 @@ func TitleThemeLabel(theme string) string {
 	return titleThemes[NormalizeTitleTheme(theme)].Label
 }
 
-// ThemeTitle returns the title for the selected built-in Agent Speed theme.
+// ThemeTitle returns the title for the selected built-in Agent Speed theme,
+// using the baseline 400 tok/s ladder.
 func ThemeTitle(theme string, value float64, active bool) string {
+	return ThemeTitleAt(theme, value, active, 400)
+}
+
+// ThemeTitleAt returns the title for the given redline: the ladder scales with
+// it, so the same level names stay meaningful at any redline.
+func ThemeTitleAt(theme string, value float64, active bool, redline float64) string {
 	spec := builtInTitles[NormalizeTitleTheme(theme)]
 	if !active || value < 0.5 {
 		return spec.idle
 	}
-	for index := len(titleThresholds) - 1; index >= 0; index-- {
-		if value >= titleThresholds[index] {
+	thresholds := TitleThresholdsFor(redline)
+	for index := len(thresholds) - 1; index >= 0; index-- {
+		if value >= thresholds[index] {
 			return spec.titles[index]
 		}
 	}

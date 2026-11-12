@@ -60,9 +60,11 @@ func TestCodexMeasuredLiveWindow(t *testing.T) {
 	service.Poll()
 
 	snapshot := service.Snapshot()
-	assertNear(t, snapshot.OutputTokensPerSecond, 180)
-	assertNear(t, snapshot.TotalTokensPerSecond, 230)
-	assertNear(t, snapshot.InputTokensPerSecond, 50)
+	// 3 秒滑窗口径：180 token 的解码窗口完全落在窗口内（180/3s），
+	// 输入按整段请求时长折算（100 token / 2s → 50/s）。
+	assertNear(t, snapshot.OutputTokensPerSecond, 60)
+	assertNear(t, snapshot.TotalTokensPerSecond, 93.333)
+	assertNear(t, snapshot.InputTokensPerSecond, 33.333)
 	if len(snapshot.Sources) != 1 || snapshot.Sources[0].Label != "Codex" {
 		t.Fatalf("来源快照错误: %+v", snapshot.Sources)
 	}
@@ -72,7 +74,7 @@ func TestCodexMeasuredLiveWindow(t *testing.T) {
 	if snapshot.Sessions[0].SourceLabel != "Codex" || snapshot.Sessions[0].Generating {
 		t.Fatalf("会话来源或状态错误: %+v", snapshot.Sessions[0])
 	}
-	if snapshot.Title != ThemeTitle(TitleThemeVehicles, snapshot.OutputTokensPerSecond, true) ||
+	if snapshot.Title != ThemeTitleAt(TitleThemeVehicles, snapshot.OutputTokensPerSecond, true, snapshot.Redline) ||
 		snapshot.TitleTheme != "交通工具" {
 		t.Fatalf("速度称号错误: title=%q theme=%q", snapshot.Title, snapshot.TitleTheme)
 	}
@@ -187,7 +189,7 @@ func TestCodexActiveEstimateUsesRecentReference(t *testing.T) {
 	service.Poll()
 
 	snapshot := service.Snapshot()
-	assertNear(t, snapshot.OutputTokensPerSecond, 50)
+	assertNear(t, snapshot.OutputTokensPerSecond, 41.667)
 	if snapshot.GeneratingAgents != 1 || !snapshot.Active {
 		t.Fatalf("应识别到一个正在生成的 Agent: %+v", snapshot)
 	}
@@ -259,7 +261,7 @@ func TestClaudeMeasuredSpeed(t *testing.T) {
 	service.Poll()
 
 	snapshot := service.Snapshot()
-	assertNear(t, snapshot.OutputTokensPerSecond, 600)
+	assertNear(t, snapshot.OutputTokensPerSecond, 400)
 	if len(snapshot.Sources) != 1 || snapshot.Sources[0].Label != "Claude Code" {
 		t.Fatalf("Claude 来源快照错误: %+v", snapshot.Sources)
 	}

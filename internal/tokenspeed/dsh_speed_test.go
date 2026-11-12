@@ -73,8 +73,9 @@ func TestDSHMeasuresSpeedFromStreamTimeline(t *testing.T) {
 	}
 
 	// 正文速率 = (100-30) tokens / (endBase - (endBase-500)) ms = 70 / 0.5s = 140。
-	if snapshot.OutputTokensPerSecond < 139.9 || snapshot.OutputTokensPerSecond > 140.1 {
-		t.Fatalf("实测输出速率 = %.3f, want 140", snapshot.OutputTokensPerSecond)
+	// 3 秒滑窗口径：70 token 的解码窗口完全落在窗口内 → 70 / 3s。
+	if snapshot.OutputTokensPerSecond < 23.2 || snapshot.OutputTokensPerSecond > 23.5 {
+		t.Fatalf("实测输出速率 = %.3f, want 23.333", snapshot.OutputTokensPerSecond)
 	}
 	var source *SourceSnapshot
 	for i := range snapshot.Sources {
@@ -82,8 +83,8 @@ func TestDSHMeasuresSpeedFromStreamTimeline(t *testing.T) {
 			source = &snapshot.Sources[i]
 		}
 	}
-	if source == nil || source.OutputTokensPerSecond < 139.9 ||
-		source.OutputTokensPerSecond > 140.1 {
+	if source == nil || source.OutputTokensPerSecond < 23.2 ||
+		source.OutputTokensPerSecond > 23.5 {
 		t.Fatalf("来源速率错误: %+v", source)
 	}
 	// 今日总量必须包含两条事件（150 + 15）。
@@ -120,9 +121,9 @@ func TestDSHSpeedFallsBackToFirstChunkWhenStepMissing(t *testing.T) {
 	if record.startMS != endBase-1100 {
 		t.Fatalf("起点应退回首 chunk: got %d, want %d", record.startMS, endBase-1100)
 	}
-	if snapshot := service.Snapshot(); snapshot.OutputTokensPerSecond < 139.9 ||
-		snapshot.OutputTokensPerSecond > 140.1 {
-		t.Fatalf("速率 = %.3f, want 140", snapshot.OutputTokensPerSecond)
+	if snapshot := service.Snapshot(); snapshot.OutputTokensPerSecond < 23.2 ||
+		snapshot.OutputTokensPerSecond > 23.5 {
+		t.Fatalf("速率 = %.3f, want 23.333（70 token / 3 秒滑窗）", snapshot.OutputTokensPerSecond)
 	}
 }
 
@@ -194,9 +195,13 @@ func TestDSHShowsGeneratingWhileStepIsOpen(t *testing.T) {
 	if source.GeneratingAgents != 1 {
 		t.Fatalf("dsh 来源应标记生成中: %+v", source)
 	}
-	// 用最近实测值做估计，必须明显大于 0。
-	if source.OutputTokensPerSecond < 100 {
+	// 用最近实测值做估计：3 秒滑窗下显示值 = 参考速率 × 在飞时长 / 3s，
+	// 必须明显大于 0，且整段速率都来自估算。
+	if source.OutputTokensPerSecond <= 0 {
 		t.Fatalf("生成中应给出估计速率，实际 %.1f", source.OutputTokensPerSecond)
+	}
+	if snapshot.EstimatedShare < 0.99 {
+		t.Fatalf("生成中的速率应全部来自估算，实际占比 %.2f", snapshot.EstimatedShare)
 	}
 }
 

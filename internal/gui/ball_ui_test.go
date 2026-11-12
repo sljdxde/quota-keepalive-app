@@ -10,9 +10,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// 悬浮球替换掉旧的深色渐变胶囊：圆形卡、称号色进度环、滚动数字、可拖动、
-// 球内迷你宠物（短按放技能 / 长按抛精灵球）、右键出自绘菜单。
-func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
+// 悬浮球换成 agent-speed 的 LED 仪表（spec/DESIGN.md §2）：canvas 画 36 段
+// 热谱环 + 彗星 + 火花/余烬 + 冲击波 + 破纪录金光；数字仍由 DOM 连滚。
+// 手势、贴边、右键菜单保持不变。
+func TestFloatingBallUsesLEDGauge(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/bar.html")
 	if err != nil {
 		t.Fatal(err)
@@ -20,73 +21,57 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 	page := string(data)
 	for _, want := range []string{
 		`class="ball idle"`,
-		`class="ring"`,
-		`r="30.5"`,
-		`stroke-dasharray="191.6"`,
-		`id="speed-value"`,
-		`id="ball-pet"`,
-		`id="ball-pet-img"`,
-		`id="ball-ball"`,
-		`assets/ball-face.js`,
-		`assets/ball-effects.js`,
-		`ballFaceState`,
-		`ballEffectsState`,
+		`id="ball-gl"`,
 		`id="ball-fx"`,
-		`ball.dataset.fxTier`,
-		`ball.dataset.effect`,
-		`--hop-duration`,
-		`face.petVisible`,
-		`face.ballVisible`,
-		`face.autoRelease`,
-		`face.speedFontPx`,
-		`updatePetSprite`,
-		`assets/pokemon/`,
-		`qka.pet.selected`,
-		`qka.pet.caught.v1`,
+		`<canvas class="led"`,
+		`<canvas class="orb-fx"`,
+		`id="speed-value"`,
+		`id="speed-unit"`,
+		`id="speed-title"`,
+		`>tok/s<`,
+		`ui-monospace, "SF Mono", "Cascadia Mono"`,
+		`readoutOffset: -50`,
+		`speedPendingTimer`,
+		`assets/orb-agent-speed.js`,
+		`assets/tokenspeed-viz.js`,
+		`createAgentSpeedOrb`,
+		`clip: true`,
+		`onText: writeSpeedText`,
+		`orb.setState`,
+		`orb.pulse`,
+		`orb.peak`,
+		`orb.resize`,
+		`response_seq`,
+		`peak_seq`,
+		`redline_tokens_per_second`,
 		`assets/qka-ui.css`,
 		`assets/ball.css`,
 		`assets/odometer.js`,
-		`assets/title-system.js`,
 		`assets/bar-gesture.js`,
-		`ringProgress`,
-		`titleThresholds`,
-		`titleThemeHues`,
 		`Bound.BarMenu`,
 		`Bound.BarStartDrag`,
 		`Bound.BarToggle`,
 		`shouldStartDrag`,
 		`dragTargetOrigin`,
 		`Events.On("tokenspeed-changed"`,
-		`Events.On("pet-selected"`,
-		`Events.On("pet-caught"`,
-		`petId: pet.id`,
 		`--wails-draggable: drag`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("悬浮球页面缺少 %q", want)
 		}
 	}
-	// 贴边弹回是 BarToggle 的唯一正当调用点；BarStartDrag 只在拖动升级里用。
+	// 球面不再承载宠物/精灵球：LED 仪表 + 数字是唯一内容（对齐 agent-speed）。
 	for _, forbidden := range []string{
-		`linear-gradient(150deg`,
-		`--notch-bg`,
-		`box-shadow: inset 0 .5px 0`,
-		`assets/tray/`,
-		// 球面精简：不再展示 tok/s 单位，也不承载投球/技能演出。
-		`>tok/s<`,
-		`viewer.throwBall`,
-		// 球面不依赖 WebGL：小球里 3D 加载慢/失败会让宠物整块空白。
+		`assets/pokemon/`,
+		`pet-icon`,
+		`ball-face.js`,
+		`ball-effects.js`,
+		`qka.pet.selected`,
 		`createPokemon3D`,
-		`pokemon-3d-canvas`,
-		`modelYaw`,
-		`assets/pokemon-3d.js`,
-		`petImg.hidden = true`,
-		// SVG 没有 hidden IDL 属性：给精灵球设 .hidden 不会移除 hidden 属性，
-		// 捕获态会变成「宠物隐藏 + 精灵球也不显示」的空白球。
-		`ballIcon.hidden`,
+		`assets/tray/`,
 	} {
 		if strings.Contains(page, forbidden) {
-			t.Errorf("悬浮球页面仍残留旧样式或旧入口 %q", forbidden)
+			t.Errorf("悬浮球页面仍残留旧内容 %q", forbidden)
 		}
 	}
 }
@@ -516,8 +501,7 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
 		`ball.style.setProperty("--dock-y"`,
-		// 档位必须真的写到 DOM 上，CSS 的 [data-run-tier] 才生效。
-		`ball.dataset.runTier = String(face.runTier)`,
+		`orb.resize()`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("贴边态页面缺少 %q", want)
@@ -528,11 +512,14 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 贴边态：内容按 --dock-x/--dock-y 向屏内平移，画布跟着重算尺寸。
+	// 球面样式在 bar.html 的内联 <style> 里（ball.css 只保留通用外壳）。
+	_ = cssData
 	for _, want := range []string{
-		`.ball.docked .core {`,
-		`transform: translate(var(--dock-x, 0px), var(--dock-y, 0px));`,
+		`.ball .led, .ball .orb-fx`,
+		`transform: translate(-50%, -50%);`,
 	} {
-		if !strings.Contains(string(cssData), want) {
+		if !strings.Contains(page, want) {
 			t.Errorf("贴边态样式缺少 %q", want)
 		}
 	}
@@ -549,44 +536,6 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 	} {
 		if !strings.Contains(dock, want) {
 			t.Errorf("贴边判定模块缺少 %q", want)
-		}
-	}
-}
-
-// 捕获态必须真的画出精灵球：SVG 元素没有 hidden IDL 属性，历史上用
-// ballIcon.hidden 控制显隐，结果「宠物隐藏 + 精灵球也不显示」，球面只剩数字。
-// 现在两种主体由 .show-pet / .show-ball 类互斥控制，CSS 里必须有 display 规则。
-func TestBallCaughtModeShowsPokeBall(t *testing.T) {
-	data, err := frontendFS.ReadFile("frontend/bar.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	page := string(data)
-	for _, want := range []string{
-		`classList.toggle("caught", caught)`,
-		`classList.toggle("show-pet", face.petVisible)`,
-		`classList.toggle("show-ball", face.ballVisible)`,
-		`if (face.petVisible) updatePetSprite(pet)`,
-		`id="ball-ball" viewBox="0 0 24 24" aria-hidden="true">`,
-	} {
-		if !strings.Contains(page, want) {
-			t.Errorf("捕获态渲染缺少 %q", want)
-		}
-	}
-
-	cssData, err := frontendFS.ReadFile("frontend/assets/ball.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	css := string(cssData)
-	for _, want := range []string{
-		`display: none;`,
-		`.ball.show-pet .core .pet-icon { display: block; }`,
-		`.ball.show-ball .core .ball-icon { display: block; }`,
-		`@keyframes ball-shake`,
-	} {
-		if !strings.Contains(css, want) {
-			t.Errorf("捕获态样式缺少 %q", want)
 		}
 	}
 }

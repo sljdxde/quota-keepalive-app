@@ -157,6 +157,13 @@ type Service struct {
 	dsh           map[string]*dshFileState
 	dshDec        *dshDecoder
 	snapshot      Snapshot
+	// 峰值与事件序号：只在 computeSnapshot（已持 mu）里更新。
+	peakToday       float64
+	peakDate        string
+	peakEventSeq    int64
+	lastPeakEventMS int64
+	responseSeq     int64
+	finalSeen       map[string]bool
 	// lastWalk / lastDSHWalk 记录上一次完整目录扫描的时间，用于按
 	// WalkInterval 节流（普通日志源与 DSH 源各自计时）。由 Poll 在 s.mu 内读写。
 	lastWalk    time.Time
@@ -191,6 +198,7 @@ func New(cfg Config) *Service {
 		cfg:                cfg,
 		files:              make(map[string]*fileState),
 		records:            make(map[string]responseRecord),
+		finalSeen:          make(map[string]bool),
 		deduper:            make(map[string]string),
 		titleTheme:         TitleThemeVehicles,
 		todayDate:          todayDate,
@@ -328,6 +336,25 @@ func (s *Service) storeSnapshot(snap Snapshot) {
 	s.snapshotMu.Lock()
 	s.snapshot = snap
 	s.snapshotMu.Unlock()
+}
+
+// redline 返回当前红线；未配置时用默认值。调用方持 mu。
+func (s *Service) redline() float64 {
+	if s.cfg.Redline > 0 {
+		return s.cfg.Redline
+	}
+	return DefaultRedline
+}
+
+// SetRedline 更新红线速率并立即重算快照（称号阈值随它缩放）。
+func (s *Service) SetRedline(value float64) {
+	if value <= 0 {
+		value = DefaultRedline
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Redline = value
+	s.storeSnapshot(s.computeSnapshot(s.cfg.Now()))
 }
 
 // SetTitleTheme switches the built-in title theme and refreshes the derived snapshot.

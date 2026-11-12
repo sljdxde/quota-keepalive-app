@@ -208,35 +208,87 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	}
 
 	recentByAgent, fallbackBySource := buildReferences(measured, nowMS)
-	ratesByAgent := make(map[string]liveRate)
+
+	// 窗口内贡献：按 agent 累加「token 贡献」（tok/s × 秒），最后统一除以窗口
+	// 长度得到 tok/s。已完成响应按区间重叠折算，在飞会话按参考速率估算。
+	// 这与 agent-speed 的实时速率口径一致：数字随滑动窗口平滑上升与回落。
+	windowFromMS := nowMS - liveRateWindow.Milliseconds()
+	outputContrib := make(map[string]float64)
+	totalContrib := make(map[string]float64)
+	estimatedContrib := make(map[string]float64)
+	rateMeta := make(map[string]liveRate)
 	generatingBySource := make(map[string]int)
 	generatingByAgent := make(map[string]bool)
 	lastActiveByAgent := make(map[string]int64)
-
-	installRate := func(agentID string, rate liveRate, force bool) {
-		current, ok := ratesByAgent[agentID]
-		if force || !ok || rate.endMS >= current.endMS {
-			ratesByAgent[agentID] = rate
-		}
-	}
-
-	// A completed response keeps its measured decode speed through the short
-	// live window. The newest response wins when a session has several turns.
-	for _, response := range measured {
-		if response.endMS > nowMS || nowMS-response.endMS > liveWindow.Milliseconds() {
-			continue
-		}
-		rate, ok := responseRate(response)
-		if !ok {
-			continue
-		}
-		installRate(response.agentID, rate, false)
-		if response.endMS > lastActiveByAgent[response.agentID] {
-			lastActiveByAgent[response.agentID] = response.endMS
-		}
-	}
-
 	generatingAgents := 0
+
+	rememberActive := func(agentID string, atMS int64) {
+		if atMS > lastActiveByAgent[agentID] {
+			lastActiveByAgent[agentID] = atMS
+		}
+	}
+
+	// 已完成响应：只统计与窗口有重叠的部分，按实测区间的重叠比例折算 token。
+	for _, response := range measured {
+		if response.endMS > nowMS {
+			continue
+		}
+		rememberActive(response.agentID, response.endMS)
+		tokens, windowMS, overallMS := responseMeasure(response)
+		if tokens <= 0 || windowMS <= 0 {
+			continue
+		}
+		outTokens := measuredWindowTokens(response.endMS, windowMS, tokens, windowFromMS, nowMS)
+		if outTokens <= 0 {
+			continue
+		}
+		inTokens := 0.0
+		if overallMS > 0 && response.usage.input > 0 {
+			inTokens = inputWindowTokens(response.startMS, response.endMS,
+				response.usage.input, windowFromMS, nowMS)
+		}
+		outputContrib[response.agentID] += outTokens
+		totalContrib[response.agentID] += outTokens + inTokens
+		if current, ok := rateMeta[response.agentID]; !ok || response.endMS >= current.endMS {
+			rateMeta[response.agentID] = liveRate{
+				source: response.source,
+				model:  response.model,
+				output: float64(tokens) / (float64(windowMS) / 1000),
+				endMS:  response.endMS,
+			}
+		}
+	}
+
+	// 生成中的会话：参考速率 × 已在飞时长，起点取「在飞开始」与「最近一条
+	// 已完成响应结束」的较大者，避免把仍在收尾的响应算两遍。
+	estimateInFlight := func(agentID, source, model string, startMS int64) {
+		estimate, ok := referenceFor(agentID, source, recentByAgent, fallbackBySource)
+		if !ok {
+			return
+		}
+		estimateStart := startMS
+		if last := lastActiveByAgent[agentID]; last > estimateStart {
+			estimateStart = last
+		}
+		overlap := windowOverlapMS(estimateStart, nowMS, windowFromMS, nowMS)
+		if overlap <= 0 {
+			return
+		}
+		seconds := float64(overlap) / 1000
+		outputContrib[agentID] += estimate.output * seconds
+		totalContrib[agentID] += estimate.total * seconds
+		estimatedContrib[agentID] += estimate.output * seconds
+		if _, ok := rateMeta[agentID]; !ok {
+			rateMeta[agentID] = liveRate{
+				source: source,
+				model:  model,
+				output: estimate.output,
+				total:  estimate.total,
+				endMS:  nowMS,
+			}
+		}
+	}
+
 	for _, state := range s.files {
 		// s.files 的键是文件路径，会话身份必须用 state.agentID：DSH 一个会话
 		// 一个文件，用路径会把同一个会话拆成「路径哈希」的额外一行；子代理
@@ -247,9 +299,7 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 		}
 		if !state.active || state.lastLineMS == 0 ||
 			nowMS-state.lastLineMS > staleAfter.Milliseconds() {
-			if state.lastLineMS > lastActiveByAgent[agentID] {
-				lastActiveByAgent[agentID] = state.lastLineMS
-			}
+			rememberActive(agentID, state.lastLineMS)
 			continue
 		}
 		start := state.inFlightMS
@@ -257,56 +307,61 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 			start = state.pendingMS
 		}
 		if start > nowMS {
-			if state.lastLineMS > lastActiveByAgent[agentID] {
-				lastActiveByAgent[agentID] = state.lastLineMS
-			}
+			rememberActive(agentID, state.lastLineMS)
 			continue
 		}
 		if generatingByAgent[agentID] {
-			if state.lastLineMS > lastActiveByAgent[agentID] {
-				lastActiveByAgent[agentID] = state.lastLineMS
-			}
+			rememberActive(agentID, state.lastLineMS)
 			continue
 		}
 		generatingAgents++
 		generatingBySource[state.source]++
 		generatingByAgent[agentID] = true
-		delete(ratesByAgent, agentID)
-		if estimate, ok := referenceFor(agentID, state.source, recentByAgent, fallbackBySource); ok {
-			installRate(agentID, liveRate{
-				source: state.source,
-				model:  state.model,
-				output: estimate.output,
-				total:  estimate.total,
-				endMS:  nowMS,
-			}, true)
-		}
-		if state.lastLineMS > lastActiveByAgent[agentID] {
-			lastActiveByAgent[agentID] = state.lastLineMS
-		}
+		estimateInFlight(agentID, state.source, state.model, start)
+		rememberActive(agentID, state.lastLineMS)
 	}
 
 	for _, response := range unmeasured {
-		if nowMS-response.endMS > staleAfter.Milliseconds() || generatingByAgent[response.agentID] {
+		if nowMS-response.endMS > staleAfter.Milliseconds() ||
+			generatingByAgent[response.agentID] {
+			rememberActive(response.agentID, response.endMS)
 			continue
 		}
 		generatingAgents++
 		generatingBySource[response.source]++
 		generatingByAgent[response.agentID] = true
-		if estimate, ok := referenceFor(response.agentID, response.source, recentByAgent, fallbackBySource); ok {
-			installRate(response.agentID, liveRate{
-				source: response.source,
-				model:  response.model,
-				output: estimate.output,
-				total:  estimate.total,
-				endMS:  response.endMS,
-			}, true)
-		}
-		if response.endMS > lastActiveByAgent[response.agentID] {
-			lastActiveByAgent[response.agentID] = response.endMS
-		}
+		estimateInFlight(response.agentID, response.source, response.model, response.startMS)
+		rememberActive(response.agentID, response.endMS)
 	}
 
+	// 逐 agent 折算回 tok/s；没有任何贡献的会话不进速度行（会话列表稍后
+	// 由 records 兜底补齐，显示 0 速率）。
+	ratesByAgent := make(map[string]liveRate)
+	estimatedTokens := 0.0
+	contributedTokens := 0.0
+	for agentID, output := range outputContrib {
+		if output <= 0 {
+			continue
+		}
+		meta, ok := rateMeta[agentID]
+		if !ok {
+			continue
+		}
+		total := totalContrib[agentID]
+		ratesByAgent[agentID] = liveRate{
+			source: meta.source,
+			model:  meta.model,
+			output: liveRateFromContributions(output, liveRateWindow),
+			total:  liveRateFromContributions(total, liveRateWindow),
+			endMS:  meta.endMS,
+		}
+		contributedTokens += output
+		estimatedTokens += estimatedContrib[agentID]
+	}
+	estimatedShare := 0.0
+	if contributedTokens > 0 {
+		estimatedShare = math.Min(1, math.Max(0, estimatedTokens/contributedTokens))
+	}
 	outputTokens := 0.0
 	totalTokens := 0.0
 	ratesBySource := make(map[string]*SourceSnapshot)
@@ -360,9 +415,9 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	out.InputTokensPerSecond = roundRate(math.Max(0, out.TotalTokensPerSecond-out.OutputTokensPerSecond))
 	out.Active = generatingAgents > 0 || out.OutputTokensPerSecond >= 0.05
 	out.TitleThemeID = NormalizeTitleTheme(s.titleTheme)
-	out.Title = ThemeTitle(out.TitleThemeID, out.OutputTokensPerSecond, out.Active)
+	out.Title = ThemeTitleAt(out.TitleThemeID, out.OutputTokensPerSecond, out.Active, s.redline())
 	out.TitleTheme = TitleThemeLabel(out.TitleThemeID)
-	out.TitleCatalog = TitleThemeCatalog()
+	out.TitleCatalog = titleCatalogFor(s.redline())
 
 	// 今天有消耗、但此刻没有速率的来源也要有一行（否则今日总量对的、列表却是空）。
 	for source, today := range s.todayBySource {
@@ -487,7 +542,54 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 		}
 		out.Sessions = append(out.Sessions, view)
 	}
+	out.EstimatedShare = roundRate(estimatedShare)
+	s.trackLiveEvents(&out, nowMS)
 	return out
+}
+
+// trackLiveEvents 维护「今日峰值」与两个轻量事件序号。调用方必须已持有
+// s.mu（computeSnapshot 只在持锁时被调用）：这些字段是运行期状态，随快照
+// 一起发布，界面靠序号变化播放冲击波与破纪录庆祝。
+func (s *Service) trackLiveEvents(out *Snapshot, nowMS int64) {
+	if s.peakDate != out.TodayTokenDate {
+		s.peakDate = out.TodayTokenDate
+		s.peakToday = 0
+		s.lastPeakEventMS = 0
+	}
+	// 响应完成：同一 key 只报一次，且只报两分钟内的实时完成（启动补读
+	// 的历史响应不触发庆祝）。
+	if s.finalSeen == nil {
+		s.finalSeen = make(map[string]bool)
+	}
+	if len(s.finalSeen) > 8192 {
+		s.finalSeen = make(map[string]bool, len(s.records))
+	}
+	for key, record := range s.records {
+		if !record.final || record.endMS <= 0 {
+			continue
+		}
+		if s.finalSeen[key] {
+			continue
+		}
+		s.finalSeen[key] = true
+		if nowMS-record.endMS <= responseEventWindow.Milliseconds() {
+			s.responseSeq++
+		}
+	}
+	// 今日峰值：运行期间观测到的实时速率最大值；破纪录事件按冷却与底线去抖。
+	if live := out.OutputTokensPerSecond; live > s.peakToday {
+		growth := live - s.peakToday
+		s.peakToday = live
+		if growth >= peakEventMinimumGrowth && live >= peakEventMinimum &&
+			nowMS-s.lastPeakEventMS >= peakEventCooldown.Milliseconds() {
+			s.peakEventSeq++
+			s.lastPeakEventMS = nowMS
+		}
+	}
+	out.PeakTodayTokensPerSecond = s.peakToday
+	out.ResponseSeq = s.responseSeq
+	out.PeakSeq = s.peakEventSeq
+	out.Redline = s.redline()
 }
 
 func asTimed(record responseRecord) (timedResponse, bool) {

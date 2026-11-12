@@ -183,8 +183,8 @@ func TestZCodeMessagesUseFirstTextAndAvoidDoubleCountingCache(t *testing.T) {
 	})
 	service.Poll()
 	snapshot := service.Snapshot()
-	if math.Abs(snapshot.OutputTokensPerSecond-186.6666666667) > 0.01 {
-		t.Fatalf("ZCode output speed = %.3f, want 186.67 tok/s",
+	if math.Abs(snapshot.OutputTokensPerSecond-93.3333333333) > 0.01 {
+		t.Fatalf("ZCode output speed = %.3f, want 93.333 tok/s",
 			snapshot.OutputTokensPerSecond)
 	}
 	if snapshot.TodayTotalTokens != 400 {

@@ -1759,8 +1759,8 @@
   }
   .speed-hero {
     position: relative; overflow: hidden;
-    display: grid; grid-template-columns: minmax(0, 1fr) 176px;
-    gap: 26px; align-items: stretch;
+    display: grid; grid-template-columns: 112px minmax(0, 1fr) 176px;
+    gap: 22px; align-items: center;
     margin-bottom: 12px; padding: 22px 24px;
     border-radius: 16px;
     background:
@@ -1771,6 +1771,18 @@
   .speed-hero::after {
     content: ""; position: absolute; inset: 0 0 auto; height: 1px;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,.56), transparent);
+    pointer-events: none;
+  }
+  /* 速度页 hero 的球体：与悬浮球同一个渲染核（agent-speed 的丝绸核心 +
+     36 段 LED 环 + 彗星），特效强度按规格降到「柔和」——它是一块常驻仪表，
+     不该比悬浮球还吵。 */
+  .speed-orb {
+    position: relative; width: 112px; height: 112px;
+    display: grid; place-items: center;
+  }
+  .speed-orb canvas {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
     pointer-events: none;
   }
   .speed-primary { min-width: 0; position: relative; z-index: 1; }
@@ -1797,35 +1809,32 @@
   .speed-number {
     min-width: 1.6ch;
     font-size: clamp(40px, 5.6vw, 56px); line-height: .94; font-weight: 700;
-    letter-spacing: -.06em; font-variant-numeric: tabular-nums;
+    letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+    /* 与悬浮球同一套数字字体（agent-speed 原型的 readout 字体栈）。 */
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   }
   .speed-number.is-ticking { animation: speed-tick .2s cubic-bezier(.2,.8,.2,1); }
   @keyframes speed-tick {
     40% { opacity: .68; transform: translateY(-1px); }
   }
-  .speed-unit { color: var(--fg-2); font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.01em; }
-  .speed-gauge { margin-top: 14px; max-width: 470px; }
-  .speed-gauge-track {
-    position: relative; height: 4px; border-radius: 99px;
-    background: color-mix(in srgb, var(--line) 74%, transparent);
+  .speed-unit {
+    color: var(--fg-2); font-size: var(--fs-lg); font-weight: 600; letter-spacing: .04em;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   }
-  .speed-gauge-fill {
-    position: absolute; inset: 0 auto 0 0; width: var(--speed-progress, 0%);
-    border-radius: inherit;
-    background: linear-gradient(90deg,
-      color-mix(in srgb, var(--blue) 48%, var(--line)),
-      color-mix(in srgb, var(--blue) 82%, var(--accent)));
-    transition: width .46s cubic-bezier(.2,.8,.2,1);
+  /* 36 段 LED 条：段色取自身位置的热谱（与球体同一套），今日峰值用
+     一条金线标出，破纪录时数字闪「今日新高」。 */
+  .speed-gauge { margin-top: 12px; max-width: 470px; }
+  .speed-gauge-track { position: relative; }
+  .speed-gauge-track canvas {
+    display: block; width: 100%; height: 14px;
   }
-  .speed-gauge-marker {
-    position: absolute; top: 50%; left: var(--speed-progress, 0%);
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--card); box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--blue) 76%, var(--card)),
-      0 2px 6px color-mix(in srgb, var(--blue) 24%, transparent);
-    transform: translate(-50%, -50%);
-    transition: left .46s cubic-bezier(.2,.8,.2,1);
+  .speed-peak-flag {
+    position: absolute; top: -15px; transform: translateX(-50%);
+    color: var(--amber); font: 600 9px/1 var(--code);
+    letter-spacing: .02em; white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity .25s ease;
   }
+  .speed-peak-flag.show { opacity: 1; }
   .speed-gauge-scale {
     display: flex; justify-content: space-between;
     margin-top: 7px; color: var(--muted); font: 9px/1.2 var(--code);
@@ -2828,6 +2837,10 @@
           <div class="end"><span class="pill" id="speed-badge">正在读取</span></div>
         </div>
         <div class="speed-hero" id="speed-hero" style="--speed-progress:0%;--title-progress:0%">
+          <div class="speed-orb" id="speed-orb" aria-hidden="true">
+            <canvas id="speed-orb-gl"></canvas>
+            <canvas id="speed-orb-fx"></canvas>
+          </div>
           <div class="speed-primary">
             <div class="speed-kicker">
               <i class="speed-live-dot"></i>
@@ -2839,11 +2852,11 @@
             </div>
             <div class="speed-gauge" aria-hidden="true">
               <div class="speed-gauge-track">
-                <span class="speed-gauge-fill"></span>
-                <i class="speed-gauge-marker"></i>
+                <canvas id="speed-strip"></canvas>
+                <span class="speed-peak-flag" id="speed-peak-flag">今日峰值</span>
               </div>
-              <div class="speed-gauge-scale">
-                <span>0</span><span>17</span><span>68</span><span>400+</span>
+              <div class="speed-gauge-scale" id="speed-strip-scale">
+                <span>0</span><span>巡航</span><span>加速</span><span>狂飙</span><span id="speed-strip-max">极限</span>
               </div>
             </div>
             <div class="speed-title-line">
@@ -3322,6 +3335,13 @@ import {
   rollDurationFor,
   shouldAnimateSpeed,
 } from "./assets/speed-display.js";
+import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
+import {
+  drawLedStrip,
+  formatSpeed,
+  heatColor,
+  heatForSpeed,
+} from "./assets/tokenspeed-viz.js";
 import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.js";
   import {
     TIERS,
@@ -3336,6 +3356,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   import { Events } from "/wails/runtime.js";
   import {
     normalizeTitleTheme,
+    setTitleRedline,
     titleIconMarkup,
     titleLevelForSpeed,
     titleLevelProgress,
@@ -4337,26 +4358,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     ).catch(function (_) {});
   }, 600);
 
+  // 数字格式统一走 tokenspeed-viz 的 formatSpeed（agent-speed METRICS §7），
+  // 悬浮球 / 速度页 / 面板数字口径一致。
   function compactTokenRate(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return "0";
-    if (number < 10) {
-      const rounded = Math.round(number * 10) / 10;
-      return rounded >= 10 ? "10" : rounded.toFixed(1);
-    }
-    if (number < 1000) return String(Math.round(number));
-    const units = [
-      { value: 1e9, suffix: "B" },
-      { value: 1e6, suffix: "M" },
-      { value: 1e3, suffix: "k" },
-    ];
-    for (const unit of units) {
-      const scaled = number / unit.value;
-      if (scaled >= 1) {
-        return (scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(2)) + unit.suffix;
-      }
-    }
-    return String(Math.round(number));
+    return formatSpeed(value);
   }
 
   const mainPetStorageKey = "qka.pet.selected";
@@ -5304,6 +5309,23 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return logo;
   }
 
+  // ---------- hero 球体与 LED 横条（agent-speed 渲染核） ----------
+  const speedHeroOrb = createAgentSpeedOrb({
+    stage: document.getElementById("speed-orb"),
+    glCanvas: document.getElementById("speed-orb-gl"),
+    fxCanvas: document.getElementById("speed-orb-fx"),
+    size: 112,
+    clip: false,
+    level: 1,
+    redline: 2000,
+    reduceMotion: !!(window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches),
+  });
+  const speedStrip = document.getElementById("speed-strip");
+  const speedPeakFlag = document.getElementById("speed-peak-flag");
+  const speedNumberEl = document.getElementById("speed-output");
+  speedHeroOrb.setState({ value: 0, immediate: true });
+
   // ---------- 速度数字渲染（三种显示方式） ----------
   function speedReducedMotion() {
     return !!(window.matchMedia &&
@@ -5392,9 +5414,24 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const generating = Number(view.generating_agents) || 0;
     const hero = document.getElementById("speed-hero");
     hero.classList.toggle("active", active);
-    const gaugeMax = titleThresholds[titleThresholds.length - 1];
-    const speedProgress = Math.max(0, Math.min(100, output / gaugeMax * 100));
-    hero.style.setProperty("--speed-progress", speedProgress.toFixed(1) + "%");
+    const redline = Number(view.redline_tokens_per_second) || 2000;
+    setTitleRedline(redline);
+    const heat = heatForSpeed(output, redline);
+    // hero 球体与悬浮球共用同一渲染核：丝绸核心 + 36 段热谱环 + 彗星。
+    speedHeroOrb.setState({ value: output, redline: redline });
+    // LED 横条：段色同热谱，金线标今日峰值。
+    const peakToday = Number(view.peak_today_tokens_per_second) || 0;
+    drawLedStrip(speedStrip, { value: output, redline: redline, peak: peakToday });
+    // 今日峰值标记：换算成百分比定位在条上。
+    const peakPct = Math.max(0, Math.min(100, heatForSpeed(peakToday, redline) * 100));
+    speedPeakFlag.style.left = peakPct.toFixed(1) + "%";
+    speedPeakFlag.classList.toggle("show", peakToday > 0 && active);
+    // 热谱着色：加速档之后大数字与称号一起染色，红线时更亮。
+    const heatCss = heatColor(heat);
+    speedNumberEl.style.color = heat >= 0.25 ? heatCss : "";
+    speedNumberEl.style.textShadow = heat >= 0.55
+      ? "0 0 " + (18 + 22 * heat).toFixed(0) + "px " + heatColor(heat, 0.55)
+      : "";
     renderSpeedNumber(output);
     lastSpeedReadout = output;
     document.getElementById("speed-input").textContent =
@@ -5403,6 +5440,21 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       compactTokenRate(view.total_tokens_per_second);
     document.getElementById("speed-agents").textContent = String(generating);
     applyTitlePresentation(view.title);
+    // 称号与徽章用热谱色（与球体/仪表同一套），不再用主题色，
+    // 这样「越快越热」在三处读起来是同一件事。
+    if (heat >= 0.25) {
+      const badge = document.querySelector(".speed-title-badge");
+      if (badge) {
+        badge.style.setProperty("--title-accent", heatCss);
+        badge.style.setProperty("--title-accent-soft", heatColor(heat, 0.12));
+      }
+    } else {
+      const badge = document.querySelector(".speed-title-badge");
+      if (badge) {
+        badge.style.removeProperty("--title-accent");
+        badge.style.removeProperty("--title-accent-soft");
+      }
+    }
     document.getElementById("speed-state").textContent =
       generating > 0 ? ((view.agent || "本机 Agent") + " 正在生成") :
         (active ? "最近一次响应已完成解码" : "当前空闲");

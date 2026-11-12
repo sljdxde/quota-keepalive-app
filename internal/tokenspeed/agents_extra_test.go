@@ -40,7 +40,8 @@ func TestQoderMeasuredSpeedUsesItsOwnSource(t *testing.T) {
 	service.Poll()
 
 	snapshot := service.Snapshot()
-	assertNear(t, snapshot.OutputTokensPerSecond, 1500)
+	// 3 秒滑窗口径：3000 token 的解码窗口完全落在窗口内，速率 = 3000 / 3s。
+	assertNear(t, snapshot.OutputTokensPerSecond, 1000)
 	if len(snapshot.Sources) != 1 || snapshot.Sources[0].Source != "qoder" ||
 		snapshot.Sources[0].Label != "Qoder" {
 		t.Fatalf("Qoder source snapshot = %+v", snapshot.Sources)
@@ -84,7 +85,7 @@ func TestWorkBuddyUsageMergesRepeatedMessage(t *testing.T) {
 	service.Poll()
 
 	snapshot := service.Snapshot()
-	assertNear(t, snapshot.OutputTokensPerSecond, 1500)
+	assertNear(t, snapshot.OutputTokensPerSecond, 1000)
 	if len(snapshot.Sources) != 1 || snapshot.Sources[0].Label != "WorkBuddy" {
 		t.Fatalf("WorkBuddy source snapshot = %+v", snapshot.Sources)
 	}

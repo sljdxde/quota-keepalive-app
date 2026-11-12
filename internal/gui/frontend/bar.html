@@ -14,55 +14,79 @@
 <link rel="stylesheet" href="assets/qka-ui.css">
 <link rel="stylesheet" href="assets/ball.css">
 <style>
-  /* 拖动区域必须写在页面里（Wails 读取计算样式）：球体可拖，内部图标/数字
-     不参与拖动，点击仍冒泡到 #ball。 */
+  /* 拖动区域必须写在页面里（Wails 读取计算样式）：球体可拖，内容不参与
+     拖动，点击仍冒泡到 #ball。 */
   #ball { --wails-draggable: drag; }
-  #ball .ring, #ball .core { --wails-draggable: no-drag; pointer-events: none; }
+  #ball .led, #ball .orb-fx, #ball .core { --wails-draggable: no-drag; pointer-events: none; }
+
+  /* 球面由 agent-speed 的渲染核绘制（丝绸核心 + 36 段 LED 环 + 彗星 +
+     火花/余烬 + 冲击波），CSS 不再画底色/边框，避免叠两层玻璃。 */
+  .ball {
+    position: relative;
+    width: 100%; height: 100%;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    border-radius: 50%;
+  }
+  /* 两张画布叠在球心：WebGL 画丝绸与仪表，2D 画粒子与闪电。 */
+  .ball .led, .ball .orb-fx {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    display: block;
+    border-radius: 50%;
+  }
+  /* 数字：与原型一样居中在球心下方一点（readout 的 -43% 偏移由模块写入）。 */
+  /* 三层读数（数字 / tok/s / 称号）沿用原型 readout 的字体：
+     等宽数字栈 + tabular-nums，字号由渲染核按球径写入。 */
+  .ball .core {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    display: grid; justify-items: center;
+    text-align: center; line-height: 1.1;
+    pointer-events: none;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  .ball .core b.roll {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    color: #f6f8fb;
+    white-space: nowrap;
+  }
+  .ball .core .unit {
+    font-weight: 500;
+    letter-spacing: .04em;
+    color: rgba(255, 255, 255, .55);
+    white-space: nowrap;
+  }
+  .ball .core .title {
+    font-weight: 600;
+    letter-spacing: .1em;
+    color: rgba(255, 255, 255, .45);
+    white-space: nowrap;
+    transition: color .3s ease;
+  }
+  .ball.idle .core b.roll { color: rgba(255, 255, 255, .6); }
+  /* 贴边 36px 只放得下一个数：单位与称号收起。 */
+  .ball.docked .core .unit,
+  .ball.docked .core .title { display: none; }
 </style>
 </head>
 <body>
   <!-- 常驻悬浮球：Windows 上等价于 macOS 菜单栏上的 QKA 状态项。
-       球面 = 26px 2D 侧视小宠物（有速度时青蛙式跳跃，越快跳得越急）+ 纯数字速度；
-       ≥100 tok/s 出轻特效、≥300 出重特效（四宠各不相同），全部收在圆内。
-       伙伴被收进精灵球时换成精灵球（速度越快晃得越快，达到 400 满环速度自动放出）。
-       按住可拖动；左键单击打开迷你宠物窗口；右键出菜单。
-       拖到屏幕边缘会收成 36px 半圆（Go 侧 SetSize），此时只显示宠物/精灵球。 -->
+       渲染核逐字移植自 agent-speed 的规范参考原型（spec/prototypes/
+       led-effects.html，MIT © zoefix，见 assets/orb-agent-speed.js）：
+       丝绸核心 + 36 段 LED 热谱环 + 彗星 + 火花/余烬 + 响应冲击波 +
+       破纪录金光。数字用连滚（odometer）由 onText 回调驱动。
+       全部动效由数值与事件驱动；怠速静止时模块主动停帧。 -->
   <div id="ball" class="ball idle" role="button" title="Quota Keepalive">
-    <svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
-      <defs>
-        <linearGradient id="ring-gradient" x1="8" y1="10" x2="56" y2="54" gradientUnits="userSpaceOnUse">
-          <stop offset="0" style="stop-color:hsl(var(--ball-hue, 193) 92% 66%)"></stop>
-          <stop offset="1" style="stop-color:hsl(calc(var(--ball-hue, 193) + 55) 92% 70%)"></stop>
-        </linearGradient>
-      </defs>
-      <circle class="track" cx="32" cy="32" r="30.5"></circle>
-      <circle class="bar" cx="32" cy="32" r="30.5" stroke-dasharray="191.6"
-              stroke-dashoffset="191.6"></circle>
-      <circle class="spark" id="ball-spark" cx="32" cy="3.4" r="2.2"></circle>
-    </svg>
-    <!-- 特效层：圆形裁剪，复刻 SetWindowRgn 的正圆窗口。粒子由 CSS 按
-         data-effect 生成，容器本身不含内容，切换伙伴不用重建 DOM。 -->
-    <div class="fx" id="ball-fx" aria-hidden="true"></div>
+    <canvas class="led" id="ball-gl" aria-hidden="true"></canvas>
+    <canvas class="orb-fx" id="ball-fx" aria-hidden="true"></canvas>
     <div class="core">
-      <!-- 球面宠物：始终用 2D 立绘。64px 窗口里的 3D 全身体积太小、
-           模型加载失败时还会留下空白，所以球面不再创建 WebGL 舞台；
-           3D 只留在迷你宠物窗口里。立绘水平翻转 = 朝右的 2D 侧视。 -->
-      <div class="pet-icon" id="ball-pet">
-        <img class="pet-fallback" id="ball-pet-img" alt="" draggable="false">
-      </div>
-      <!-- 精灵球（伙伴被收进球时；显隐由 .show-ball 控制，SVG 没有 hidden 属性） -->
-      <svg class="ball-icon" id="ball-ball" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
-        <path d="M2.5 12h19" stroke="currentColor" stroke-width="1.8"/>
-        <circle cx="12" cy="12" r="3.2" fill="var(--card, #fff)" stroke="currentColor" stroke-width="1.6"/>
-      </svg>
-      <svg class="q" viewBox="0 0 64 64" aria-hidden="true">
-        <circle cx="30.5" cy="31" r="17.2" fill="none" stroke="currentColor" stroke-width="8"
-                stroke-linecap="round" stroke-dasharray="88 21" transform="rotate(38 30.5 31)"/>
-        <path d="M34.5 36.5c5.3 4.4 10.2 9.2 19.5 18.3" fill="none" stroke="currentColor"
-              stroke-width="6.6" stroke-linecap="round"/>
-      </svg>
       <b class="roll" id="speed-value">0</b>
+      <span class="unit" id="speed-unit">tok/s</span>
+      <span class="title" id="speed-title">待機</span>
     </div>
   </div>
 
@@ -77,68 +101,80 @@
     rollDurationFor,
     shouldAnimateSpeed,
   } from "./assets/speed-display.js";
-  import {
-    normalizeTitleTheme,
-    titleLevelForSpeed,
-    titleThresholds,
-    titleThemeHues,
-  } from "./assets/title-system.js";
-  import { POKEMON_CATALOG, pokemonById } from "./assets/pokemon-art.js";
-  import { ballFaceState } from "./assets/ball-face.js";
-  import { ballEffectsState } from "./assets/ball-effects.js";
+  import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
+  import { formatSpeed, heatForSpeed } from "./assets/tokenspeed-viz.js";
   import { dockSideForWindow, dockContentShift } from "./assets/ball-dock.js";
-  import {
-    shouldStartDrag,
-    dragTargetOrigin,
-  } from "./assets/bar-gesture.js";
+  import { shouldStartDrag, dragTargetOrigin } from "./assets/bar-gesture.js";
 
   function asJSON(value) {
     return typeof value === "string" ? JSON.parse(value) : value;
   }
 
-  // 与主窗口/面板一致的紧凑速率：小于 10 保留一位小数，千以上用 k/M/B。
-  function compactTokenRate(value) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) return "0";
-    if (number < 10) {
-      const rounded = Math.round(number * 10) / 10;
-      return rounded >= 10 ? "10" : rounded.toFixed(1);
-    }
-    if (number < 1000) return String(Math.round(number));
-    const units = [
-      { value: 1e9, suffix: "B" },
-      { value: 1e6, suffix: "M" },
-      { value: 1e3, suffix: "k" },
-    ];
-    for (const unit of units) {
-      if (number >= unit.value) {
-        const scaled = number / unit.value;
-        const text = scaled >= 10 ? String(Math.round(scaled)) : scaled.toFixed(1);
-        return text + unit.suffix;
-      }
-    }
-    return String(Math.round(number));
-  }
-
   const ball = document.getElementById("ball");
   const valueNode = document.getElementById("speed-value");
-  const ringBar = ball.querySelector(".ring .bar");
-  const spark = document.getElementById("ball-spark");
-  const petNode = document.getElementById("ball-pet");
-  const petImg = document.getElementById("ball-pet-img");
-  const RING_LENGTH = 191.6;
-  const SPARK_RADIUS = 28.6;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // 速度数字的显示方式与采样频率跟随主应用设置（token_speed_display /
-  // token_speed_poll）：主应用切「平滑缓动」或「直接替换」时球面同步，
-  // 滚轮时长也用同一公式，避免球面 520ms 整圈被 500ms 推送反复打断、
-  // 数字永远在途中落不了位。
+  // token_speed_poll）：主应用切「平滑缓动」或「直接替换」时球面同步。
   let speedDisplayMode = "roll";
   let speedPollMillis = 500;
   let speedSeenOnce = false;
   let speedFadeValue = 0;
   let speedFadeFrame = 0;
+
+  // 球面数字：渲染核每帧算出显示文本后回调 here。渲染核本身已把目标值与
+  // 显示值各平滑了一层，但它每帧都在动，直接重画会让连滚动画永远停不下来
+  // （数字看起来一直在跳）。这里再加两道闸：
+  //   1. 死区：相对变化不足 2%（且不足 1 tok/s）不重画；
+  //   2. 节流：两次重画至少间隔 450ms，落定后再补发最终值。
+  let speedShownValue = 0;
+  let speedLastCommit = 0;
+  let speedPendingText = "";
+  let speedPendingTimer = 0;
+
+  function speedTextValue(text) {
+    const raw = String(text || "0");
+    const number = parseFloat(raw);
+    if (!Number.isFinite(number)) return 0;
+    if (/k$/i.test(raw)) return number * 1e3;
+    if (/M$/i.test(raw)) return number * 1e6;
+    if (/B$/i.test(raw)) return number * 1e9;
+    return number;
+  }
+
+  function commitSpeedText(text) {
+    speedShownValue = speedTextValue(text);
+    speedLastCommit = performance.now();
+    speedPendingText = "";
+    if (speedDisplayMode === "roll") {
+      setRoll(valueNode, text, { duration: rollDurationFor(speedPollMillis) });
+      return;
+    }
+    // fade / direct：渲染核已经把数值平滑过，这里直接落文本即可，
+    // 再做一层插值只会拖慢跟手度。
+    valueNode.textContent = text;
+  }
+
+  function writeSpeedText(text) {
+    const next = speedTextValue(text);
+    const threshold = Math.max(1, speedShownValue * 0.02);
+    const elapsed = performance.now() - speedLastCommit;
+    speedSeenOnce = true;
+    if (Math.abs(next - speedShownValue) >= threshold || elapsed >= 900) {
+      if (speedPendingTimer) {
+        clearTimeout(speedPendingTimer);
+        speedPendingTimer = 0;
+      }
+      commitSpeedText(text);
+      return;
+    }
+    speedPendingText = text;
+    if (speedPendingTimer) return;
+    speedPendingTimer = setTimeout(function () {
+      speedPendingTimer = 0;
+      if (speedPendingText) commitSpeedText(speedPendingText);
+    }, 450);
+  }
 
   function loadSpeedSettings() {
     Bound.SettingsGet()
@@ -152,92 +188,20 @@
   Events.On("token-speed-settings-changed", loadSpeedSettings);
   loadSpeedSettings();
 
-  // renderBallSpeed 按当前设置渲染球面数字。roll 走连滚引擎（时长随采样
-  // 频率自适应）；fade 从上一个值插值；direct 直接替换。纯文本模式直接给
-  // textContent 赋值即可拆掉滚轮列；切回 roll 时引擎按「列已脱离 DOM」重建。
-  function renderBallSpeed(value) {
-    const text = compactTokenRate(value);
-    if (speedFadeFrame) {
-      cancelAnimationFrame(speedFadeFrame);
-      speedFadeFrame = 0;
-    }
-    const animate = shouldAnimateSpeed(speedDisplayMode, {
-      first: !speedSeenOnce,
-      reducedMotion: reducedMotion,
-    });
-    speedSeenOnce = true;
-    if (speedDisplayMode === "roll") {
-      setRoll(valueNode, text, { duration: rollDurationFor(speedPollMillis) });
-      speedFadeValue = value;
-      return;
-    }
-    if (!animate) {
-      valueNode.textContent = text;
-      speedFadeValue = value;
-      return;
-    }
-    if (speedDisplayMode === "direct") {
-      valueNode.textContent = text;
-      speedFadeValue = value;
-      return;
-    }
-    const from = speedFadeValue || 0;
-    const started = performance.now();
-    function step(now) {
-      const progress = Math.min(1, (now - started) / FADE_DURATION_MS);
-      const current = progress >= 1 ? value : fadeValue(from, value, progress);
-      valueNode.textContent = compactTokenRate(current);
-      speedFadeValue = current;
-      if (progress < 1) speedFadeFrame = requestAnimationFrame(step);
-      else speedFadeFrame = 0;
-    }
-    speedFadeFrame = requestAnimationFrame(step);
-  }
-
-  const SELECTED_KEY = "qka.pet.selected";
-  const CAUGHT_KEY = "qka.pet.caught.v1";
-
-  let themeId = "vehicles";
-  let sparkProgress = 0;
-  let sparkFrame = 0;
-  let currentSpeed = 0;
-  let currentText = "0";
-  let pet = POKEMON_CATALOG[0];
-  let petSpriteId = "";
-
-  function readStoredString(key, fallback) {
-    try {
-      return localStorage.getItem(key) || fallback;
-    } catch (_) {
-      return fallback;
-    }
-  }
-
-  function selectedPet() {
-    return pokemonById(readStoredString(SELECTED_KEY, "")) || POKEMON_CATALOG[0];
-  }
-
-  function readCaughtMap() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(CAUGHT_KEY) || "null");
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (_) {
-      return {};
-    }
-  }
-
-  function isCaught(petId) {
-    return !!readCaughtMap()[petId];
-  }
-
-  function writeCaught(petId, caught) {
-    const map = readCaughtMap();
-    if (caught) map[petId] = true;
-    else delete map[petId];
-    try {
-      localStorage.setItem(CAUGHT_KEY, JSON.stringify(map));
-    } catch (_) {}
-  }
+  const orb = createAgentSpeedOrb({
+    stage: ball,
+    glCanvas: document.getElementById("ball-gl"),
+    fxCanvas: document.getElementById("ball-fx"),
+    readout: ball.querySelector(".core"),
+    valueEl: valueNode,
+    unitEl: document.getElementById("speed-unit"),
+    size: window.innerWidth || 52,
+    clip: true,
+    redline: 2000,
+    readoutOffset: -50,
+    reduceMotion: reducedMotion,
+    onText: writeSpeedText,
+  });
 
   function applyTheme(theme) {
     if (theme === "light" || theme === "dark") {
@@ -247,172 +211,45 @@
     }
   }
 
-  // 光点按进度直接落位到圆环上（SVG 坐标从 3 点方向起算，.ring 自身再 -90°）。
-  function placeSpark(progress) {
-    if (!spark) return;
-    const angle = (progress / 100) * Math.PI * 2;
-    spark.setAttribute("cx", String(32 + SPARK_RADIUS * Math.cos(angle)));
-    spark.setAttribute("cy", String(32 + SPARK_RADIUS * Math.sin(angle)));
-    spark.style.opacity = progress > 0 ? "" : "0";
-  }
-
-  function animateSpark(progress) {
-    if (!spark) return;
-    if (sparkFrame) cancelAnimationFrame(sparkFrame);
-    if (reducedMotion) {
-      sparkProgress = progress;
-      placeSpark(progress);
-      return;
-    }
-    const from = sparkProgress;
-    const start = performance.now();
-    function step(now) {
-      const t = Math.min(1, (now - start) / 420);
-      const eased = 1 - Math.pow(1 - t, 3);
-      sparkProgress = from + (progress - from) * eased;
-      placeSpark(sparkProgress);
-      if (t < 1) {
-        sparkFrame = requestAnimationFrame(step);
-      } else {
-        sparkFrame = 0;
-      }
-    }
-    sparkFrame = requestAnimationFrame(step);
-  }
-
-  function ringProgress(speed, active) {
-    const level = titleLevelForSpeed(speed, active);
-    if (level < 1) return 0;
-    const total = titleThresholds.length;
-    if (level >= total) return 100;
-    const lower = titleThresholds[level - 1];
-    const upper = titleThresholds[level];
-    const within = upper > lower
-      ? Math.min(1, Math.max(0, (speed - lower) / (upper - lower)))
-      : 1;
-    return ((level - 1 + within) / total) * 100;
-  }
-
-  // ---------- 球面主体：宠物（未捕获）/ 精灵球（已捕获） ----------
-  function updatePetSprite(nextPet) {
-    if (petSpriteId === nextPet.id) return;
-    petSpriteId = nextPet.id;
-    petImg.src = "./assets/pokemon/" + nextPet.stages[0].sprite;
-  }
-
-  // 球面的两种模式只在 paintFace 里切换：宠物可见 / 精灵球可见、跑动 / 晃动、
-  // 速度字号，全部由 ball-face.js 的纯函数判定；蛙跳周期与速度特效由
-  // ball-effects.js 判定。页面只负责把结果落到 DOM / CSS 变量。
-  function paintFace() {
-    const caught = isCaught(pet.id);
-    const face = ballFaceState({
-      caught: caught,
-      speed: currentSpeed,
-      speedText: currentText,
-      reducedMotion: reducedMotion,
-    });
-    const effects = ballEffectsState({
-      speed: currentSpeed,
-      caught: caught,
-      reducedMotion: reducedMotion,
-      effect: pet.effect,
-    });
-    ball.classList.add("has-pet");
-    ball.classList.toggle("caught", caught);
-    // 宠物与精灵球互斥：用类控制显隐（SVG 元素没有 hidden IDL 属性，
-    // 给 SVG 设 .hidden = false 不会移除 hidden 属性，精灵球会一直不显示）。
-    ball.classList.toggle("show-pet", face.petVisible);
-    ball.classList.toggle("show-ball", face.ballVisible);
-    if (face.petVisible) updatePetSprite(pet);
-
-    petNode.classList.toggle("running", face.running);
-    ball.classList.toggle("shaking", face.shaking);
-    // 档位写成 data 属性：CSS 按档位换不同跑姿 keyframes / 速度线。
-    ball.dataset.runTier = String(face.runTier);
-    if (face.running) {
-      petNode.style.setProperty("--run-duration", face.runSeconds + "s");
-      petNode.style.setProperty("--run-bob", face.amplitude.bob + "px");
-      petNode.style.setProperty("--run-tilt", face.amplitude.tilt + "deg");
-      petNode.style.setProperty("--run-stride", face.amplitude.stride + "px");
-    } else {
-      petNode.style.removeProperty("--run-duration");
-      petNode.style.removeProperty("--run-bob");
-      petNode.style.removeProperty("--run-tilt");
-      petNode.style.removeProperty("--run-stride");
-    }
-    // 蛙跳：一次一跳的周期由速度决定，幅度固定。静止/精灵球/减少动效时
-    // 不写周期、不播动画（置顶小窗连续重绘曾带闪整屏）。
-    if (effects.hopping) {
-      ball.style.setProperty("--hop-duration", effects.hopSeconds + "s");
-    } else {
-      ball.style.removeProperty("--hop-duration");
-    }
-    ball.dataset.fxTier = String(effects.tier);
-    ball.dataset.effect = effects.effect;
-    if (face.shaking) {
-      ball.style.setProperty("--shake-duration", face.shakeSeconds + "s");
-    } else {
-      ball.style.removeProperty("--shake-duration");
-    }
-    // 字号跟着数字长度走：3 位以内 11px、4 位（如 "1.2k"）10px、5 位以上 9px。
-    valueNode.style.fontSize = face.speedFontPx + "px";
-    return face;
-  }
-
-  function renderBallState() {
-    pet = selectedPet();
-    paintFace();
-  }
-
-  // 捕获状态写回（localStorage）+ 广播给迷你宠物窗口；球面立即重绘，
-  // 不依赖事件回环（同一窗口的 Emit 不保证同步派发）。
-  function setCaught(caught) {
-    writeCaught(pet.id, caught);
-    try {
-      Events.Emit("pet-caught", { caught: caught, petId: pet.id });
-    } catch (_) {}
-    paintFace();
-  }
+  let lastResponseSeq = null;
+  let lastPeakSeq = null;
 
   function render(view) {
     if (!view) return;
     const speed = Number(view.output_tokens_per_second) || 0;
     const active = Boolean(view.active);
-    themeId = normalizeTitleTheme(view.title_theme_id || themeId);
-    currentSpeed = speed;
-    currentText = compactTokenRate(speed);
-
-    renderBallSpeed(speed);
+    const redline = Number(view.redline_tokens_per_second) || 2000;
     ball.classList.toggle("idle", !active);
     ball.classList.toggle("live", active);
-    const progress = ringProgress(speed, active);
-    ringBar.setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - progress / 100)));
-    animateSpark(progress);
-    ball.style.setProperty("--ball-hue", String(titleThemeHues[themeId] ?? 193));
 
-    const face = paintFace();
-    // 达到 400 tok/s（称号环满环）：精灵球被挣开，自动放出伙伴。
-    if (face.autoRelease) setCaught(false);
+    orb.setState({ value: speed, redline: redline });
+    // 称号用快照里的 view.title（Go 侧按当前称号主题 + 红线算好），
+    // 单位和称号都按热度上色，与球体的热谱是同一套色。
+    const titleNode = document.getElementById("speed-title");
+    if (titleNode) {
+      titleNode.textContent = view.title || "待機";
+      const heat = heatForSpeed(speed, redline);
+      titleNode.style.color = heat > 0.02
+        ? "rgba(255,255,255," + (0.45 + 0.4 * Math.min(1, heat)).toFixed(2) + ")"
+        : "rgba(255,255,255,.45)";
+    }
+
+    // 事件：响应完成 → 冲击波（强度按 token 数缩放）；破纪录 → 金色庆祝。
+    // 快照里带单调序号，首次收到时不补播历史事件。
+    const responseSeq = Number(view.response_seq) || 0;
+    if (lastResponseSeq !== null && responseSeq > lastResponseSeq && active) {
+      orb.pulse(Math.min(1, 0.45 + speed / 1500));
+    }
+    lastResponseSeq = responseSeq;
+    const peakSeq = Number(view.peak_seq) || 0;
+    if (lastPeakSeq !== null && peakSeq > lastPeakSeq) {
+      orb.peak();
+    }
+    lastPeakSeq = peakSeq;
   }
 
-  Events.On("pet-selected", renderBallState);
-  // 捕获/放出事件携带权威结果：直接写回本地状态，避免依赖两个窗口共享
-  // localStorage（悬浮球超速自动放出时，迷你宠物窗口也要立刻同步）。
-  Events.On("pet-caught", function (event) {
-    const data = event && event.data;
-    const caught = data && typeof data === "object" ? data.caught : data;
-    const petId = data && typeof data === "object" ? data.petId : "";
-    // 只同步当前伙伴；事件若来自旧伙伴（切换间隙），忽略。
-    if (pet && typeof caught === "boolean" && (!petId || petId === pet.id)) {
-      writeCaught(pet.id, caught);
-    }
-    renderBallState();
-  });
-  renderBallState();
-
-  // 贴边态：Go 把窗口缩到 36px 并有一半放到屏幕外，页面依据视口宽度切换内容；
-  // 再用「窗口矩形 vs 工作区」推断贴的是哪条边，把宠物/精灵球往屏幕内移半宽，
-  // 否则内容正好被窗口边界切成一半。
+  // 贴边态：Go 把窗口缩到 36px 并有一半放到屏幕外；页面按视口宽度切内容，
+  // 再用「窗口矩形 vs 工作区」推断贴的是哪条边，把内容往屏幕内移。
   let dockTimer = 0;
   let dockPoll = 0;
   function syncDocked() {
@@ -422,8 +259,6 @@
     const side = docked ? dockSideForWindow({
       screenX: window.screenX,
       screenY: window.screenY,
-      // 用视口尺寸而不是 outerWidth：无边框窗口两者相等，但外层尺寸会
-      // 带上边框/阴影（某些环境还会被放大），用它判断贴边会误判方向。
       width: window.innerWidth,
       height: window.innerHeight,
       availLeft: screen.availLeft,
@@ -435,7 +270,7 @@
     ball.style.setProperty("--dock-x", shift.x + "px");
     ball.style.setProperty("--dock-y", shift.y + "px");
     ball.dataset.dock = side;
-    // 贴边换边时窗口大小不变（44→44），没有 resize；贴边期间低频复核位置。
+    orb.resize();
     if (docked && !dockPoll) {
       dockPoll = setInterval(syncDocked, 500);
     } else if (!docked && dockPoll) {
@@ -446,37 +281,16 @@
   window.addEventListener("resize", function () {
     syncDocked();
     clearTimeout(dockTimer);
-    // resize 可能早于 SetPosition 完成，稍后再按新坐标复核一次。
     dockTimer = setTimeout(syncDocked, 80);
   });
+  orb.resize();
   syncDocked();
 
-  Events.On("tokenspeed-changed", function (event) {
-    if (!event || !event.data) return;
-    render(asJSON(event.data));
-  });
-  Events.On("theme-changed", function (event) {
-    applyTheme(event && event.data);
-  });
-  Events.On("common:WindowShow", function (event) {
-    if (event && event.sender && event.sender !== "bar") return;
-    renderBallState();
-    Bound.TokenSpeedGet()
-      .then(function (view) { render(asJSON(view)); })
-      .catch(function () {});
-  });
-  Bound.TokenSpeedGet()
-    .then(function (view) {
-      render(asJSON(view));
-    })
-    .catch(function () {});
-
-  // ---------- 左键：打开/切换迷你宠物；按住拖动超过阈值才移动窗口 ----------
+  // ---------- 手势：按住并移动超过阈值才拖动，否则算点击 ----------
   // Wails 的 --wails-draggable 在 mousedown 就武装拖动，鼠标移动 1px 即进入
   // 原生移动循环，之后的 pointerup/click 会被 runtime 吞掉——表现为「点了
   // 没反应」。这里按下不武装拖动，位移超过 6px 才手动升级为原生拖动。
   let pressed = false;
-  let pressStartMS = 0;
   let pressX = 0;
   let pressY = 0;
   let dragArmed = false;
@@ -486,7 +300,6 @@
     event.stopPropagation();
     pressed = true;
     dragArmed = false;
-    pressStartMS = performance.now();
     pressX = event.clientX;
     pressY = event.clientY;
   });
@@ -528,9 +341,8 @@
     if (!pressed) return;
     pressed = false;
     event.stopPropagation();
-    // 拖动升级后松手：手势已被拖动消费，不再触发点击。
     if (dragArmed) return;
-    // 单击（贴边或浮动）：Go 侧 BarToggle —— 贴边时弹回，浮动时开关宠物窗口。
+    // 单击（贴边或浮动）：Go 侧 BarToggle —— 贴边时弹回，浮动时开关面板。
     try {
       const pending = Bound.BarToggle();
       if (pending && typeof pending.catch === "function") pending.catch(function () {});
@@ -550,6 +362,25 @@
       if (pending && typeof pending.catch === "function") pending.catch(function () {});
     } catch (_) {}
   });
+
+  Events.On("tokenspeed-changed", function (event) {
+    if (!event || !event.data) return;
+    render(asJSON(event.data));
+  });
+  Events.On("theme-changed", function (event) {
+    applyTheme(event && event.data);
+  });
+  Events.On("common:WindowShow", function (event) {
+    if (event && event.sender && event.sender !== "bar") return;
+    Bound.TokenSpeedGet()
+      .then(function (view) { render(asJSON(view)); })
+      .catch(function () {});
+  });
+  Bound.TokenSpeedGet()
+    .then(function (view) {
+      render(asJSON(view));
+    })
+    .catch(function () {});
 </script>
 </body>
 </html>

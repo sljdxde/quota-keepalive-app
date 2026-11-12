@@ -1906,6 +1906,7 @@ func applyTokenSpeedPoll(service *tokenspeed.Service, readSettings func() *setti
 		return
 	}
 	service.SetPollInterval(readSettings().SpeedPollInterval())
+	service.SetRedline(readSettings().SpeedRedline())
 }
 
 // tokenSpeedSignature 把快照收敛成内容指纹。UpdatedAt 每轮都变，必须排除，

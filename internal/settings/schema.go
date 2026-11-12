@@ -166,6 +166,20 @@ var Schema = []Field{
 		},
 	},
 	{
+		Key:         "token_speed_redline",
+		Type:        FieldSelect,
+		Label:       "速度红线",
+		Description: "热谱、档位与称号阶梯都按这条红线缩放。默认 2000 tok/s（与 agent-speed 一致）：多数会话落在 20–400，只有真正的高吞吐才会点亮半环以上。",
+		Default:     "2000",
+		Options: []Option{
+			{Value: "400", Label: "400（旧口径）"},
+			{Value: "800", Label: "800"},
+			{Value: "1200", Label: "1200"},
+			{Value: "1600", Label: "1600"},
+			{Value: "2000", Label: "2000（默认）"},
+		},
+	},
+	{
 		Key:         "token_speed_menubar",
 		Type:        FieldSelect,
 		Label:       "菜单栏速度样式",
@@ -236,6 +250,8 @@ const (
 	KeyTokenSpeedPoll = "token_speed_poll"
 	// KeyTokenSpeedDisplay 是速度数字的显示方式。
 	KeyTokenSpeedDisplay = "token_speed_display"
+	// KeyTokenSpeedRedline 是速度红线（tok/s）：热谱与档位按它缩放。
+	KeyTokenSpeedRedline = "token_speed_redline"
 	// KeyTokenSpeedMenuBar 是 macOS 菜单栏速度样式。
 	KeyTokenSpeedMenuBar = "token_speed_menubar"
 )
@@ -253,6 +269,15 @@ const (
 // SpeedPollInterval 返回速度采样间隔；值非法时回退到 500ms。
 // 允许范围 100ms-5s：更快没有实际收益（数据源本身按响应落盘），
 // 更慢会让界面明显滞后。
+// SpeedRedline 返回速度红线（tok/s）；非法值回退到默认 2000。
+func (s *Settings) SpeedRedline() float64 {
+	value, err := strconv.ParseFloat(s.GetString(KeyTokenSpeedRedline), 64)
+	if err != nil || value < 50 || value > 20000 {
+		return 2000
+	}
+	return value
+}
+
 func (s *Settings) SpeedPollInterval() time.Duration {
 	millis, err := strconv.Atoi(s.GetString(KeyTokenSpeedPoll))
 	if err != nil || millis < 100 || millis > 5000 {
@@ -282,7 +307,7 @@ func normalizedChoice(value string, allowed []string, fallback string) string {
 // 保存后触发即时刷新，避免为一堆无关设置项也广播速度事件。
 func IsTokenSpeedKey(key string) bool {
 	switch key {
-	case KeyTokenSpeedPoll, KeyTokenSpeedDisplay, KeyTokenSpeedMenuBar:
+	case KeyTokenSpeedPoll, KeyTokenSpeedDisplay, KeyTokenSpeedRedline, KeyTokenSpeedMenuBar:
 		return true
 	default:
 		return false

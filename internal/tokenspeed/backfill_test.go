@@ -168,7 +168,7 @@ func TestBackfillDoesNotChangeLiveRate(t *testing.T) {
 	})
 	service.Poll()
 	before := service.Snapshot().OutputTokensPerSecond
-	assertNear(t, before, 180)
+	assertNear(t, before, 60)
 	service.mu.Lock()
 	pending := service.files[path].backfill != nil
 	service.mu.Unlock()
@@ -178,7 +178,7 @@ func TestBackfillDoesNotChangeLiveRate(t *testing.T) {
 
 	pollUntilBackfillDone(t, service, path)
 	after := service.Snapshot().OutputTokensPerSecond
-	assertNear(t, after, 180)
+	assertNear(t, after, 60)
 	if after != before {
 		t.Fatalf("历史补读改变了实时速率：before=%.3f after=%.3f", before, after)
 	}
