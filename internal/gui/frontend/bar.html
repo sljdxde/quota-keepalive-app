@@ -53,29 +53,33 @@
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
     /* transform 由渲染核每帧写（translate(-50%, readoutOffset)） */
   }
-  /* 字号由渲染核按球径写（0.24S / 0.072S / 0.062S），CSS 只管字体栈
-     与字重，避免两处各写一套互相打架。 */
+  /* 字号由渲染核按球径写（0.25S / 0.086S / 0.076S，带 10/8/8px 可读下限），
+     CSS 只管字体栈与字重，避免两处各写一套互相打架。 */
+  /* 配色：球底是近黑的深蓝，读数必须离底色足够远才看得清——待机态的数值
+     也保持 94% 白（原来的 60% 在浅色桌面上像没写入），单位与称号同样提到
+     82% / 72%，并在渲染核里给数字加了一圈淡白光。 */
   .ball .core b.roll {
     font-variant-numeric: tabular-nums;
     font-weight: 800;
     letter-spacing: -.04em;
     color: #f6f8fb;
+    text-shadow: 0 0 6px rgba(255, 255, 255, .4);
     white-space: nowrap;
   }
   .ball .core .unit {
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: .04em;
-    color: rgba(255, 255, 255, .55);
+    color: rgba(255, 255, 255, .82);
     white-space: nowrap;
   }
   .ball .core .title {
     font-weight: 600;
     letter-spacing: .1em;
-    color: rgba(255, 255, 255, .45);
+    color: rgba(255, 255, 255, .72);
     white-space: nowrap;
     transition: color .3s ease;
   }
-  .ball.idle .core b.roll { color: rgba(255, 255, 255, .6); }
+  .ball.idle .core b.roll { color: rgba(255, 255, 255, .94); }
   /* 贴边 36px 只放得下一个数：单位与称号收起。 */
   .ball.docked .core .unit,
   .ball.docked .core .title { display: none; }
@@ -199,13 +203,14 @@
     orb.setState({ value: speed, redline: redline });
 
     // 称号：文字来自快照（跟随称号主题 + 红线），配色走热谱——与原型里
-    // 「称号用 heat 色」一致；字号由渲染核按 0.062S 统一写。
+    // 「称号用 heat 色」一致；字号由渲染核按 0.076S 统一写。待机不是灰掉，
+    // 保留 72% 白：球底深，低透明度会把「待机」两个字直接吞掉。
     const titleNode = document.getElementById("speed-title");
     if (titleNode) {
       titleNode.textContent = view.title || "待机";
       titleNode.style.color = active
         ? heatColor(heatForSpeed(speed, redline))
-        : "rgba(255,255,255,.45)";
+        : "rgba(255,255,255,.72)";
     }
 
     // 事件：响应完成 → 冲击波（强度按速度缩放）；破纪录 → 金色庆祝。

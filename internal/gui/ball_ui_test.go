@@ -79,6 +79,47 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 	}
 }
 
+// 64px 球上是「看得清」的硬指标：待机读数不能是灰的、字号要有可读下限、
+// 36 段环未点亮时也要看得见轮廓。这三件事都是真机反馈，别为了「更还原
+// 原型」把它们调回 6px / 7% 白——原型默认球径 148，QKA 这颗只有 64。
+func TestFloatingBallStaysLegibleAt64px(t *testing.T) {
+	data, err := frontendFS.ReadFile("frontend/assets/orb-agent-speed.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	orb := string(data)
+	for _, want := range []string{
+		// 字号：数值 / 单位 / 称号的硬下限（64px 上分别是 16 / 8 / 8px）。
+		`Math.max(10, .25 * S)`,
+		`Math.max(8, .086 * S)`,
+		`Math.max(8, .076 * S)`,
+		// 待机读数 94% 白、单位 82%、称号 72%：球底近黑，再低就糊成灰点。
+		`rgba(255,255,255,.94)`,
+		`rgba(255,255,255,.82)`,
+		`rgba(255,255,255,.72)`,
+		// 未点亮刻度 22% 白（原型是 7%）：球缩到 64 后那是唯一的「边框」。
+		`(dark ? .22 : .14)`,
+	} {
+		if !strings.Contains(orb, want) {
+			t.Errorf("渲染核缺少可读性常量 %q", want)
+		}
+	}
+	page, err := frontendFS.ReadFile("frontend/bar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		`rgba(255, 255, 255, .94)`,
+		`rgba(255, 255, 255, .82)`,
+		`rgba(255, 255, 255, .72)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("bar.html 的读数配色兜底缺少 %q", want)
+		}
+	}
+}
+
 // 悬浮球左键面板：加载与 macOS 菜单栏面板同一份 panel.html（签到 / 速度 /
 // 宠物三 tab），固定尺寸、不透明背景、带主题参数；不再是旧精简卡片。
 func TestBallPanelOptionsLoadSharedPanelPage(t *testing.T) {
@@ -123,7 +164,8 @@ func TestBallPanelOptionsLoadSharedPanelPage(t *testing.T) {
 // bar.html 球面速度数字必须跟随主应用的显示方式设置：接入
 // speed-display.js（roll/fade/direct）与采样频率自适应时长，禁止退回
 // 固定时长连滚（500ms 推送下 520ms 动画永远落不了位）。
-func TestBallSpeedFollowsDisplaySettings(t *testing.T) {	data, err := frontendFS.ReadFile("frontend/bar.html")
+func TestBallSpeedFollowsDisplaySettings(t *testing.T) {
+	data, err := frontendFS.ReadFile("frontend/bar.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,10 +357,20 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	if !opts.Frameless || !opts.AlwaysOnTop || !opts.Hidden {
 		t.Errorf("悬浮球窗口缺少置顶/无边框/初始隐藏: %+v", opts)
 	}
-	// 必须半透明：WebView2 走 DirectComposition 合成，SetWindowRgn 裁出的圆形
-	// 区域管不住合成层，实心底色会在球四周露出一圈方形白角。
-	if opts.BackgroundType != application.BackgroundTypeTranslucent {
-		t.Errorf("悬浮球窗口应使用半透明背景，避免圆外出现方形白角，实际 %v", opts.BackgroundType)
+	// 必须全透明（Transparent），不能是半透明（Translucent）：Translucent 会
+	// 额外向系统要一层背景材质（Win11 是 Mica，Win10 退化成 legacy
+	// ACCENT_ENABLE_BLURBEHIND），那就是球四周那圈「背景框」的来源——它在
+	// 页面底下，CSS 再怎么把 body 设成 transparent 也盖不住。
+	if opts.BackgroundType != application.BackgroundTypeTransparent {
+		t.Errorf("悬浮球窗口应使用全透明背景（Transparent），避免系统材质在球四周留下一圈背景框，实际 %v", opts.BackgroundType)
+	}
+	// 无边框窗口不能再保留原生装饰：DisableFramelessWindowDecorations 为 false
+	// 时 Wails 会把 DWM 边框延伸进客户区，方形窗口上就是一块白底 + 右上角 ×。
+	if !opts.Windows.DisableFramelessWindowDecorations {
+		t.Error("悬浮球窗口必须关闭原生装饰（DisableFramelessWindowDecorations）")
+	}
+	if !opts.Windows.HiddenOnTaskbar {
+		t.Error("悬浮球窗口不应出现在任务栏")
 	}
 	if opts.URL != "/bar.html" {
 		t.Errorf("system 主题不应在 URL 中强制主题，实际 %q", opts.URL)
@@ -564,7 +616,7 @@ func TestPopoverWindowsCancelWindowClosing(t *testing.T) {
 		if start < 0 {
 			t.Fatalf("app.go 缺少 %s 的窗口创建", ensure)
 		}
-		window := source[start:start+900]
+		window := source[start : start+900]
 		if !strings.Contains(window, "RegisterHook(events.Common.WindowClosing") ||
 			!strings.Contains(window, "event.Cancel()") {
 			t.Errorf("%s 创建的弹出窗口缺少 WindowClosing 取消销毁钩子", ensure)

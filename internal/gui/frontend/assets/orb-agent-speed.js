@@ -319,19 +319,24 @@ void main(){
   // body
   float disc = smoothstep(.5 + px, .5 - px, r);
   if (disc > 0.) {
-    vec3 top = dark ? vec3(.106, .125, .188) : vec3(1.);
-    vec3 bot = dark ? vec3(.035, .043, .063) : vec3(.906, .922, .953);
-    paint(mix(bot, top, clamp(.5 + p.y, 0., 1.)), disc * (dark ? .92 : .96));
-    paint(vec3(1.), smoothstep(.36, 0., length(p - vec2(-.16, .19))) * (dark ? .06 : .3) * disc);
+    // 球体本身提亮一档：64px 小件在浅色桌面上要能一眼认出轮廓，原来的
+    // 深色渐变在浅底上只剩一个黑洞。
+    vec3 top = dark ? vec3(.13, .15, .21) : vec3(1.);
+    vec3 bot = dark ? vec3(.05, .06, .085) : vec3(.906, .922, .953);
+    paint(mix(bot, top, clamp(.5 + p.y, 0., 1.)), disc * (dark ? .94 : .96));
+    paint(vec3(1.), smoothstep(.36, 0., length(p - vec2(-.16, .19))) * (dark ? .08 : .3) * disc);
 
     if (fresh && r < .475) silkCore(p, r, h, o, act, lvl, dark, waveField);
 
     float rim = smoothstep(.5, .49, r) * smoothstep(.473, .495, r) * clamp(.5 + p.y * 1.4, 0., 1.);
-    paint(vec3(1.), rim * (dark ? .14 : .55));
+    paint(vec3(1.), rim * (dark ? .18 : .55));
   }
 
   // gauge
-  float segR = .41; float segHalfLen = .0225;
+  // 36 段 LED 环是这颗球唯一的「进度条」，64px 球上原来每段只有 2.9×2.4px、
+  // 未点亮处 7% 白，肉眼几乎看不见。这里把段加长加粗（.03/.062 半径）并把
+  // 未点亮亮度提到 22%，贴边看是一圈清楚的刻度环，跑起来才有对比度。
+  float segR = .41; float segHalfLen = .03;
   float lit36 = h * uSweep * 36.;
   if (u <= 1. && abs(r - segR) < .1) {
     float iNear = clamp(floor(u * 36.), 0., 35.);
@@ -341,7 +346,7 @@ void main(){
       float ca = 135. + (j + .5) * 7.5;
       float dAng = radians(mod(ang - ca + 540., 360.) - 180.);
       vec2 lp = vec2(dAng * r, r - segR);
-      vec2 hb = vec2(segR * radians(5.3) * .5, segHalfLen);
+      vec2 hb = vec2(segR * radians(6.2) * .5, segHalfLen);
       vec2 dq = abs(lp) - hb + .006;
       float sdf = length(max(dq, 0.)) + min(max(dq.x, dq.y), 0.) - .006;
       if (sdf < best) { best = sdf; bi = j; }
@@ -360,7 +365,7 @@ void main(){
     vec3 lit = mix(sc, dark ? HOT : sc * 1.15, flow * .75);
     if (bi == tipI && litF > .01) lit = dark ? HOT : sc;
     float bright = litF * shimmer * (1. + .25 * uFlash + flow * .9);
-    paint(dark ? vec3(1.) : vec3(0.), seg * (dark ? .07 : .08) * (1. - litF));
+    paint(dark ? vec3(1.) : vec3(0.), seg * (dark ? .22 : .14) * (1. - litF));
     if (dark) glow(lit, seg * bright); else paint(lit, seg * min(1., bright));
   }
   if (abs(r - segR) < .17 && act > 0.) {
@@ -382,7 +387,7 @@ void main(){
     vec2 tp = vec2(cos(ta), -sin(ta)) * .463;
     float on = step(th, h + .0005);
     vec3 tc = on > .5 ? (dark ? heat(th) : ink(heat(th))) : (dark ? vec3(1.) : vec3(0.));
-    paint(tc, smoothstep(.0072, .0042, length(p - tp)) * (on > .5 ? .95 : .2));
+    paint(tc, smoothstep(.0072, .0042, length(p - tp)) * (on > .5 ? .95 : .34));
   }
 
   // tip flare
@@ -491,12 +496,14 @@ void main(){
     }
     if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
     const S = st.S;
-    // 字号严格按规格比例（数值 0.24S / 单位 0.072S / 称号 0.062S），
-    // 只有小到 6px 以下才兜底——不再人为放大，否则 52px 球上称号会
-    // 占掉小半个球面，和原型完全不像。
-    if (valueEl) valueEl.style.fontSize = Math.max(8, .24 * S) + "px";
-    if (unitEl) unitEl.style.fontSize = Math.max(6, .072 * S) + "px";
-    if (titleEl) titleEl.style.fontSize = Math.max(6, .062 * S) + "px";
+    // 字号按规格比例放大一档（数值 0.25S / 单位 0.086S / 称号 0.076S），并给
+    // 小尺寸留「看得清」的硬下限：64px 球上 0.072S 只有 4.6px，中文与
+    // "tok/s" 会糊成一团灰点。8px 是这颗常驻小件的最低可读线（贴边 40px
+    // 球只显示数字，用 10px 下限）。数值取 0.25S 而不是更大：5 字符的
+    // "1.23k" 恰好还能收在 36 段环内侧，再大就会压到刻度上。
+    if (valueEl) valueEl.style.fontSize = Math.max(10, .25 * S) + "px";
+    if (unitEl) unitEl.style.fontSize = Math.max(8, .086 * S) + "px";
+    if (titleEl) titleEl.style.fontSize = Math.max(8, .076 * S) + "px";
     if (unitEl) unitEl.style.marginTop = Math.max(1, .012 * S) + "px";
     if (titleEl) titleEl.style.marginTop = Math.max(1, .018 * S) + "px";
     if (pillEl) {
@@ -842,10 +849,15 @@ void main(){
     if (titleEl && !opts.hostTitle) titleEl.textContent = title;
     const hc = heat(h);
     const label = dark ? hc : darken(hc, .18);
-    const ink = dark ? "rgba(255,255,255,.96)" : "rgba(11,13,18,.92)";
+    // 读数配色：静息（待机）不是「灰到看不见」——球底是近黑的深蓝，白字
+    // 掉到 60% 就只有 3:1 左右，浅色桌面上整颗球看起来是空的。待机也保持
+   // 94% 白，并用一圈很淡的白光把数字从球体渐变里托出来。
+    const idleInk = dark ? "rgba(255,255,255,.94)" : "rgba(11,13,18,.68)";
+    const ink = dark ? "rgba(255,255,255,.98)" : "rgba(11,13,18,.92)";
     if (valueEl) {
-      valueEl.style.color = st.v < .5 ? (dark ? "rgba(255,255,255,.6)" : "rgba(11,13,18,.5)") : ink;
+      valueEl.style.color = st.v < .5 ? idleInk : ink;
       const shadows = [];
+      if (st.v < .5) shadows.push(`0 0 ${.05 * S}px rgba(255,255,255,.4)`);
       if (tierNow >= 2) {
         const blur = .035 * S * (fresh ? 1 + .8 * o : 1);
         shadows.push(`0 0 ${blur}px ${rgba(hc, dark ? .85 : .45)}`);
@@ -860,10 +872,10 @@ void main(){
       const skew = tierNow >= 3 ? -6 * h * (fresh ? 1.25 : 1) : 0;
       valueEl.style.transform = `translate(${st.jitter[0]}px, ${st.jitter[1]}px) skewX(${skew}deg)`;
     }
-    if (unitEl) unitEl.style.color = dark ? "rgba(255,255,255,.55)" : "rgba(0,0,0,.5)";
+    if (unitEl) unitEl.style.color = dark ? "rgba(255,255,255,.82)" : "rgba(0,0,0,.62)";
     if (titleEl && !opts.hostTitle) {
       titleEl.style.color = st.v < .5
-        ? (dark ? "rgba(255,255,255,.45)" : "rgba(0,0,0,.4)") : rgba(label);
+        ? (dark ? "rgba(255,255,255,.72)" : "rgba(0,0,0,.55)") : rgba(label);
     }
     if (readout) readout.style.transform = `translate(-50%, ${opts.readoutOffset || -43}%)`;
     if (opts.onFrame) opts.onFrame({ value: st.v, heat: h, overdrive: o, tier: tierNow, text });
