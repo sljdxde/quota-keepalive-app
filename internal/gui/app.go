@@ -757,11 +757,18 @@ func (a *App) ensureBallPanel() *application.WebviewWindow {
 		a.windowMu.Unlock()
 		return panel
 	}
-	panel := a.wails.Window.NewWithOptions(ballPanelOptions(a.theme))
-	a.ballPanel = panel
+	win := a.wails.Window.NewWithOptions(ballPanelOptions(a.theme))
+	a.ballPanel = win
 	a.windowMu.Unlock()
-	a.ballPanelFocus = a.installPopoverFocusClose(panel, a.hideBallPanel)
-	return panel
+	// 收到 WM_CLOSE（Alt+F4 / 关闭类工具）时取消销毁、只隐藏：窗口被销毁后
+	// a.ballPanel 会悬空，之后的 Show 全部静默失败，面板永远弹不出来。失焦
+	// 与 Esc 本就走 Hide，这里只挡真正的销毁路径。
+	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		win.Hide()
+	})
+	a.ballPanelFocus = a.installPopoverFocusClose(win, a.hideBallPanel)
+	return win
 }
 
 // showBallPanel 在悬浮球旁边显示精简状态面板（Windows 托盘左键）。
@@ -831,6 +838,11 @@ func (a *App) ensurePetMini() *application.WebviewWindow {
 	win := a.wails.Window.NewWithOptions(petMiniOptions(a.theme))
 	a.petMini = win
 	a.windowMu.Unlock()
+	// 同 ballPanel：WM_CLOSE 取消销毁、只隐藏，避免 a.petMini 悬空后再也弹不出。
+	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		win.Hide()
+	})
 	a.petMiniFocus = a.installPopoverFocusClose(win, a.hidePetMini)
 	return win
 }
@@ -902,6 +914,11 @@ func (a *App) ensureBallMenu() *application.WebviewWindow {
 	win := a.wails.Window.NewWithOptions(ballMenuOptions(a.theme))
 	a.ballMenu = win
 	a.windowMu.Unlock()
+	// 同 ballPanel：WM_CLOSE 取消销毁、只隐藏，避免 a.ballMenu 悬空后再也弹不出。
+	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		event.Cancel()
+		win.Hide()
+	})
 	a.ballMenuFocus = a.installPopoverFocusClose(win, a.hideBallMenu)
 	return win
 }

@@ -135,8 +135,7 @@ func TestBallPanelOptionsLoadSharedPanelPage(t *testing.T) {
 // bar.html 球面速度数字必须跟随主应用的显示方式设置：接入
 // speed-display.js（roll/fade/direct）与采样频率自适应时长，禁止退回
 // 固定时长连滚（500ms 推送下 520ms 动画永远落不了位）。
-func TestBallSpeedFollowsDisplaySettings(t *testing.T) {
-	data, err := frontendFS.ReadFile("frontend/bar.html")
+func TestBallSpeedFollowsDisplaySettings(t *testing.T) {	data, err := frontendFS.ReadFile("frontend/bar.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -588,6 +587,32 @@ func TestBallCaughtModeShowsPokeBall(t *testing.T) {
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("捕获态样式缺少 %q", want)
+		}
+	}
+}
+
+// 三个弹出层（面板/迷你宠物/右键菜单）必须在 WM_CLOSE 时取消销毁：窗口一旦
+// 被销毁，App 缓存的指针悬空，之后的 Show 全部静默失败——左键就再也弹不出
+// 面板了。悬浮球与主窗口早有同样的 RegisterHook，这里锁住三个弹出层不遗漏。
+func TestPopoverWindowsCancelWindowClosing(t *testing.T) {
+	data, err := os.ReadFile("app.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, ensure := range []string{
+		"ballPanelOptions(a.theme)",
+		"petMiniOptions(a.theme)",
+		"ballMenuOptions(a.theme)",
+	} {
+		start := strings.Index(source, ensure)
+		if start < 0 {
+			t.Fatalf("app.go 缺少 %s 的窗口创建", ensure)
+		}
+		window := source[start:start+900]
+		if !strings.Contains(window, "RegisterHook(events.Common.WindowClosing") ||
+			!strings.Contains(window, "event.Cancel()") {
+			t.Errorf("%s 创建的弹出窗口缺少 WindowClosing 取消销毁钩子", ensure)
 		}
 	}
 }
