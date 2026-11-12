@@ -22,6 +22,15 @@ func applicationIcon(size int) []byte {
 	return brandicon.Application(size)
 }
 
+// applicationTrayIcon 返回托盘用的多尺寸 ICO（16/20/24/28/32/48/64，每档
+// 都从 1024px 母版高质量预缩放）。Wails 对 PNG 源会把它原样塞进
+// CreateIconFromResourceEx，由 GDI 粗暴缩到 SM_CXSMICON——150% DPI 下
+// 64px→24px 无平滑缩放，托盘图标像素感明显；ICO 让 shell 直接选中
+// 预缩放的精确档位，不再有缩放损失。
+func applicationTrayIcon() []byte {
+	return brandicon.ApplicationICO()
+}
+
 // applyTrayIcon 按平台装托盘图标。macOS 用模板图标，系统会按菜单栏深浅色
 // 自动着色；Windows 等平台不认 template 语义，会把单色 glyph 原样画出来，
 // 深色任务栏上就是漆黑一片，所以必须换成彩色应用图标。
@@ -54,7 +63,7 @@ func trayIconForPetState(platform, petID string, caught bool) (icon []byte, temp
 		}
 		return trayIconForPet(platform, petID)
 	}
-	return applicationIcon(64), false
+	return applicationTrayIcon(), false
 }
 
 // trayIconForPet 返回平台与宠物对应的托盘图标。macOS：宠物模板 > Q 模板；
@@ -66,14 +75,14 @@ func trayIconForPet(platform, petID string) (icon []byte, template bool) {
 		}
 		return templateIcon(), true
 	}
-	return applicationIcon(64), false
+	return applicationTrayIcon(), false
 }
 
 // trayIcon 返回平台对应的托盘图标，以及它是需要系统着色的模板图标（仅 macOS）。
-// Windows 的小图标会由 Wails 缩放到系统 SM_CXSMICON，给 64px 源图留足高 DPI 余量。
+// Windows 侧是多尺寸 ICO：shell 按 SM_CXSMICON 选中预缩放的精确档位。
 func trayIcon(platform string) (icon []byte, template bool) {
 	if platform == "darwin" {
 		return templateIcon(), true
 	}
-	return applicationIcon(64), false
+	return applicationTrayIcon(), false
 }

@@ -47,6 +47,62 @@ func Application(size int) []byte {
 	return resizePNG(applicationMaster, size)
 }
 
+// icoSizes 是托盘 ICO 内置的尺寸档位：覆盖 100%（16）到 300%（48）的系统
+// 小图标度量，shell 选中哪档就用哪档的原始位图，不再二次缩放。
+var icoSizes = []int{16, 20, 24, 28, 32, 48, 64}
+
+// ApplicationICO returns the application icon packaged as a multi-size ICO
+// (PNG-compressed entries, Vista+). Windows 的托盘图标链路对 PNG 源会用
+// GDI 路径粗暴缩放到 SM_CXSMICON，高 DPI 下像素感明显；多尺寸 ICO 让
+// shell 选中预缩放的精确档位（150% → 24px），不再有缩放损失。
+func ApplicationICO() []byte {
+	return buildICO(applicationMaster, icoSizes)
+}
+
+// buildICO packs size-resized copies of master into an ICO container whose
+// entries store complete PNG files (PNG-in-ICO, Vista+).
+func buildICO(master []byte, sizes []int) []byte {
+	images := make([][]byte, 0, len(sizes))
+	for _, size := range sizes {
+		images = append(images, resizePNG(master, size))
+	}
+
+	headerSize := 6
+	entrySize := 16
+	dataOffset := headerSize + entrySize*len(images)
+	total := dataOffset
+	for _, img := range images {
+		total += len(img)
+	}
+
+	ico := make([]byte, 0, total)
+	// ICONDIR: reserved(2) type(2)=1 icon count(2)
+	ico = append(ico, 0, 0, 1, 0, byte(len(images)), 0)
+	offset := uint32(dataOffset)
+	for i, img := range images {
+		size := sizes[i]
+		widthByte := byte(size)
+		if size >= 256 {
+			widthByte = 0
+		}
+		ico = append(ico,
+			widthByte,              // width
+			widthByte,              // height
+			0,                      // color count
+			0,                      // reserved
+			1, 0,                   // planes
+			32, 0,                  // bit count
+			byte(len(img)), byte(len(img)>>8), byte(len(img)>>16), byte(len(img)>>24),
+			byte(offset), byte(offset>>8), byte(offset>>16), byte(offset>>24),
+		)
+		offset += uint32(len(img))
+	}
+	for _, img := range images {
+		ico = append(ico, img...)
+	}
+	return ico
+}
+
 // MasterPNG returns the source application icon used by release packaging.
 func MasterPNG() []byte {
 	return bytes.Clone(applicationMaster)

@@ -79,8 +79,8 @@ func TestApplyTrayIconWritesPlatformChoice(t *testing.T) {
 
 	applyTrayIcon(tray, "windows")
 	icon, template := trayIconFields(t, tray)
-	if template || !bytes.Equal(icon, applicationIcon(64)) {
-		t.Fatalf("Windows 应写入彩色图标: template=%v len=%d", template, len(icon))
+	if template || !bytes.Equal(icon, applicationTrayIcon()) {
+		t.Fatalf("Windows 应写入彩色图标（多尺寸 ICO）: template=%v len=%d", template, len(icon))
 	}
 
 	applyTrayIcon(tray, "darwin")
@@ -106,8 +106,8 @@ func TestTrayIconUsesPetTemplateOnMac(t *testing.T) {
 	}
 
 	icon, template = trayIconForPet("windows", "pikachu")
-	if template || !bytes.Equal(icon, applicationIcon(64)) {
-		t.Error("Windows 仍应使用彩色应用图标")
+	if template || !bytes.Equal(icon, applicationTrayIcon()) {
+		t.Error("Windows 应使用彩色应用图标（多尺寸 ICO）")
 	}
 }
 
@@ -126,8 +126,8 @@ func TestApplyTrayIconForPetWritesTemplate(t *testing.T) {
 	tray = app.wails.SystemTray.New()
 	applyTrayIconForPet(tray, "windows", "charmander")
 	icon, template = trayIconFields(t, tray)
-	if template || !bytes.Equal(icon, applicationIcon(64)) {
-		t.Fatalf("Windows 应写入彩色图标: template=%v", template)
+	if template || !bytes.Equal(icon, applicationTrayIcon()) {
+		t.Fatalf("Windows 应写入彩色图标（多尺寸 ICO）: template=%v", template)
 	}
 }
 
@@ -164,8 +164,8 @@ func TestTrayIconUsesBallWhenCaught(t *testing.T) {
 	}
 
 	icon, template = trayIconForPetState("windows", "pikachu", true)
-	if template || !bytes.Equal(icon, applicationIcon(64)) {
-		t.Error("Windows 不受捕获状态影响，仍用彩色应用图标")
+	if template || !bytes.Equal(icon, applicationTrayIcon()) {
+		t.Error("Windows 不受捕获状态影响，仍用彩色应用图标（多尺寸 ICO）")
 	}
 }
 
