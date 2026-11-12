@@ -115,6 +115,23 @@
       <div class="cap">52px · QKA 球径（clip 模式）</div>
     </div>
     <div class="col">
+      <!-- 真实窗口几何：窗口 = 1.5 × 球径（78 / 52），球外的光晕、彗星与
+           火花要能画出来。之前窗口就是球本身、还被裁成圆形，外围全被切掉，
+           观感和 agent-speed 差一大截。 -->
+      <div class="stage" id="stage-78" style="width:78px;height:78px;border:0;background:transparent;border-radius:0">
+        <div class="orb-wrap" id="wrap-78">
+          <canvas id="gl-78"></canvas>
+          <canvas id="fx-78"></canvas>
+          <div class="readout" id="readout-78">
+            <span class="value" id="value-78">0</span>
+            <span class="unit" id="unit-78">tok/s</span>
+            <span class="title" id="title-78">待機</span>
+          </div>
+        </div>
+      </div>
+      <div class="cap">真实窗口 78px（球 52 + 光晕）</div>
+    </div>
+    <div class="col">
       <div class="stage small" id="stage-tiny">
         <div class="orb-wrap" id="wrap-tiny">
           <canvas id="gl-tiny"></canvas>
@@ -207,6 +224,16 @@
     titleEl: document.getElementById("title-small"),
     size: 52, clip: true, redline: 2000, readoutOffset: -50, reduceMotion: reduce,
   });
+  const real = createAgentSpeedOrb({
+    stage: document.getElementById("stage-78"),
+    glCanvas: document.getElementById("gl-78"),
+    fxCanvas: document.getElementById("fx-78"),
+    readout: document.getElementById("readout-78"),
+    valueEl: document.getElementById("value-78"),
+    unitEl: document.getElementById("unit-78"),
+    titleEl: document.getElementById("title-78"),
+    size: 52, clip: false, redline: 2000, reduceMotion: reduce,
+  });
   const tiny = createAgentSpeedOrb({
     stage: document.getElementById("stage-tiny"),
     glCanvas: document.getElementById("gl-tiny"),
@@ -215,7 +242,7 @@
     valueEl: document.getElementById("value-tiny"),
     size: 36, clip: true, redline: 2000, reduceMotion: reduce,
   });
-  const orbs = [big, small, tiny];
+  const orbs = [big, small, tiny, real];
 
   const heroOrb = createAgentSpeedOrb({
     stage: document.getElementById("hero-orb"),

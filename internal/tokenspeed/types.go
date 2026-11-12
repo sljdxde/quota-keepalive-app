@@ -184,6 +184,11 @@ type Snapshot struct {
 	PeakSeq int64 `json:"peak_seq"`
 	// Redline 是当前红线速率（tok/s）：热谱、档位与称号阈值都按它缩放。
 	Redline float64 `json:"redline_tokens_per_second"`
+	// 今日汇总（速度页「今日」网格）：输出/输入 token、请求数与平均实测速度。
+	TodayOutputTokens  int64   `json:"today_output_tokens"`
+	TodayInputTokens   int64   `json:"today_input_tokens"`
+	TodayRequests      int64   `json:"today_requests"`
+	TodayAverageTokens float64 `json:"today_average_tokens_per_second"`
 }
 
 // SourceSnapshot is one agent family's contribution to the live window.

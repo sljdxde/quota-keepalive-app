@@ -479,10 +479,10 @@ void main(){
     const rect = (stage && stage.getBoundingClientRect) ? stage.getBoundingClientRect() : null;
     const boxW = rect ? rect.width : st.size;
     const boxH = rect ? rect.height : st.size;
-    st.S = clip
-      ? Math.max(16, Math.min(st.size, boxW || st.size, boxH || st.size))
-      : Math.max(96, Math.min(st.size, boxH * .56, boxW * .62));
+    st.S = Math.max(16, Math.min(st.size, boxW || st.size, boxH || st.size));
     dpr = Math.min(2, window.devicePixelRatio || 1);
+    // 窗口 = 1.9S：与 agent-speed 原型画布完全一致（原型 W = round(S*1.9)）。
+    // 外圈光环到 0.75S、彗星与火花更远，窗口按 1.5S 会把它们裁掉。
     W = Math.round(st.S * (clip ? 1 : 1.9));
     const px = Math.round(W * dpr);
     for (const c of [glCanvas, fxCanvas]) {
@@ -491,13 +491,14 @@ void main(){
     }
     if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
     const S = st.S;
-    // 三个字号都按原型比例，但各自夹了可读下限：52px 球面上 .072S 只有
-    // 3.7px、.062S 只有 3.2px，按原值看不清 tok/s 与称号。
-    if (valueEl) valueEl.style.fontSize = Math.max(10, Math.min(40, .24 * S)) + "px";
-    if (unitEl) unitEl.style.fontSize = Math.max(6, Math.min(13, .072 * S)) + "px";
-    if (titleEl) titleEl.style.fontSize = Math.max(6.5, Math.min(12, .062 * S)) + "px";
+    // 字号严格按规格比例（数值 0.24S / 单位 0.072S / 称号 0.062S），
+    // 只有小到 6px 以下才兜底——不再人为放大，否则 52px 球上称号会
+    // 占掉小半个球面，和原型完全不像。
+    if (valueEl) valueEl.style.fontSize = Math.max(8, .24 * S) + "px";
+    if (unitEl) unitEl.style.fontSize = Math.max(6, .072 * S) + "px";
+    if (titleEl) titleEl.style.fontSize = Math.max(6, .062 * S) + "px";
     if (unitEl) unitEl.style.marginTop = Math.max(1, .012 * S) + "px";
-    if (titleEl) titleEl.style.marginTop = Math.max(1.5, .018 * S) + "px";
+    if (titleEl) titleEl.style.marginTop = Math.max(1, .018 * S) + "px";
     if (pillEl) {
       pillEl.style.fontSize = (.06 * S) + "px";
       pillEl.style.padding = `${.012 * S}px ${.04 * S}px`;
@@ -838,7 +839,7 @@ void main(){
     }
     let title = "待機";
     if (st.v >= .5) for (const [at, name] of TITLES) if (st.v >= at) title = name;
-    if (titleEl) titleEl.textContent = title;
+    if (titleEl && !opts.hostTitle) titleEl.textContent = title;
     const hc = heat(h);
     const label = dark ? hc : darken(hc, .18);
     const ink = dark ? "rgba(255,255,255,.96)" : "rgba(11,13,18,.92)";
@@ -860,7 +861,10 @@ void main(){
       valueEl.style.transform = `translate(${st.jitter[0]}px, ${st.jitter[1]}px) skewX(${skew}deg)`;
     }
     if (unitEl) unitEl.style.color = dark ? "rgba(255,255,255,.55)" : "rgba(0,0,0,.5)";
-    if (titleEl) titleEl.style.color = st.v < .5 ? (dark ? "rgba(255,255,255,.45)" : "rgba(0,0,0,.4)") : rgba(label);
+    if (titleEl && !opts.hostTitle) {
+      titleEl.style.color = st.v < .5
+        ? (dark ? "rgba(255,255,255,.45)" : "rgba(0,0,0,.4)") : rgba(label);
+    }
     if (readout) readout.style.transform = `translate(-50%, ${opts.readoutOffset || -43}%)`;
     if (opts.onFrame) opts.onFrame({ value: st.v, heat: h, overdrive: o, tier: tierNow, text });
   }
@@ -958,6 +962,12 @@ void main(){
     setDark(dark) {
       st.dark = !!dark;
       render();
+    },
+    /** 改变球径（窗口缩放/贴边时用），内部重算画布尺寸与字号。 */
+    setSize(size) {
+      const next = Number(size);
+      if (next > 0) st.size = next;
+      resize();
     },
     resize,
     /** 全部静止时停帧，避免置顶小窗常驻 60fps 重绘。 */

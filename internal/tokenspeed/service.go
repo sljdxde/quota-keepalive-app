@@ -144,6 +144,12 @@ type Service struct {
 	titleTheme         string
 	todayDate          string
 	todayTotal         int64
+	// 今日的输入/输出/请求数与「实测输出 ÷ 实测时长」，速度页今日网格要用。
+	todayOutput    int64
+	todayInput     int64
+	todayRequests  int64
+	todayMeasured  int64 // Σ 实测输出的 token
+	todayMeasuredMS int64 // Σ 实测时长（毫秒）
 	todayContributions map[string]usage
 	todayBySource      map[string]usage
 	availableSources   map[string]bool
@@ -783,6 +789,11 @@ func (s *Service) ensureToday(now time.Time) {
 	}
 	s.todayDate = date
 	s.todayTotal = 0
+	s.todayOutput = 0
+	s.todayInput = 0
+	s.todayRequests = 0
+	s.todayMeasured = 0
+	s.todayMeasuredMS = 0
 	s.todayContributions = make(map[string]usage)
 	s.todayBySource = make(map[string]usage)
 }
@@ -798,7 +809,22 @@ func (s *Service) trackTodayUsage(record responseRecord) {
 	}
 	s.todayContributions[record.key] = contribution
 	delta := subtractNonNegative(contribution, previous)
+	// 请求数只在首次见到这条响应时 +1（后续流式更新不算新请求）。
+	if previous == (usage{}) && contribution != (usage{}) {
+		s.todayRequests++
+		// 实测速率：完成且有有效区间时计入「今日平均速度」。
+		if record.final {
+			if timed, ok := asTimed(record); ok {
+				if tokens, windowMS, _ := responseMeasure(timed); tokens > 0 && windowMS > 0 {
+					s.todayMeasured += tokens
+					s.todayMeasuredMS += windowMS
+				}
+			}
+		}
+	}
 	s.todayTotal += delta.total
+	s.todayOutput += delta.output
+	s.todayInput += delta.input
 	source := record.source
 	if source == "" {
 		source = "unknown"

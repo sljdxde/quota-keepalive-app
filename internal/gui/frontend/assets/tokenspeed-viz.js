@@ -308,3 +308,68 @@ export function drawSparkline(canvas, series, options) {
     ctx.setLineDash([]);
   }
 }
+
+/**
+ * createSpeedThrottle 让速度数字最多每 minIntervalMs 变一次。
+ *
+ * 为什么需要：采样可以调到 200ms，实时速率本身也在窗口里连续变化。若每次都
+ * 重画，数字每 200ms 抖一下、连滚动画永远重启，人眼来不及读。这里强制
+ * 两次提交之间至少隔 minIntervalMs（默认 500ms），期间只记最新值，到点再
+ * 提交，保证「看得清每一次变化」。
+ *
+ * 用法：
+ *   const throttle = createSpeedThrottle(500, (text) => render(text));
+ *   throttle.push("1.2k");
+ *
+ * @param {number} minIntervalMs 两次提交的最小间隔
+ * @param {(text: string) => void} commit 真正重画的回调
+ */
+export function createSpeedThrottle(minIntervalMs, commit) {
+  const interval = Number(minIntervalMs) > 0 ? Number(minIntervalMs) : 500;
+  let lastAt = 0;
+  let pending = null;
+  let timer = 0;
+
+  function flush() {
+    timer = 0;
+    if (pending === null) return;
+    lastAt = performance.now();
+    const text = pending;
+    pending = null;
+    commit(text);
+  }
+
+  return {
+    push(text) {
+      const value = String(text == null ? "0" : text);
+      if (!lastAt) {
+        // 首帧直接落位，避免启动时先等半秒。
+        lastAt = performance.now();
+        commit(value);
+        return;
+      }
+      pending = value;
+      const wait = interval - (performance.now() - lastAt);
+      if (wait <= 0) {
+        flush();
+        return;
+      }
+      if (!timer) timer = setTimeout(flush, wait);
+    },
+    /** 立即提交挂起值（窗口隐藏/切页前调用，避免丢失最后一次更新）。 */
+    flush() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = 0;
+      }
+      flush();
+    },
+    /** 数据源停顿后重置节流窗口（下一次 push 立即生效）。 */
+    reset() {
+      if (timer) clearTimeout(timer);
+      timer = 0;
+      pending = null;
+      lastAt = 0;
+    },
+  };
+}

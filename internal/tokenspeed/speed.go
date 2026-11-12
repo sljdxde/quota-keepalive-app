@@ -542,6 +542,13 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 		}
 		out.Sessions = append(out.Sessions, view)
 	}
+	out.TodayOutputTokens = s.todayOutput
+	out.TodayInputTokens = s.todayInput
+	out.TodayRequests = s.todayRequests
+	if s.todayMeasuredMS > 0 {
+		out.TodayAverageTokens = roundRate(
+			float64(s.todayMeasured) / (float64(s.todayMeasuredMS) / 1000))
+	}
 	out.EstimatedShare = roundRate(estimatedShare)
 	s.trackLiveEvents(&out, nowMS)
 	return out

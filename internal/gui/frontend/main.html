@@ -3337,6 +3337,7 @@ import {
 } from "./assets/speed-display.js";
 import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
 import {
+  createSpeedThrottle,
   drawLedStrip,
   formatSpeed,
   heatColor,
@@ -5332,10 +5333,22 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   }
 
+  // 速度页大数字同样限制「最多 500ms 变一次」：采样可到 200ms，实时速率
+  // 又在窗口里连续变化，不节流就一直在滚，读不到具体值。
+  let speedNumberTarget = 0;
+  const speedNumberThrottle = createSpeedThrottle(500, function (text) {
+    paintSpeedNumber(text);
+  });
+
   function renderSpeedNumber(target) {
+    // 数值留给 fade 分支插值用；文本走 500ms 节流。
+    speedNumberTarget = Number(target) || 0;
+    speedNumberThrottle.push(compactTokenRate(target));
+  }
+
+  function paintSpeedNumber(text) {
     const el = document.getElementById("speed-output");
     if (!el) return;
-    const text = compactTokenRate(target);
     el.setAttribute("aria-label", text + " tok/s");
     if (speedFadeFrame) {
       cancelAnimationFrame(speedFadeFrame);
@@ -5363,12 +5376,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
     if (!animate) {
       el.textContent = text;
-      speedFadeValue = target;
+      speedFadeValue = speedNumberTarget;
       return;
     }
     if (speedDisplayMode === "direct") {
       el.textContent = text;
-      speedFadeValue = target;
+      speedFadeValue = speedNumberTarget;
       el.classList.remove("is-ticking");
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
@@ -5382,7 +5395,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const started = performance.now();
     function step(now) {
       const progress = Math.min(1, (now - started) / FADE_DURATION_MS);
-      const value = progress >= 1 ? target : fadeValue(from, target, progress);
+      const value = progress >= 1 ? speedNumberTarget : fadeValue(from, speedNumberTarget, progress);
       el.textContent = compactTokenRate(value);
       speedFadeValue = value;
       if (progress < 1) speedFadeFrame = requestAnimationFrame(step);

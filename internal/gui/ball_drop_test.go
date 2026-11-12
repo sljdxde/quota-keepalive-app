@@ -85,7 +85,7 @@ func TestResolveBarDropSwitchesEdgeWhileDocked(t *testing.T) {
 
 func TestResolveBarDropLeavesDockWhenDraggedAway(t *testing.T) {
 	area := application.Rect{X: 0, Y: 0, Width: 1000, Height: 800}
-	// 已贴左边，拖到中间：恢复 52px 浮动态，球心保持在松手位置附近。
+	// 已贴左边，拖到中间：恢复浮动态（窗口 78），球心保持在松手位置附近。
 	drop := resolveBarDrop(area, 400, 300, ballDockSize, ballDockLeft, 120, 240)
 	if drop.Action != "float" {
 		t.Fatalf("拖离边缘应恢复浮动态，实际 %q", drop.Action)
@@ -96,9 +96,9 @@ func TestResolveBarDropLeavesDockWhenDraggedAway(t *testing.T) {
 	if drop.Docked != "" {
 		t.Fatalf("恢复后不应带贴边侧，实际 %q", drop.Docked)
 	}
-	// 36 → 52 时多出的一圈平均分到两侧：X 比松手点偏小 8px。
-	if drop.X != 392 || drop.Y != 292 {
-		t.Fatalf("恢复落点应为 392,292，实际 %d,%d", drop.X, drop.Y)
+	// 76 → 122 时多出的一圈平均分到两侧：偏移 (122-76)/2 = 23。
+	if drop.X != 377 || drop.Y != 277 {
+		t.Fatalf("恢复落点应为 377,277，实际 %d,%d", drop.X, drop.Y)
 	}
 }
 

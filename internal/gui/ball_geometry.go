@@ -15,11 +15,17 @@ import (
 // 这些函数只算数、不碰窗口，便于单测；真正 SetPosition/SetSize 在
 // bar_windows.go / app.go 里。
 const (
-	// ballSize 是浮动态直径。真机反馈 64px 太大，收到 52px：仍是完整圆，
-	// 但不抢桌面。CSS/HTML 的 SVG viewBox 保持 64 坐标系，由 100% 宽高缩放。
-	ballSize = 52
-	// ballDockSize 是贴边收起后的直径：一半在屏幕外，只露出 18px。
-	ballDockSize = 36
+	// ballDiscSize 是「看得见的球」的直径：64px（比上一版 52 稍大，
+	// 让 LED 段、tok/s 与称号都读得清）。渲染核按它算所有比例
+	// （数值 0.24S、单位 0.072S、称号 0.062S、LED 环半径 0.41S）。
+	ballDiscSize = 64
+	// ballSize 是**窗口**尺寸 = 1.9 × 球径，与 agent-speed 原型画布一致
+	// （原型 W = round(S * 1.9)）。外圈光环到 0.75S、彗星与火花更远，
+	// 窗口按 1.5S 会把这些细节裁掉——这是「和原型差太多」的主因。
+	ballSize = 122
+	// ballDockSize 是贴边收起后的窗口尺寸 = 1.9 × 40 → 76；一半在屏幕外，
+	// 露出半个球。
+	ballDockSize = 76
 	// ballDockThreshold 是拖放结束时离屏幕左右边缘多近就吸附。
 	ballDockThreshold = 12
 	// ballEdgeMargin 是位置钳制/面板选址时与工作区边界保留的间距。

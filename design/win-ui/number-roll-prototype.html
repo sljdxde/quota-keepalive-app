@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Token 速度数字 · 连滚效果原型（悬浮球 + 应用内）</title>
+<style>
+/* ============================================================
+   目标：速度数字更新时「连续滚动多位」的里程表效果，替代现在的
+   「单步短滚」（悬浮球 odometer 只滚到目标位）与「直接替换」
+   （主窗口 textContent + 0.2s 脉冲）。
+
+   滚动机制（每列数字一条 0-9 竖向 reel）：
+   - 目标列滚过 路径 + 额外整圈（半圈/一圈/两圈可调），机芯感
+   - 模式「跟随增减」：速度上升全列正滚、下降反滚（倒计数感）
+   - 模式「始终前进」：一律正向滚，机械里程表
+   - 未变化列：extra>0 时也走整圈（画面持续有动感）
+   - 位数变化仍重建不滚（既定规则）；reduced-motion 全部退化为跳变
+   - 没有 infinite 动画：只有数值变化触发的 transform 过渡
+     （置顶小窗上 infinite 动画会 60fps 重绘带闪，教训见 0.1.34）
+   ============================================================ */
+:root {
+  --bg: #e9e9ec; --bg2: #f1f1f2; --card: #fff; --line: #e4e4e7;
+  --ink: #111112; --ink2: #4a4a50; --ink3: #85858c; --accent: #1f7a8c;
+  --accent-2: #6fb5c4; --green: #2f9e6e; --amber: #c28a2a; --red: #c4453d;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --fs-base: 13px; --r-sm: 8px; --r-md: 10px;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 14px rgba(0,0,0,.06);
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --bg2: #1b1b1e; --card: #161618; --line: #2a2a2e;
+  --ink: #f2f2f3; --ink2: #b3b3ba; --ink3: #7a7a82;
+  --accent: #4aa3b5; --accent-2: #7cc3d1;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.35);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  padding: 20px 24px 36px;
+  background: var(--bg); color: var(--ink);
+  font: 400 var(--fs-base)/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+h1 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; margin: 0; }
+.sub { color: var(--ink3); font-size: 12px; margin-top: 2px; }
+
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+
+/* ---- 控件 ---- */
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+}
+.controls { margin-top: 14px; padding: 10px 12px; display: grid; gap: 8px; }
+.crow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.clabel { color: var(--ink3); font-size: 12px; min-width: 58px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--ink2);
+  font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer;
+  border-left: 1px solid var(--line);
+}
+.seg button:first-child { border-left: 0; }
+.seg button.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); font-weight: 600; }
+.seg button:hover:not(.on) { color: var(--ink); background: var(--bg2); }
+.rangewrap { display: inline-flex; align-items: center; gap: 8px; }
+.rangewrap output { font-size: 12px; color: var(--ink2); min-width: 42px; font-variant-numeric: tabular-nums; }
+input[type="range"] { accent-color: var(--accent); width: 130px; }
+
+.btn {
+  appearance: none; font: inherit; font-size: 12px; cursor: pointer;
+  padding: 4px 12px; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--card); color: var(--ink);
+}
+.btn:hover { background: var(--bg2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.manual { display: inline-flex; align-items: center; gap: 6px; }
+.manual input {
+  width: 84px; height: 24px; padding: 0 8px; font: inherit; font-size: 12px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink);
+}
+.manual input:focus { outline: none; border-color: var(--accent); }
+.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink2); cursor: pointer; }
+.switch input { accent-color: var(--accent); margin: 0; }
+
+/* ---- 演示区 ---- */
+.demo { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; margin-top: 14px; align-items: stretch; }
+.demo > .card { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--ink3); letter-spacing: .02em;
+}
+.tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.tag.ghost .dot { background: var(--ink3); }
+
+/* 应用内 hero */
+.hero { display: flex; align-items: baseline; gap: 10px; margin: 2px 0 0; }
+.hero .unit { color: var(--ink3); font-size: 14px; }
+.hero-state { color: var(--ink2); font-size: 13px; display: flex; align-items: center; gap: 7px; }
+.hero-state .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.bar { height: 4px; border-radius: 2px; background: var(--bg2); overflow: hidden; }
+.bar > i { display: block; height: 100%; border-radius: 2px; background: var(--accent);
+  transition: stroke-dashoffset .42s ease, width .42s cubic-bezier(.22,.9,.24,1); }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat { border-top: 1px solid var(--line); padding-top: 8px; }
+.stat .k { color: var(--ink3); font-size: 12px; }
+.stat .v { font-size: 20px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+/* 悬浮球（52px 浮动态；宠物立绘占位略去，Q 水印 + 数字与现版一致） */
+.ball-wrap { display: flex; justify-content: center; padding: 18px 0 10px; }
+.ball { position: relative; width: 52px; height: 52px; border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #232428, #101113 72%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 4px 12px rgba(0,0,0,.35);
+}
+.ball svg.ring { position: absolute; inset: -1px; }
+.ball .q {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 30px; font-weight: 700; color: rgba(255,255,255,.10); user-select: none;
+}
+.ball .roll { position: absolute; left: 0; right: 0; bottom: 7px; text-align: center;
+  color: #fff; font-variant-numeric: tabular-nums; }
+.ball-note { color: var(--ink3); font-size: 12px; text-align: center; }
+
+/* ---- 滚动数字（避免与页面其它类名冲突，前缀 num-）---- */
+.num { display: inline-flex; line-height: 1; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.num .ncell { display: inline-block; width: 1ch; height: 1em; overflow: hidden;
+  transition: width .32s cubic-bezier(.22,.9,.24,1), opacity .32s ease; }
+.num .nreel { display: block; }
+.num .nreel > span { display: block; height: 1em; line-height: 1em; text-align: center; }
+.num .nfix { display: inline-block; width: 1ch; height: 1em; line-height: 1em; text-align: center;
+  transition: width .32s cubic-bezier(.22,.9,.24,1), opacity .32s ease; }
+.hero-num { font-size: 44px; font-weight: 650; letter-spacing: -.02em; }
+.twin-num { font-size: 44px; font-weight: 650; letter-spacing: -.02em; color: var(--ink2); }
+
+.notes { margin-top: 14px; color: var(--ink3); font-size: 12px; }
+.notes li { margin: 2px 0; }
+
+@media (max-width: 860px) { .demo { grid-template-columns: 1fr; } }
+.demo[hidden] { display: none; } /* display:grid 会压过 UA 的 [hidden]，必须显式关掉 */
+@media (prefers-reduced-motion: reduce) {
+  .bar > i, .num .ncell, .num .nfix { transition: none; }
+}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <h1>Token 速度数字 · 连滚效果原型</h1>
+      <div class="sub">替代「直接替换 / 单步短滚」：数值更新时数字列连续滚过多位，像机械里程表</div>
+    </div>
+    <div class="seg" id="theme-seg">
+      <button data-t="light" class="on">亮色</button>
+      <button data-t="dark">暗色</button>
+    </div>
+  </div>
+
+  <div class="controls card">
+    <div class="crow">
+      <span class="clabel">滚动模式</span>
+      <div class="seg" id="mode-seg">
+        <button data-v="follow">跟随增减</button>
+        <button data-v="forward" class="on">始终前进</button>
+        <button data-v="jump">跳变（现状对照）</button>
+      </div>
+      <span class="clabel">滚动距离</span>
+      <div class="seg" id="extra-seg">
+        <button data-v="0">单步</button>
+        <button data-v="0.5">半圈</button>
+        <button data-v="1" class="on">一圈</button>
+        <button data-v="2">两圈</button>
+      </div>
+      <span class="clabel">单次时长</span>
+      <span class="rangewrap"><input type="range" id="dur" min="200" max="900" step="20" value="520"><output id="dur-out">520ms</output></span>
+    </div>
+    <div class="crow">
+      <span class="clabel">更新间隔</span>
+      <div class="seg" id="itv-seg">
+        <button data-v="600">0.6s</button>
+        <button data-v="1000" class="on">1s</button>
+        <button data-v="2000">2s</button>
+      </div>
+      <span class="clabel">速度场景</span>
+      <div class="seg" id="scene-seg">
+        <button data-v="calm">平稳</button>
+        <button data-v="busy" class="on">活跃</button>
+        <button data-v="spike">冲高过 1k</button>
+      </div>
+      <button class="btn" id="pause">暂停</button>
+      <span class="manual">
+        <input id="manual-v" type="text" inputmode="decimal" placeholder="如 128 / 1.8 / 1024" aria-label="手动速度值">
+        <button class="btn primary" id="manual-go">应用一次</button>
+      </span>
+      <label class="switch"><input type="checkbox" id="twin-on"> 显示现状对照</label>
+    </div>
+  </div>
+
+  <div class="demo" id="demo-live">
+    <div class="card">
+      <span class="tag"><i class="dot"></i>应用内 · Token 速度页</span>
+      <div class="hero">
+        <span class="num hero-num" id="hero-out">0</span>
+        <span class="unit">tok/s</span>
+      </div>
+      <div class="bar"><i id="hero-bar" style="width:0%"></i></div>
+      <div class="hero-state"><i class="dot"></i><span id="hero-state">当前空闲</span></div>
+      <div class="stats">
+        <div class="stat"><div class="k">输出</div><div class="v"><span class="num" id="st-out">0</span></div></div>
+        <div class="stat"><div class="k">输入</div><div class="v"><span class="num" id="st-in">0</span></div></div>
+        <div class="stat"><div class="k">合计</div><div class="v"><span class="num" id="st-total">0</span></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <span class="tag"><i class="dot"></i>悬浮球 · 球面数字</span>
+      <div class="ball-wrap">
+        <div class="ball" id="ball">
+          <svg class="ring" viewBox="0 0 52 52" aria-hidden="true">
+            <defs>
+              <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="var(--accent)"/>
+                <stop offset="1" stop-color="var(--accent-2)"/>
+              </linearGradient>
+            </defs>
+            <circle cx="26" cy="26" r="24.5" fill="none" stroke="url(#ring-grad)" stroke-opacity=".22" stroke-width="2"/>
+            <circle id="ring-fg" cx="26" cy="26" r="24.5" fill="none" stroke="url(#ring-grad)" stroke-width="2"
+              stroke-linecap="round" transform="rotate(-90 26 26)"
+              stroke-dasharray="153.94" stroke-dashoffset="153.94"/>
+            <circle id="ring-dot" cx="26" cy="1.5" r="2" fill="#fff"/>
+          </svg>
+          <div class="q">Q</div>
+          <div class="roll"><span class="num" id="ball-num">0</span></div>
+        </div>
+      </div>
+      <div class="ball-note">宠物立绘位置保持现版不变（原型略去）；<br>贴边态同一套滚动机制，字号 16px</div>
+    </div>
+  </div>
+
+  <div class="demo" id="demo-twin" hidden>
+    <div class="card">
+      <span class="tag ghost"><i class="dot"></i>现状对照 · 直接替换（主窗口）</span>
+      <div class="hero">
+        <span class="twin-num" id="twin-hero">0</span>
+        <span class="unit">tok/s</span>
+      </div>
+      <div class="bar"><i id="twin-bar" style="width:0%"></i></div>
+      <div class="stats">
+        <div class="stat"><div class="k">输出</div><div class="v" id="twin-st">0</div></div>
+        <div class="stat"><div class="k">输入</div><div class="v" id="twin-st-in">0</div></div>
+        <div class="stat"><div class="k">合计</div><div class="v" id="twin-st-total">0</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <span class="tag ghost"><i class="dot"></i>现状对照 · 悬浮球单步短滚</span>
+      <div class="ball-wrap">
+        <div class="ball">
+          <svg class="ring" viewBox="0 0 52 52" aria-hidden="true">
+            <circle cx="26" cy="26" r="24.5" fill="none" stroke="url(#ring-grad)" stroke-opacity=".22" stroke-width="2"/>
+            <circle id="twin-ring" cx="26" cy="26" r="24.5" fill="none" stroke="url(#ring-grad)" stroke-width="2"
+              stroke-linecap="round" transform="rotate(-90 26 26)"
+              stroke-dasharray="153.94" stroke-dashoffset="153.94"/>
+            <circle id="twin-ring-dot" cx="26" cy="1.5" r="2" fill="#fff"/>
+          </svg>
+          <div class="q">Q</div>
+          <div class="roll"><span class="num" id="twin-ball">0</span></div>
+        </div>
+      </div>
+      <div class="ball-note">现版：应用内直接替换；悬浮球 odometer<br>只滚到目标位（0.42s 单步）</div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li>机制：每列一条 0-9 竖向 reel，「路径 + 额外整圈」连续滚到位；未变化列在 extra&gt;0 时也走整圈，画面持续有动感。</li>
+    <li>位数变化（85↔128、999→1.0k、9.9→10）丝滑过渡：按从右对齐逐位配对，新列宽度展开、从 0 滚入，消失列宽度收起、淡出移除；首帧落位不滚。</li>
+    <li>没有 infinite 动画：只有数值变化触发的 transform / stroke-dashoffset 过渡；reduced-motion 时全部退化为跳变。</li>
+    <li>中断策略：滚动中被下一次更新打断时，立即落位到上一目标再起滚，不产生累积漂移。</li>
+  </ul>
+
+<script>
+"use strict";
+/* ---------------- 速度格式化（与 main.html compactTokenRate 同口径） ---------------- */
+function compactTokenRate(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "0";
+  if (number < 10) {
+    const rounded = Math.round(number * 10) / 10;
+    return rounded >= 10 ? "10" : rounded.toFixed(1);
+  }
+  if (number < 1000) return String(Math.round(number));
+  const units = [
+    { value: 1e9, suffix: "B" },
+    { value: 1e6, suffix: "M" },
+    { value: 1e3, suffix: "k" },
+  ];
+  for (const unit of units) {
+    if (number >= unit.value) {
+      const scaled = number / unit.value;
+      return scaled.toFixed(1) + unit.suffix;
+    }
+  }
+  return String(Math.round(number));
+}
+
+/* ---------------- 称号进度（13 级近似阶梯，满环 400） ---------------- */
+const THRESHOLDS = [8, 12, 20, 30, 45, 65, 90, 120, 155, 195, 240, 290, 400];
+function titleProgress(v) {
+  let prev = 0;
+  for (let i = 0; i < THRESHOLDS.length; i++) {
+    const t = THRESHOLDS[i];
+    if (v <= t) {
+      const frac = t > prev ? (v - prev) / (t - prev) : 1;
+      return (i + frac) / THRESHOLDS.length;
+    }
+    prev = t;
+  }
+  return 1;
+}
+
+/* ---------------- 滚动引擎 ----------------
+   每列：.ncell（1ch 宽、1em 高裁剪）内一条 .nreel（0-9 重复 STRIP_COPIES 遍）。
+   pos 为 reel 当前纵向位置（单位：数字个数，translateY(-pos em)）。
+   滚动前把 pos 归一进 [0,10)（正向）或 [30,40)（反向，保证 to≥0），
+   transitionend 后再归一回 [0,10)；被打断时立即落位到上一目标。 */
+const DIGITS = "0123456789";
+const STRIP_COPIES = 5; // 最多「两圈+单步」= 30 位位移，5 遍 × 10 足够
+const EASE_SPIN = "cubic-bezier(.6,.05,.28,1)";   // 多位连滚：缓入缓出，机芯感
+const EASE_STEP = "cubic-bezier(.22,.9,.24,1)";   // 单步：现版悬浮球同款缓动
+
+function isDigit(ch) { return ch >= "0" && ch <= "9"; }
+
+function createRoller(el, getCfg) {
+  let text = null;
+  let cols = [];    // 当前序列：{kind:"d",cell,reel,pos,logical,settled,entering} / {kind:"f",cell}
+  let pending = []; // 出场列：宽度收起动画结束后移除
+
+  function makeDigit(startCh) {
+    const cell = document.createElement("span"); cell.className = "ncell";
+    const reel = document.createElement("span"); reel.className = "nreel";
+    for (let c = 0; c < STRIP_COPIES; c++) {
+      for (const d of DIGITS) {
+        const s = document.createElement("span"); s.textContent = d;
+        reel.appendChild(s);
+      }
+    }
+    cell.appendChild(reel);
+    const pos = Number(startCh);
+    reel.style.transition = "none";
+    reel.style.transform = "translateY(" + -pos + "em)";
+    void reel.offsetHeight;
+    reel.style.transition = "";
+    return { kind: "d", cell, reel, pos, logical: pos, settled: true, entering: false };
+  }
+
+  function makeFix(ch) {
+    const cell = document.createElement("span"); cell.className = "nfix"; cell.textContent = ch;
+    return { kind: "f", cell };
+  }
+
+  function place(col, pos, withTransition) {
+    col.reel.style.transition = withTransition ? "" : "none";
+    col.reel.style.transform = "translateY(" + -pos + "em)";
+    col.pos = pos;
+    if (!withTransition) void col.reel.offsetHeight;
+  }
+
+  function rollColumn(col, target, cfg, dir) {
+    if (!col.settled) place(col, col.logical, false); // 打断：先落位上一目标
+    // 归一化起步区（视觉不变：模 10 同位）
+    const norm = ((col.pos % 10) + 10) % 10;
+    let from = norm;
+    if (dir < 0 && from < 10) from += 30; // 反向滚预留向下空间
+    if (from !== col.pos) place(col, from, false);
+
+    const forward = ((target - from) % 10 + 10) % 10;
+    let dist = dir < 0 ? forward - 10 : forward;
+    dist += cfg.extra * 10;
+    const to = from + dist;
+    col.logical = target;
+
+    if (Math.round(dist) === 0) { place(col, target, false); col.settled = true; return; }
+    col.settled = false;
+    const ease = Math.abs(dist) > 10 || dir < 0 ? EASE_SPIN : EASE_STEP;
+    col.reel.style.transition = "transform " + cfg.duration + "ms " + ease;
+    col.reel.style.transform = "translateY(" + -to + "em)";
+    col.pos = to;
+    const onEnd = function (ev) {
+      if (ev.propertyName !== "transform") return;
+      col.reel.removeEventListener("transitionend", onEnd);
+      place(col, ((col.pos % 10) + 10) % 10, false);
+      col.settled = true;
+    };
+    col.reel.addEventListener("transitionend", onEnd);
+  }
+
+  function build(next) { // 静态重建：首帧 / 跳变 / reduced-motion
+    finalizePending();
+    el.textContent = "";
+    cols = [];
+    for (const ch of next.split("")) cols.push(isDigit(ch) ? makeDigit(ch) : makeFix(ch));
+    for (const col of cols) el.appendChild(col.cell);
+    text = next;
+  }
+
+  function finalizePending() { // 收掉上一轮的入场/出场与在途滚动
+    for (const col of pending.splice(0)) col.cell.remove();
+    for (const col of cols) {
+      if (col.kind !== "d") continue;
+      if (col.entering) {
+        col.cell.style.width = ""; col.cell.style.opacity = "";
+        col.entering = false;
+        place(col, col.logical, false); col.settled = true;
+      } else if (!col.settled) place(col, col.logical, false);
+    }
+  }
+
+  function set(next, dir) {
+    next = String(next);
+    if (next === text) return;
+    const cfg = getCfg();
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (text === null || cfg.mode === "jump" || reduced) { build(next); return; }
+    finalizePending();
+
+    // 结构 diff：按「从右数第 i 位」配对（里程表右对齐）。
+    // 同型列保留并滚动；新列宽度展开 + 从 0 滚入；消失列宽度收起 + 淡出后移除。
+    // 85↔128、999→1.0k、9.9→10 都走这条路径，不再整组重建跳变。
+    const oldCols = cols.slice();
+    const newChars = next.split("");
+    const oldLen = oldCols.length, newLen = newChars.length;
+    const maxLen = Math.max(oldLen, newLen);
+    const children = [], newCols = [], entries = [], exits = [], rolls = [];
+
+    for (let i = maxLen - 1; i >= 0; i--) { // 从左往右铺
+      const oc = i < oldLen ? oldCols[oldLen - 1 - i] : null;
+      const nch = i < newLen ? newChars[newLen - 1 - i] : null;
+      if (oc && !nch) { exits.push(oc); children.push(oc.cell); continue; }
+      if (!oc && nch) {
+        const col = isDigit(nch) ? makeDigit("0") : makeFix(nch);
+        if (col.kind === "d") { col.entering = true; rolls.push([col, Number(nch), true]); }
+        entries.push(col); newCols.push(col); children.push(col.cell);
+        continue;
+      }
+      const sameKind = (oc.kind === "d") === isDigit(nch);
+      if (sameKind) {
+        if (oc.kind === "d") rolls.push([oc, Number(nch), false]);
+        else if (oc.cell.textContent !== nch) oc.cell.textContent = nch;
+        newCols.push(oc); children.push(oc.cell);
+      } else {
+        exits.push(oc); children.push(oc.cell);
+        const col = isDigit(nch) ? makeDigit("0") : makeFix(nch);
+        if (col.kind === "d") { col.entering = true; rolls.push([col, Number(nch), true]); }
+        entries.push(col); newCols.push(col); children.push(col.cell);
+      }
+    }
+
+    const structureChanged = entries.length > 0 || exits.length > 0;
+    if (structureChanged) {
+      el.replaceChildren(...children);
+      for (const col of entries) {
+        col.cell.style.width = "0ch";
+        col.cell.style.opacity = "0";
+      }
+      void el.offsetWidth; // 提交入场初始态
+      for (const col of exits) {
+        col.cell.style.width = "0ch";
+        col.cell.style.opacity = "0";
+        pending.push(col);
+        const cell = col.cell;
+        const onEnd = function (ev) {
+          if (ev.propertyName !== "width") return;
+          cell.removeEventListener("transitionend", onEnd);
+          cell.remove();
+          const k = pending.indexOf(col);
+          if (k >= 0) pending.splice(k, 1);
+        };
+        cell.addEventListener("transitionend", onEnd);
+      }
+      for (const col of entries) {
+        col.cell.style.width = ""; // 回到类的 1ch
+        col.cell.style.opacity = "";
+        const cell = col.cell;
+        const onEnd = function (ev) {
+          if (ev.propertyName !== "width") return;
+          cell.removeEventListener("transitionend", onEnd);
+          col.entering = false;
+        };
+        cell.addEventListener("transitionend", onEnd);
+      }
+    }
+    for (const [col, target, fresh] of rolls) {
+      if (fresh) { col.pos = 0; col.logical = 0; col.settled = true; }
+      rollColumn(col, target, cfg, fresh || dir >= 0 ? 1 : -1);
+    }
+    text = next;
+    cols = newCols;
+  }
+
+  return { set, settle: finalizePending };
+}
+
+/* ---------------- 速度页字号规则（球面 4 位 12 / 5 位 10） ---------------- */
+function ballFontSize(len) { return len >= 5 ? 10 : len === 4 ? 12 : 13; }
+
+/* ---------------- 布线 ---------------- */
+const cfg = { mode: "forward", extra: 1, duration: 520 };
+const getCfg = function () { return cfg; };
+
+const heroRoller = createRoller(document.getElementById("hero-out"), getCfg);
+const stOut = createRoller(document.getElementById("st-out"), getCfg);
+const stIn = createRoller(document.getElementById("st-in"), getCfg);
+const stTotal = createRoller(document.getElementById("st-total"), getCfg);
+const ballRoller = createRoller(document.getElementById("ball-num"), getCfg);
+
+const ringFg = document.getElementById("ring-fg");
+const ringDot = document.getElementById("ring-dot");
+const heroBar = document.getElementById("hero-bar");
+const heroState = document.getElementById("hero-state");
+const CIRC = 2 * Math.PI * 24.5;
+
+function applyRing(value) {
+  const p = Math.max(0, Math.min(1, titleProgress(value)));
+  ringFg.style.strokeDashoffset = String(CIRC * (1 - p));
+  const angle = p * 2 * Math.PI;
+  ringDot.setAttribute("transform",
+    "rotate(" + (angle * 180 / Math.PI) + " 26 26)");
+}
+function applyBallSize(text) {
+  const num = document.getElementById("ball-num");
+  num.style.fontSize = ballFontSize(text.length) + "px";
+}
+
+/* 现状对照：直接替换（与主窗口一致） */
+const twinOn = document.getElementById("twin-on");
+const twinHero = document.getElementById("twin-hero");
+const twinBar = document.getElementById("twin-bar");
+function applyTwin(out, inp, total) {
+  if (!twinOn.checked) return;
+  twinHero.textContent = compactTokenRate(out);
+  document.getElementById("twin-st").textContent = compactTokenRate(out);
+  document.getElementById("twin-st-in").textContent = compactTokenRate(inp);
+  document.getElementById("twin-st-total").textContent = compactTokenRate(total);
+  twinBar.style.width = (Math.min(100, titleProgress(out) * 100)).toFixed(1) + "%";
+}
+
+/* ---------------- 场景模拟 ---------------- */
+const scenes = {
+  calm: { base: 42, noise: 4 },
+  busy: { base: 128, noise: 26 },
+  spike: { base: 0, noise: 0 },
+};
+let scene = "busy";
+let running = true;
+let interval = 1000;
+let timer = null;
+let out = 0, inp = 0, total = 0;
+let spikeT = -1;
+
+function nextValue() {
+  if (scene === "spike") {
+    spikeT += interval / 1000;
+    // 18 冲过 1k 到 ~1250（约 9 秒，穿过 999→1.0k 的重建）→ 高位抖动 6 秒
+    // → 衰减回 20（反滚）→ 停 3 秒重来
+    const cycle = 9 + 6 + 8 + 3;
+    const t = spikeT % cycle;
+    if (t < 9) {
+      const k = t / 9;
+      return 18 + (1250 - 18) * (1 - Math.pow(1 - k, 2));
+    }
+    if (t < 15) return 1100 + Math.random() * 180;
+    if (t < 23) return Math.max(20, 1200 - (t - 15) * 150);
+    return 18 + Math.random() * 4;
+  }
+  const s = scenes[scene];
+  out = Math.max(1, Math.min(395,
+    (out || s.base) + (Math.random() - 0.5) * s.noise * 0.8));
+  if (Math.random() < 0.06) out += (Math.random() - 0.5) * s.noise * 3;
+  return out;
+}
+
+function push(value, dir) {
+  inp = Math.max(0.4, value * 0.25 + (Math.random() - 0.5) * 2);
+  total = value + inp;
+  heroRoller.set(compactTokenRate(value), dir);
+  ballRoller.set(compactTokenRate(value), dir);
+  applyBallSize(compactTokenRate(value));
+  stOut.set(compactTokenRate(value), dir);
+  stIn.set(compactTokenRate(inp), 1);
+  stTotal.set(compactTokenRate(total), 1);
+  applyRing(value);
+  heroBar.style.width = (Math.min(100, titleProgress(value) * 100)).toFixed(1) + "%";
+  heroState.textContent = value > 2 ? "WorkBuddy 正在生成" : "当前空闲";
+  applyTwin(value, inp, total);
+}
+
+function tick() {
+  const value = nextValue();
+  const prev = out;
+  out = value;
+  push(value, value >= prev ? 1 : -1);
+}
+
+function startTimer() {
+  if (timer) clearInterval(timer);
+  if (running) timer = setInterval(tick, interval);
+}
+
+/* ---------------- 控件 ---------------- */
+function wireSeg(id, fn) {
+  const seg = document.getElementById(id);
+  seg.addEventListener("click", function (ev) {
+    const b = ev.target.closest("button"); if (!b) return;
+    seg.querySelectorAll("button").forEach(function (x) { x.classList.toggle("on", x === b); });
+    fn(b.dataset.v);
+  });
+}
+wireSeg("mode-seg", function (v) { cfg.mode = v; });
+wireSeg("extra-seg", function (v) { cfg.extra = Number(v); });
+wireSeg("itv-seg", function (v) { interval = Number(v); startTimer(); });
+wireSeg("scene-seg", function (v) { scene = v; spikeT = -1; out = 0; });
+wireSeg("theme-seg", function (v) {
+  document.documentElement.dataset.theme = v;
+  applyThemeRing();
+});
+document.getElementById("dur").addEventListener("input", function () {
+  cfg.duration = Number(this.value);
+  document.getElementById("dur-out").textContent = this.value + "ms";
+});
+document.getElementById("pause").addEventListener("click", function () {
+  running = !running;
+  this.textContent = running ? "暂停" : "继续";
+  startTimer();
+});
+document.getElementById("manual-go").addEventListener("click", function () {
+  const v = Number(document.getElementById("manual-v").value);
+  if (!Number.isFinite(v) || v < 0) return;
+  spikeT = -1;
+  const dir = v >= out ? 1 : -1;
+  out = v;
+  push(v, dir);
+});
+twinOn.addEventListener("change", function () {
+  document.getElementById("demo-twin").hidden = !this.checked;
+  if (this.checked) applyTwin(out, inp, total);
+});
+
+/* 主题切换时 SVG 渐变的 CSS 变量需要重取：改 stop-color 即可 */
+function applyThemeRing() {
+  const stops = document.querySelectorAll("#ring-grad stop");
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  const accent2 = getComputedStyle(document.documentElement).getPropertyValue("--accent-2").trim();
+  if (stops[0]) stops[0].setAttribute("stop-color", accent);
+  if (stops[1]) stops[1].setAttribute("stop-color", accent2);
+}
+
+/* 启动：先落一帧真实值，避免 0 起滚 */
+out = 128; push(out, 1);
+startTimer();
+
+/* 测试钩子：冻结环境（后台标签/隐藏窗口）下强制收尾在途动画并落位 */
+window.__qkaSettle = function () {
+  heroRoller.settle(); ballRoller.settle();
+  stOut.settle(); stIn.settle(); stTotal.settle();
+};
+</script>
+</body>
+</html>

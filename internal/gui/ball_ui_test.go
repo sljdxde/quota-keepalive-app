@@ -31,16 +31,19 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 		`>tok/s<`,
 		`ui-monospace, "SF Mono", "Cascadia Mono"`,
 		`readoutOffset: -50`,
-		`speedPendingTimer`,
+		`createSpeedThrottle(500`,
+		`createSpeedThrottle`,
 		`assets/orb-agent-speed.js`,
 		`assets/tokenspeed-viz.js`,
 		`createAgentSpeedOrb`,
-		`clip: true`,
+		`clip: false`,
+		`hostTitle: true`,
+		`orb.setSize`,
 		`onText: writeSpeedText`,
 		`orb.setState`,
 		`orb.pulse`,
 		`orb.peak`,
-		`orb.resize`,
+		`orb.setState`,
 		`response_seq`,
 		`peak_seq`,
 		`redline_tokens_per_second`,
@@ -130,7 +133,7 @@ func TestBallSpeedFollowsDisplaySettings(t *testing.T) {	data, err := frontendFS
 		`normalizeSpeedDisplay(values.token_speed_display)`,
 		`rollDurationFor(speedPollMillis)`,
 		`"token-speed-settings-changed"`,
-		`shouldAnimateSpeed`,
+		`rollDurationFor(speedPollMillis)`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("球面速度渲染缺少设置接入 %q", want)
@@ -326,10 +329,13 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	if ballDockSize >= ballSize || ballDockSize%2 != 0 {
 		t.Errorf("贴边尺寸 %d 应小于浮动态且能被 2 整除（一半露出）", ballDockSize)
 	}
-	// 真机反馈 64px 球太大：浮动态收到 52px、贴边收到 36px。
-	// 这里锁定具体数值，避免以后被无意识改回去。
-	if ballSize != 52 || ballDockSize != 36 {
-		t.Errorf("球尺寸应为 52px / 贴边 36px，实际 %d / %d", ballSize, ballDockSize)
+	// 窗口 = 1.9 × 球径（与 agent-speed 原型画布一致）：球 64 → 窗口 122，
+	// 贴边球 40 → 窗口 76。外圈光环、彗星与火花必须画得出来。
+	if ballDiscSize != 64 || ballSize != 122 {
+		t.Errorf("球径应为 64、窗口 122，实际 %d / %d", ballDiscSize, ballSize)
+	}
+	if ballDockSize != 76 {
+		t.Errorf("贴边窗口应为 76，实际 %d", ballDockSize)
 	}
 }
 
@@ -496,12 +502,12 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`assets/ball-dock.js`,
 		`dockSideForWindow`,
 		`dockContentShift`,
-		`window.innerWidth < 44`,
+		`window.innerWidth < 99`,
 		`width: window.innerWidth,`,
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
 		`ball.style.setProperty("--dock-y"`,
-		`orb.resize()`,
+		`orb.setSize(Math.round(window.innerWidth / 1.9))`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("贴边态页面缺少 %q", want)

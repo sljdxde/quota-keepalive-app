@@ -16,6 +16,12 @@
 <style>
   /* 拖动区域必须写在页面里（Wails 读取计算样式）：球体可拖，内容不参与
      拖动，点击仍冒泡到 #ball。 */
+  /* 方形窗口（1.9 × 球径）里，除球与光晕外的部分必须全透明，
+     否则会露出一块页面底色。qka-ui.css 给 body 设了 --bg，这里覆盖掉。 */
+  html, body { background: transparent !important; }
+  /* 画布尺寸由渲染核按 1.9×球径写（等于窗口大小），居中铺满即可。 */
+  #ball { width: 100%; height: 100%; }
+
   #ball { --wails-draggable: drag; }
   #ball .led, #ball .orb-fx, #ball .core { --wails-draggable: no-drag; pointer-events: none; }
 
@@ -41,16 +47,18 @@
      等宽数字栈 + tabular-nums，字号由渲染核按球径写入。 */
   .ball .core {
     position: absolute; left: 50%; top: 50%;
-    transform: translate(-50%, -50%);
     display: grid; justify-items: center;
     text-align: center; line-height: 1.1;
     pointer-events: none;
     font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    /* transform 由渲染核每帧写（translate(-50%, readoutOffset)） */
   }
+  /* 字号由渲染核按球径写（0.24S / 0.072S / 0.062S），CSS 只管字体栈
+     与字重，避免两处各写一套互相打架。 */
   .ball .core b.roll {
     font-variant-numeric: tabular-nums;
-    font-weight: 700;
-    letter-spacing: -.02em;
+    font-weight: 800;
+    letter-spacing: -.04em;
     color: #f6f8fb;
     white-space: nowrap;
   }
@@ -95,14 +103,16 @@
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
   import { setRoll } from "./assets/odometer.js";
   import {
-    FADE_DURATION_MS,
-    fadeValue,
     normalizeSpeedDisplay,
     rollDurationFor,
-    shouldAnimateSpeed,
   } from "./assets/speed-display.js";
   import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
-  import { formatSpeed, heatForSpeed } from "./assets/tokenspeed-viz.js";
+  import {
+    createSpeedThrottle,
+    formatSpeed,
+    heatColor,
+    heatForSpeed,
+  } from "./assets/tokenspeed-viz.js";
   import { dockSideForWindow, dockContentShift } from "./assets/ball-dock.js";
   import { shouldStartDrag, dragTargetOrigin } from "./assets/bar-gesture.js";
 
@@ -118,62 +128,20 @@
   // token_speed_poll）：主应用切「平滑缓动」或「直接替换」时球面同步。
   let speedDisplayMode = "roll";
   let speedPollMillis = 500;
-  let speedSeenOnce = false;
-  let speedFadeValue = 0;
-  let speedFadeFrame = 0;
 
-  // 球面数字：渲染核每帧算出显示文本后回调 here。渲染核本身已把目标值与
-  // 显示值各平滑了一层，但它每帧都在动，直接重画会让连滚动画永远停不下来
-  // （数字看起来一直在跳）。这里再加两道闸：
-  //   1. 死区：相对变化不足 2%（且不足 1 tok/s）不重画；
-  //   2. 节流：两次重画至少间隔 450ms，落定后再补发最终值。
-  let speedShownValue = 0;
-  let speedLastCommit = 0;
-  let speedPendingText = "";
-  let speedPendingTimer = 0;
-
-  function speedTextValue(text) {
-    const raw = String(text || "0");
-    const number = parseFloat(raw);
-    if (!Number.isFinite(number)) return 0;
-    if (/k$/i.test(raw)) return number * 1e3;
-    if (/M$/i.test(raw)) return number * 1e6;
-    if (/B$/i.test(raw)) return number * 1e9;
-    return number;
-  }
-
-  function commitSpeedText(text) {
-    speedShownValue = speedTextValue(text);
-    speedLastCommit = performance.now();
-    speedPendingText = "";
+  // 球面数字：渲染核每帧算显示文本，但**最多每 500ms 落一次**。
+  // 采样最密 200ms、实时速率本身还在窗口里连续变化；不节流的话数字每
+  // 200ms 抖一下、连滚动画永远重启，人眼根本读不到变化。
+  const speedThrottle = createSpeedThrottle(500, function (text) {
     if (speedDisplayMode === "roll") {
       setRoll(valueNode, text, { duration: rollDurationFor(speedPollMillis) });
       return;
     }
-    // fade / direct：渲染核已经把数值平滑过，这里直接落文本即可，
-    // 再做一层插值只会拖慢跟手度。
     valueNode.textContent = text;
-  }
+  });
 
   function writeSpeedText(text) {
-    const next = speedTextValue(text);
-    const threshold = Math.max(1, speedShownValue * 0.02);
-    const elapsed = performance.now() - speedLastCommit;
-    speedSeenOnce = true;
-    if (Math.abs(next - speedShownValue) >= threshold || elapsed >= 900) {
-      if (speedPendingTimer) {
-        clearTimeout(speedPendingTimer);
-        speedPendingTimer = 0;
-      }
-      commitSpeedText(text);
-      return;
-    }
-    speedPendingText = text;
-    if (speedPendingTimer) return;
-    speedPendingTimer = setTimeout(function () {
-      speedPendingTimer = 0;
-      if (speedPendingText) commitSpeedText(speedPendingText);
-    }, 450);
+    speedThrottle.push(text);
   }
 
   function loadSpeedSettings() {
@@ -188,6 +156,9 @@
   Events.On("token-speed-settings-changed", loadSpeedSettings);
   loadSpeedSettings();
 
+  // 渲染核：逐字移植自 agent-speed 的规范参考原型，负责丝绸核心、36 段
+  // LED 热谱环、彗星、火花/余烬、冲击波与破纪录金光。窗口 = 1.5 × 球径，
+  // 球外的光晕与粒子才有地方画（clip=false）。
   const orb = createAgentSpeedOrb({
     stage: ball,
     glCanvas: document.getElementById("ball-gl"),
@@ -195,8 +166,11 @@
     readout: ball.querySelector(".core"),
     valueEl: valueNode,
     unitEl: document.getElementById("speed-unit"),
-    size: window.innerWidth || 52,
-    clip: true,
+    titleEl: document.getElementById("speed-title"),
+    // 称号文字来自快照（跟随称号主题 + 红线），核只负责字号与排布。
+    hostTitle: true,
+    size: Math.round((window.innerWidth || 122) / 1.9),
+    clip: false,
     redline: 2000,
     readoutOffset: -50,
     reduceMotion: reducedMotion,
@@ -223,18 +197,18 @@
     ball.classList.toggle("live", active);
 
     orb.setState({ value: speed, redline: redline });
-    // 称号用快照里的 view.title（Go 侧按当前称号主题 + 红线算好），
-    // 单位和称号都按热度上色，与球体的热谱是同一套色。
+
+    // 称号：文字来自快照（跟随称号主题 + 红线），配色走热谱——与原型里
+    // 「称号用 heat 色」一致；字号由渲染核按 0.062S 统一写。
     const titleNode = document.getElementById("speed-title");
     if (titleNode) {
-      titleNode.textContent = view.title || "待機";
-      const heat = heatForSpeed(speed, redline);
-      titleNode.style.color = heat > 0.02
-        ? "rgba(255,255,255," + (0.45 + 0.4 * Math.min(1, heat)).toFixed(2) + ")"
+      titleNode.textContent = view.title || "待机";
+      titleNode.style.color = active
+        ? heatColor(heatForSpeed(speed, redline))
         : "rgba(255,255,255,.45)";
     }
 
-    // 事件：响应完成 → 冲击波（强度按 token 数缩放）；破纪录 → 金色庆祝。
+    // 事件：响应完成 → 冲击波（强度按速度缩放）；破纪录 → 金色庆祝。
     // 快照里带单调序号，首次收到时不补播历史事件。
     const responseSeq = Number(view.response_seq) || 0;
     if (lastResponseSeq !== null && responseSeq > lastResponseSeq && active) {
@@ -253,7 +227,8 @@
   let dockTimer = 0;
   let dockPoll = 0;
   function syncDocked() {
-    const docked = window.innerWidth < 44;
+    // 浮动窗口 122、贴边窗口 76：以两者之间为判据。
+    const docked = window.innerWidth < 99;
     ball.classList.toggle("docked", docked);
     const screen = window.screen || {};
     const side = docked ? dockSideForWindow({
@@ -270,7 +245,7 @@
     ball.style.setProperty("--dock-x", shift.x + "px");
     ball.style.setProperty("--dock-y", shift.y + "px");
     ball.dataset.dock = side;
-    orb.resize();
+    orb.setSize(Math.round(window.innerWidth / 1.9));
     if (docked && !dockPoll) {
       dockPoll = setInterval(syncDocked, 500);
     } else if (!docked && dockPoll) {
@@ -283,7 +258,6 @@
     clearTimeout(dockTimer);
     dockTimer = setTimeout(syncDocked, 80);
   });
-  orb.resize();
   syncDocked();
 
   // ---------- 手势：按住并移动超过阈值才拖动，否则算点击 ----------

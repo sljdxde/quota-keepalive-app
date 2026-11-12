@@ -76,3 +76,24 @@ test("roll duration shrinks with the sample interval but stays readable", functi
 test("fade duration is a sane fixed value", function () {
   assert.ok(FADE_DURATION_MS >= 150 && FADE_DURATION_MS <= 400);
 });
+
+// 速度数字最多每 500ms 变一次：采样 200ms 时若不节流，数字每 200ms 抖一下，
+// 人眼读不到具体值。
+test("speed throttle caps commits to one per interval", async function () {
+  const { createSpeedThrottle } = await import("../frontend/assets/tokenspeed-viz.js");
+  const committed = [];
+  const throttle = createSpeedThrottle(500, function (text) { committed.push(text); });
+
+  throttle.push("10");
+  assert.deepEqual(committed, ["10"], "首帧应直接落位");
+
+  // 间隔内连续推三次：只有最后一次挂起，未到点不提交。
+  throttle.push("20");
+  throttle.push("30");
+  throttle.push("40");
+  assert.deepEqual(committed, ["10"], "间隔内不应重复提交");
+
+  await new Promise(function (resolve) { setTimeout(resolve, 560); });
+  assert.deepEqual(committed, ["10", "40"], "到点只提交最新值");
+  throttle.reset();
+});

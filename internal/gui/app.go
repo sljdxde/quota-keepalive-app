@@ -1557,7 +1557,8 @@ func ballPanelOptions(theme string) application.WebviewWindowOptions {
 		BackgroundType: application.BackgroundTypeSolid,
 		URL:            themedURL("/panel.html", theme),
 		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
+			HiddenOnTaskbar:   true,
+			DisableFramelessWindowDecorations: true,
 		},
 	}
 }
@@ -1582,7 +1583,8 @@ func petMiniOptions(theme string) application.WebviewWindowOptions {
 		BackgroundType: application.BackgroundTypeSolid,
 		URL:            themedURL("/petmini.html", theme),
 		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
+			HiddenOnTaskbar:   true,
+			DisableFramelessWindowDecorations: true,
 		},
 	}
 }
@@ -1606,7 +1608,8 @@ func ballMenuOptions(theme string) application.WebviewWindowOptions {
 		BackgroundType: application.BackgroundTypeSolid,
 		URL:            themedURL("/ballmenu.html", theme),
 		Windows: application.WindowsWindow{
-			HiddenOnTaskbar: true,
+			HiddenOnTaskbar:   true,
+			DisableFramelessWindowDecorations: true,
 		},
 	}
 }

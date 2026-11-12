@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark light">
+<title>悬浮球 / 速度页 · agent-speed 风格重构原型</title>
+<style>
+/* ============================================================
+   参考 zoefix/agent-speed 的仪表语言，重构 QKA 悬浮球与 Token 速度页：
+
+   悬浮球（52px 真实尺寸 + 156px 放大检视）
+   - 36 段 LED 仪表环：热谱着色（蓝→青→绿→琥珀→红），随速度点亮档位
+   - 彗星头沿环转，角速度 ∝ tok/s（仅生成中转；空闲停在 12 点微光）
+   - 跨档瞬间：当前段迸发火花（事件驱动，非常驻动画）
+   - 「响应完成」冲击波：一圈扩散涟漪（事件驱动）
+   - 球心：连滚数字 + 当前称号载具线稿（低透明发光，可开关换回宠物位）
+   - 特效强度：关 / 标准（默认）——关掉后 LED 静态显示、彗星停驻
+
+   速度页 hero
+   - 称号徽章（发光线稿 + 名称 + 下一级差值）
+   - 大号连滚数字 + tok/s
+   - 横向 36 段 LED 条 + 今日峰值标记；破峰值闪「新纪录」
+   - 实时 sparkline（最近 60 个采样）
+
+   全部动效数值驱动：无空转 infinite 动画（对齐既有约束）。
+   ============================================================ */
+:root {
+  --bg: #101113; --bg2: #17181b; --card: #161618; --card2: #1b1c20;
+  --line: #2a2a2e; --line2: #34343a;
+  --ink: #f2f2f3; --ink2: #b3b3ba; --ink3: #7a7a82; --ink4: #56565e;
+  --ok: #35c287; --gold: #ffd06b;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+:root[data-theme="light"] {
+  --bg: #f4f4f6; --bg2: #ececef; --card: #ffffff; --card2: #f7f7f9;
+  --line: #e2e2e6; --line2: #d6d6dc;
+  --ink: #1c1c21; --ink2: #4b4b53; --ink3: #85858c; --ink4: #b5b5bd;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0; padding: 20px 24px 40px;
+  background: var(--bg); color: var(--ink);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+h1 { font-size: 19px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+.sub { color: var(--ink3); font-size: 12px; margin-top: 2px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--ink2);
+  font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer;
+  border-left: 1px solid var(--line);
+}
+.seg button:first-child { border-left: 0; }
+.seg button.on { color: #6fc3d4; background: rgba(111,195,212,.10); font-weight: 600; }
+.seg button:hover:not(.on) { color: var(--ink); background: var(--bg2); }
+.label { color: var(--ink3); font-size: 12px; }
+.row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.controls { margin-top: 12px; padding: 10px 12px; display: grid; gap: 8px; }
+
+.demo { display: grid; grid-template-columns: auto auto minmax(0,1fr); gap: 14px; margin-top: 14px; align-items: stretch; }
+.demo > .card { padding: 12px 14px; }
+.tag { color: var(--ink3); font-size: 11px; letter-spacing: .02em; display: inline-flex; gap: 6px; align-items: center; }
+.tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #6fc3d4; }
+
+/* ---- 悬浮球 ---- */
+.orb-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.orb { position: relative; border-radius: 50%; overflow: visible; }
+.orb svg { display: block; overflow: visible; }
+.orb-52 { width: 52px; height: 52px; }
+.orb-156 { width: 156px; height: 156px; }
+.orb-note { color: var(--ink3); font-size: 11px; text-align: center; line-height: 1.5; }
+
+/* ---- 速度页 hero ---- */
+.hero { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+  padding: 5px 10px 5px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--badge-hue, 193) 12%, var(--card2));
+  border: 1px solid color-mix(in srgb, var(--badge-hue, 193) 30%, transparent);
+}
+.badge .sig { width: 20px; height: 20px; color: hsl(var(--badge-hue, 193) 70% 62%); }
+.badge .sig svg { width: 100%; height: 100%; display: block; }
+.badge .b-name { font-weight: 650; font-size: 14px; }
+.badge .b-sub { color: var(--ink3); font-size: 11px; }
+.readout { display: flex; align-items: baseline; gap: 8px; }
+.num { font-size: 46px; font-weight: 680; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+.unit { color: var(--ink3); font-size: 13px; }
+.led-strip { position: relative; height: 14px; }
+.peak-mark {
+  position: absolute; top: -3px; width: 2px; height: 20px; border-radius: 1px;
+  background: var(--gold); opacity: .9;
+}
+.peak-mark::after {
+  content: "今日峰值"; position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+  font-size: 9px; color: var(--gold); white-space: nowrap;
+}
+.spark { width: 100%; height: 56px; display: block; }
+.state { color: var(--ink2); font-size: 12.5px; display: flex; gap: 7px; align-items: center; }
+.state .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.state.idle .dot { background: var(--ink4); }
+.record {
+  align-self: flex-start; font-size: 11px; font-weight: 650; color: var(--gold);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  border-radius: 999px; padding: 2px 9px; opacity: 0; transition: opacity .3s ease;
+}
+.record.show { opacity: 1; }
+
+/* ---- 阶梯表 ---- */
+.ladder { margin-top: 14px; padding: 10px 12px; }
+.ladder table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ladder td, .ladder th { padding: 4px 8px; text-align: left; border-top: 1px solid var(--line); }
+.ladder th { border-top: 0; color: var(--ink3); font-weight: 500; font-size: 11px; }
+.ladder tr.cur td { background: color-mix(in srgb, var(--badge-hue,193) 8%, transparent); }
+.ladder .swatch { width: 26px; height: 8px; border-radius: 4px; }
+.ladder .muted { color: var(--ink3); }
+.notes { color: var(--ink3); font-size: 12px; margin-top: 14px; }
+.notes li { margin: 2px 0; }
+@media (max-width: 900px) { .demo { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <h1>悬浮球 / 速度页 · agent-speed 风格重构原型</h1>
+  <div class="sub">36 段 LED 仪表环 + 热谱色带 + 环上彗星 + 完成冲击波 + 跨档火花；称号沿用现有 13 档阶梯，球心数字连滚</div>
+
+  <div class="controls card">
+    <div class="row">
+      <span class="label">速度场景</span>
+      <div class="seg" id="scene-seg">
+        <button data-v="idle">空闲</button>
+        <button data-v="calm">平稳</button>
+        <button data-v="busy" class="on">活跃</button>
+        <button data-v="spike">冲高过 400</button>
+      </div>
+      <span class="label">球心</span>
+      <div class="seg" id="core-seg">
+        <button data-v="sigil" class="on">称号线稿</button>
+        <button data-v="pet">保留宠物位</button>
+      </div>
+      <span class="label">特效</span>
+      <div class="seg" id="fx-seg">
+        <button data-v="off">关</button>
+        <button data-v="on" class="on">标准</button>
+      </div>
+      <button class="seg" id="finish" style="cursor:pointer"><span style="padding:3px 10px;font-size:12px">⚡ 模拟「响应完成」</span></button>
+      <span class="label" id="finish-hint">生成中每 2.5~5s 自动触发一次</span>
+    </div>
+  </div>
+
+  <div class="demo">
+    <div class="card orb-wrap">
+      <span class="tag">悬浮球 · 52px 实际尺寸</span>
+      <div class="orb orb-52" id="orb-small"></div>
+      <div class="orb-note">灯环 36 段 · 彗星 · 连滚数字<br>跨档火花 · 完成冲击波</div>
+    </div>
+    <div class="card orb-wrap">
+      <span class="tag">放大检视 · 156px</span>
+      <div class="orb orb-156" id="orb-big"></div>
+      <div class="orb-note">结构同左：外 LED 环 → 玻璃底盘 →<br>载具线稿 → 数字。实时同步。</div>
+    </div>
+    <div class="card hero">
+      <span class="tag">Token 速度页 · hero 改版</span>
+      <div class="badge" id="badge">
+        <span class="sig" id="badge-sig"></span>
+        <span class="b-name" id="badge-name">跑车</span>
+        <span class="b-sub" id="badge-sub">下一级 高铁 ≥ 96</span>
+      </div>
+      <div class="readout">
+        <span class="num" id="hero-num">0</span>
+        <span class="unit">tok/s</span>
+        <span class="record" id="record">今日新高</span>
+      </div>
+      <div class="led-strip" id="led-strip">
+        <svg id="led-strip-svg" width="100%" height="14" viewBox="0 0 360 14" preserveAspectRatio="none"></svg>
+        <i class="peak-mark" id="peak-mark" style="left:0%"></i>
+      </div>
+      <canvas class="spark" id="spark" width="720" height="112"></canvas>
+      <div class="state" id="state"><i class="dot"></i><span id="state-text">当前空闲</span></div>
+    </div>
+  </div>
+
+  <div class="card ladder">
+    <span class="tag">称号阶梯（现有 13 档 · 交通工具主题；其余 8 套主题共用同一阈值）</span>
+    <table>
+      <thead><tr><th>档</th><th>阈值</th><th>称号</th><th>热谱色</th><th>区间</th></tr></thead>
+      <tbody id="ladder-body"></tbody>
+    </table>
+  </div>
+
+  <ul class="notes">
+    <li>彗星角速度 ∝ tok/s，仅在生成中转动；空闲时缓退回 12 点位置并转微光——无常驻空转动画（对齐「特效关」与 reduced-motion）。</li>
+    <li>跨档火花与完成冲击波都是<b>事件驱动</b>：只在跨档 / 响应完成瞬间播放一次，静止帧零重绘。</li>
+    <li>LED 段颜色 = 该段自身在量程中的位置（经典转速表热谱），亮度 = 是否已点亮；当前段白热高亮。</li>
+    <li>球心两种模式：称号载具线稿（agent-speed 风）或保留现有宠物位——落地时任选，不影响捕获玩法。</li>
+    <li>速度页新增：今日峰值标记（破纪录闪「今日新高」）、实时 sparkline、LED 横条替代细进度条。</li>
+  </ul>
+
+<script>
+"use strict";
+/* ---------------- 数据与阶梯（与 title-system.js 同源） ---------------- */
+const THRESHOLDS = [0.5, 8, 12, 16, 24, 32, 48, 68, 96, 136, 200, 280, 400];
+const NAMES = ["步行","自行车","电动车","摩托车","汽车","跑车","高铁","赛车","磁悬浮列车","喷气客机","战斗机","高超音速飞机","火箭"];
+const MAX = THRESHOLDS[THRESHOLDS.length - 1];
+const SEGMENTS = 36;
+
+const SIGILS = {
+  car:   '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/>',
+  bike:  '<circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M9 17h6"/><path d="M15 6h2l3 11"/><path d="M5.5 11h9l-2 6"/>' +
+         '<circle cx="5.5" cy="17" r="2"/>',
+  train: '<rect x="4" y="3" width="16" height="13" rx="2"/><path d="M4 11h16"/><path d="M12 3v8"/>' +
+         '<path d="m8 19-2 3"/><path d="m18 22-2-3"/><circle cx="8.5" cy="14.5" r=".8"/><circle cx="15.5" cy="14.5" r=".8"/>',
+  jet:   '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+  rocket:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/>' +
+         '<path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>' +
+         '<path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+};
+function sigilForLevel(level) {
+  if (level < 0) return SIGILS.car;
+  if (level <= 1) return SIGILS.bike;
+  if (level <= 4) return SIGILS.car;
+  if (level <= 6) return SIGILS.train;
+  if (level <= 9) return SIGILS.jet;
+  return SIGILS.rocket;
+}
+
+/* 热谱：进度 0→1 映射 蓝(212)→青(190)→绿(150)→黄(80)→琥珀(45)→红(8) */
+const HEAT_STOPS = [
+  [0, 212, 62], [0.22, 190, 58], [0.45, 150, 55],
+  [0.68, 80, 60], [0.86, 45, 75], [1, 8, 68],
+];
+function heat(progress, light) {
+  const p = Math.max(0, Math.min(1, progress));
+  let a = HEAT_STOPS[0], b = HEAT_STOPS[HEAT_STOPS.length - 1];
+  for (let i = 0; i < HEAT_STOPS.length - 1; i++) {
+    if (p >= HEAT_STOPS[i][0] && p <= HEAT_STOPS[i + 1][0]) {
+      a = HEAT_STOPS[i]; b = HEAT_STOPS[i + 1]; break;
+    }
+  }
+  const t = b[0] === a[0] ? 0 : (p - a[0]) / (b[0] - a[0]);
+  const h = a[1] + (b[1] - a[1]) * t;
+  const s = a[2] + (b[2] - a[2]) * t;
+  return light ? "hsl(" + h.toFixed(0) + " " + s.toFixed(0) + "% 68%)" 
+               : "hsl(" + h.toFixed(0) + " " + s.toFixed(0) + "% 46%)";
+}
+function levelOf(speed, active) {
+  const v = Number(speed) || 0;
+  if (!active || v < THRESHOLDS[0]) return -1;
+  let level = 0;
+  THRESHOLDS.forEach((t, i) => { if (v >= t) level = i + 1; });
+  return Math.min(THRESHOLDS.length, level);
+}
+function progressOf(speed, active) {
+  const level = levelOf(speed, active);
+  if (level < 0) return 0;
+  if (level >= THRESHOLDS.length) return 1;
+  const lower = THRESHOLDS[level - 1], upper = THRESHOLDS[level];
+  return Math.max(0, Math.min(1, ((Number(speed) - lower) / Math.max(0.01, upper - lower)) * 0.9 + 0.05 + (level - 1) / (THRESHOLDS.length - 1) * 0.1));
+}
+
+/* ---------------- 场景模拟 ---------------- */
+let scene = "busy", paused = false, fxOn = true, coreMode = "sigil";
+let out = 128, todayPeak = 156, finishTimer = 0, lastLevel = 0;
+const history = new Array(60).fill(0);
+
+function nextValue(dtMs) {
+  if (scene === "idle") return 0;
+  if (scene === "calm") return Math.max(2, Math.min(60, out + (Math.random() - .5) * 6));
+  if (scene === "busy") return Math.max(4, Math.min(260, out + (Math.random() - .5) * 30));
+  // spike：穿越全部 13 档
+  if (out < 430) return Math.min(460, out + 22 + Math.random() * 18);
+  return Math.max(120, out - (Math.random() * 90));
+}
+
+/* ---------------- 数字连滚（每位 0-9 竖 reel，简化版） ---------------- */
+function makeOdometer(el) {
+  let text = null, cols = [];
+  function build(next) {
+    el.textContent = ""; cols = [];
+    for (const ch of next) {
+      if (ch >= "0" && ch <= "9") {
+        const cell = document.createElement("span");
+        cell.style.cssText = "display:inline-block;width:1ch;height:1em;overflow:hidden;vertical-align:bottom";
+        const reel = document.createElement("span");
+        reel.style.cssText = "display:block;transition:transform .26s cubic-bezier(.22,.9,.24,1)";
+        reel.textContent = "0\n1\n2\n3\n4\n5\n6\n7\n8\n9".split("\n").join("\n");
+        reel.innerHTML = "0<br>1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9";
+        reel.style.lineHeight = "1";
+        reel.style.transform = "translateY(0)";
+        cell.appendChild(reel); el.appendChild(cell);
+        cols.push({ reel, cur: Number(ch) });
+        reel.style.transition = "none";
+        reel.style.transform = "translateY(-" + Number(ch) + "em)";
+        void reel.offsetHeight;
+        reel.style.transition = "";
+      } else {
+        const fix = document.createElement("span");
+        fix.textContent = ch; fix.style.width = "auto";
+        el.appendChild(fix); cols.push(null);
+      }
+    }
+  }
+  return function set(next) {
+    next = String(next);
+    if (next === text) return;
+    const sameShape = text !== null && next.length === text.length &&
+      next.split("").every((c, i) => ((c >= "0" && c <= "9") === (text[i] >= "0" && text[i] <= "9")));
+    if (!sameShape) { build(next); text = next; return; }
+    let d = 0;
+    for (const ch of next) {
+      const col = cols[d++];
+      if (!col) continue;
+      const t = Number(ch);
+      if (t === col.cur) continue;
+      // 连滚：恒走一整圈（0-9 循环条上只有整数圈回到目标数字）
+      const to = col.cur + 10 + ((t - col.cur) % 10 + 10) % 10;
+      col.reel.style.transform = "translateY(-" + to + "em)";
+      col.cur = to;
+    }
+    text = next;
+  };
+}
+
+/* ---------------- LED 环球体 ---------------- */
+function buildOrb(root, sizePx) {
+  const S = sizePx, C = S / 2;
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", S); svg.setAttribute("height", S);
+  svg.setAttribute("viewBox", "0 0 " + S + " " + S);
+
+  // 底盘：深色玻璃
+  const plate = document.createElementNS(ns, "circle");
+  plate.setAttribute("cx", C); plate.setAttribute("cy", C); plate.setAttribute("r", C - 2);
+  plate.setAttribute("fill", "url(#plate-" + sizePx + ")");
+  svg.appendChild(defs(svg, sizePx,
+    '<radialGradient id="plate-' + sizePx + '" cx="35%" cy="28%" r="80%">' +
+    '<stop offset="0" stop-color="#232428"/><stop offset=".72" stop-color="#131417"/>' +
+    '<stop offset="1" stop-color="#0c0d0f"/></radialGradient>' +
+    '<filter id="glow-' + sizePx + '" x="-40%" y="-40%" width="180%" height="180%">' +
+    '<feGaussianBlur stdDeviation="' + (S / 52 * 1.4).toFixed(2) + '" result="b"/>' +
+    '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>'));
+  svg.appendChild(plate);
+
+  // LED 段（36 段，外环半径处，圆心角留缝）
+  const rLed = C - S * 0.055;
+  const leds = [];
+  for (let i = 0; i < SEGMENTS; i++) {
+    const a0 = (i / SEGMENTS) * Math.PI * 2 - Math.PI / 2;
+    const sweep = (Math.PI * 2 / SEGMENTS) * 0.62;
+    const x1 = C + Math.cos(a0) * rLed, y1 = C + Math.sin(a0) * rLed;
+    const x2 = C + Math.cos(a0 + sweep) * rLed, y2 = C + Math.sin(a0 + sweep) * rLed;
+    const seg = document.createElementNS(ns, "path");
+    seg.setAttribute("d", "M" + x1.toFixed(2) + " " + y1.toFixed(2) +
+      " A" + rLed.toFixed(2) + " " + rLed.toFixed(2) + " 0 0 1 " + x2.toFixed(2) + " " + y2.toFixed(2));
+    seg.setAttribute("fill", "none");
+    seg.setAttribute("stroke-width", (S / 52 * 2.2).toFixed(2));
+    seg.setAttribute("stroke-linecap", "round");
+    seg.setAttribute("opacity", ".16");
+    seg.setAttribute("stroke", heat(i / (SEGMENTS - 1), true));
+    svg.appendChild(seg);
+    leds.push(seg);
+  }
+
+  // 彗星（头 + 渐隐尾）
+  const comet = document.createElementNS(ns, "g");
+  comet.setAttribute("filter", "url(#glow-" + sizePx + ")");
+  const cometCore = document.createElementNS(ns, "circle");
+  cometCore.setAttribute("r", (S / 52 * 2).toFixed(2));
+  cometCore.setAttribute("fill", "#ffffff");
+  comet.appendChild(cometCore);
+  const trail = [];
+  for (let k = 1; k <= 5; k++) {
+    const c = document.createElementNS(ns, "circle");
+    c.setAttribute("r", (S / 52 * (1.6 - k * 0.22)).toFixed(2));
+    c.setAttribute("fill", "#bfe9f2");
+    c.setAttribute("opacity", "0");
+    comet.appendChild(c); trail.push(c);
+  }
+  svg.appendChild(comet);
+
+  // 冲击波环
+  const shock = document.createElementNS(ns, "circle");
+  shock.setAttribute("cx", C); shock.setAttribute("cy", C); shock.setAttribute("r", C - 6);
+  shock.setAttribute("fill", "none");
+  shock.setAttribute("stroke", "#9adcf0");
+  shock.setAttribute("stroke-width", (S / 52 * 1.5).toFixed(2));
+  shock.setAttribute("opacity", "0");
+  svg.appendChild(shock);
+
+  // 球心：称号线稿 / 宠物占位
+  const sigil = document.createElementNS(ns, "g");
+  sigil.setAttribute("filter", "url(#glow-" + sizePx + ")");
+  const sigilPath = document.createElementNS(ns, "path");
+  sigilPath.setAttribute("fill", "none");
+  sigilPath.setAttribute("stroke", "currentColor");
+  sigilPath.setAttribute("stroke-width", (S / 52 * 1.3).toFixed(2));
+  sigilPath.setAttribute("stroke-linecap", "round");
+  sigilPath.setAttribute("stroke-linejoin", "round");
+  sigilPath.setAttribute("opacity", ".34");
+  const sigilSize = S * 0.44, sigilX = C - sigilSize / 2, sigilY = C - sigilSize / 2 - S * 0.04;
+  sigilPath.setAttribute("transform", "translate(" + sigilX.toFixed(1) + " " + sigilY.toFixed(1) + ") scale(" + (sigilSize / 24).toFixed(3) + ")");
+  sigil.appendChild(sigilPath);
+  svg.appendChild(sigil);
+  // 宠物占位（圆形底 + 表情点）：切换时显示
+  const pet = document.createElementNS(ns, "g");
+  pet.setAttribute("opacity", "0");
+  const petCircle = document.createElementNS(ns, "circle");
+  petCircle.setAttribute("cx", C); petCircle.setAttribute("cy", C - S * 0.06);
+  petCircle.setAttribute("r", S * 0.17);
+  petCircle.setAttribute("fill", "#2b2d33");
+  petCircle.setAttribute("stroke", "#4a4d55");
+  petCircle.setAttribute("stroke-width", (S / 52).toFixed(2));
+  pet.appendChild(petCircle);
+  svg.appendChild(pet);
+
+  // 数字
+  const numText = document.createElementNS(ns, "text");
+  numText.setAttribute("x", C); numText.setAttribute("y", C + S * 0.22);
+  numText.setAttribute("text-anchor", "middle");
+  numText.setAttribute("fill", "#ffffff");
+  numText.setAttribute("font-size", (S / 52 * 13).toFixed(1));
+  numText.setAttribute("font-family", "inherit");
+  numText.setAttribute("font-variant-numeric", "tabular-nums");
+  numText.setAttribute("font-weight", "600");
+  svg.appendChild(numText);
+
+  root.appendChild(svg);
+  return {
+    svg, leds, comet, trail, shock, sigilPath, pet, numText,
+    cometAngle: -Math.PI / 2, cometSpeed: 0, lastLeds: -1,
+  };
+}
+
+function defs(svg, sizePx, inner) {
+  const ns = "http://www.w3.org/2000/svg";
+  const d = document.createElementNS(ns, "defs");
+  d.innerHTML = inner;
+  svg.appendChild(d);
+}
+
+const orbs = [buildOrb(document.getElementById("orb-small"), 52),
+              buildOrb(document.getElementById("orb-big"), 156)];
+
+/* LED 条（速度页） */
+(function buildStrip() {
+  const svg = document.getElementById("led-strip-svg");
+  const ns = "http://www.w3.org/2000/svg";
+  const segs = [];
+  for (let i = 0; i < SEGMENTS; i++) {
+    const r = document.createElementNS(ns, "rect");
+    const x = i * 10 + 1;
+    r.setAttribute("x", x); r.setAttribute("y", 2);
+    r.setAttribute("width", 8); r.setAttribute("height", 10);
+    r.setAttribute("rx", 2);
+    r.setAttribute("fill", heat(i / (SEGMENTS - 1), true));
+    r.setAttribute("opacity", ".14");
+    svg.appendChild(r); segs.push(r);
+  }
+  window.__stripSegs = segs;
+})();
+
+/* ---------------- 状态渲染 ---------------- */
+const setHero = makeOdometer(document.getElementById("hero-num"));
+const setBall = makeOdometer(document.getElementById("orb-big").querySelector("text"));
+const setBallSmall = makeOdometer(document.getElementById("orb-small").querySelector("text"));
+let lastPeak = todayPeak;
+
+function fmt(v) {
+  const n = Number(v) || 0;
+  if (n < 10) return (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, "");
+  if (n < 1000) return String(Math.round(n));
+  return (n / 1000).toFixed(1) + "k";
+}
+
+function render(now) {
+  const active = out >= 0.5;
+  const level = levelOf(out, active);
+  const prog = progressOf(out, active);
+  const litCount = Math.round(prog * SEGMENTS);
+
+  // LED 环 / 条
+  for (const orb of orbs) {
+    orb.leds.forEach((seg, i) => {
+      const lit = active && i < litCount;
+      seg.setAttribute("opacity", lit ? (i === litCount - 1 ? "1" : ".78") : ".14");
+      if (i === litCount - 1 && active) seg.setAttribute("stroke", "#ffffff");
+      else seg.setAttribute("stroke", heat(i / (SEGMENTS - 1), true));
+    });
+  }
+  window.__stripSegs.forEach((r, i) => {
+    r.setAttribute("opacity", active && i < litCount ? ".95" : ".14");
+  });
+
+  // 彗星（rAF 帧里推进；inactive 时缓退回顶部）
+  for (const orb of orbs) {
+    if (active && fxOn) {
+      orb.cometSpeed = 0.5 + prog * 2.6; // 圈/秒 ∝ 速度
+    } else {
+      orb.cometSpeed = 0;
+      const back = orb.cometAngle - (-Math.PI / 2);
+      orb.cometAngle -= back * 0.06;
+    }
+  }
+
+  // 球心线稿
+  const d = sigilForLevel(level);
+  for (const orb of orbs) {
+    orb.sigilPath.innerHTML = d;
+    const hue = active ? Math.round(212 - Math.min(1, prog) * 204) : 215;
+    orb.sigilPath.setAttribute("stroke", "hsl(" + hue + " 65% 62%)");
+    orb.sigilPath.setAttribute("opacity", coreMode === "sigil" ? (active ? ".42" : ".2") : "0");
+    orb.pet.setAttribute("opacity", coreMode === "pet" ? "1" : "0");
+  }
+
+  // 称号徽章
+  document.getElementById("badge-name").textContent =
+    active ? NAMES[Math.max(0, level - 1)] : "待机";
+  document.getElementById("badge-sub").textContent = active
+    ? (level >= THRESHOLDS.length ? "已到红线 400+" : "下一级 " + NAMES[level] + " ≥ " + THRESHOLDS[level])
+    : "开始生成后点亮";
+  document.getElementById("badge-sig").innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' +
+    sigilForLevel(level) + "</svg>";
+  const hue = active ? Math.round(212 - Math.min(1, prog) * 204) : 215;
+  document.getElementById("badge").style.setProperty("--badge-hue", hue);
+  document.getElementById("ladder-body").parentElement.parentElement
+    .style.setProperty("--badge-hue", hue);
+
+  // 峰值
+  const peakProg = progressOf(todayPeak, true);
+  document.getElementById("peak-mark").style.left = (peakProg * 100).toFixed(1) + "%";
+  const record = document.getElementById("record");
+  if (out > todayPeak + 0.5) {
+    todayPeak = out;
+    record.classList.add("show");
+    setTimeout(() => record.classList.remove("show"), 1600);
+  }
+
+  // 状态行
+  const st = document.getElementById("state");
+  st.classList.toggle("idle", !active);
+  document.getElementById("state-text").textContent =
+    active ? "ZCode 正在生成 · 2 个会话" : "当前空闲 · 等待下一次响应";
+}
+
+/* ---------------- 动效循环（rAF：彗星 / 冲击波 / 火花） ---------------- */
+let shockT = -1, sparks = [];
+function fireShock() {
+  if (!fxOn) return;
+  for (const orb of orbs) { orb.shockT = 0; }
+}
+function fireSparks() {
+  if (!fxOn) return;
+  for (const orb of orbs) {
+    const ns = "http://www.w3.org/2000/svg";
+    for (let k = 0; k < 8; k++) {
+      const c = document.createElementNS(ns, "circle");
+      const ang = Math.random() * Math.PI * 2;
+      c.setAttribute("cx", (orb.svg.getAttribute("width") / 2 + Math.cos(ang) * orb.svg.getAttribute("width") * 0.42).toFixed(1));
+      c.setAttribute("cy", (orb.svg.getAttribute("height") / 2 + Math.sin(ang) * orb.svg.getAttribute("width") * 0.42).toFixed(1));
+      c.setAttribute("r", (orb.svg.getAttribute("width") / 52 * 1.1).toFixed(2));
+      c.setAttribute("fill", "#ffd06b");
+      orb.svg.appendChild(c);
+      sparks.push({ el: c, life: 1, orb, dx: Math.cos(ang) * 10, dy: Math.sin(ang) * 10 });
+    }
+  }
+}
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  for (const orb of orbs) {
+    orb.cometAngle += orb.cometSpeed * Math.PI * 2 * dt;
+    const S = parseFloat(orb.svg.getAttribute("width"));
+    const C = S / 2, r = C - S * 0.055;
+    const hx = C + Math.cos(orb.cometAngle) * r, hy = C + Math.sin(orb.cometAngle) * r;
+    orb.comet.setAttribute("transform", "translate(" + hx.toFixed(2) + " " + hy.toFixed(2) + ")");
+    orb.comet.setAttribute("opacity", orb.cometSpeed > 0 ? "1" : ".35");
+    orb.trail.forEach((c, k) => {
+      const a = orb.cometAngle - (k + 1) * 0.11;
+      c.setAttribute("cx", (C + Math.cos(a) * r).toFixed(2));
+      c.setAttribute("cy", (C + Math.sin(a) * r).toFixed(2));
+      c.setAttribute("opacity", orb.cometSpeed > 0 ? (0.55 - k * 0.11).toFixed(2) : "0");
+    });
+    if (orb.shockT >= 0) {
+      orb.shockT += dt;
+      const p = orb.shockT / 0.7;
+      if (p >= 1) { orb.shock.setAttribute("opacity", "0"); orb.shockT = -1; }
+      else {
+        orb.shock.setAttribute("r", (C - 6 + p * S * 0.28).toFixed(1));
+        orb.shock.setAttribute("opacity", ((1 - p) * 0.8).toFixed(2));
+      }
+    }
+  }
+  sparks = sparks.filter(sp => {
+    sp.life -= dt * 1.8;
+    if (sp.life <= 0) { sp.el.remove(); return false; }
+    sp.el.setAttribute("opacity", sp.life.toFixed(2));
+    sp.el.setAttribute("transform", "translate(" + (sp.dx * (1 - sp.life)).toFixed(1) + " " + (sp.dy * (1 - sp.life)).toFixed(1) + ")");
+    return true;
+  });
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- 采样循环 ---------------- */
+setInterval(() => {
+  if (paused) return;
+  const dt = 200;
+  const v = nextValue(dt);
+  out = v;
+  history.push(out); history.shift();
+  const text = fmt(out);
+  setHero(text); setBall(text); setBallSmall(text);
+  // sparkline
+  const cvs = document.getElementById("spark");
+  const ctx = cvs.getContext("2d");
+  const w = cvs.width, h = cvs.height;
+  ctx.clearRect(0, 0, w, h);
+  const maxV = Math.max(60, ...history) * 1.1;
+  ctx.strokeStyle = "rgba(111,195,212,.9)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  history.forEach((val, i) => {
+    const x = i / (history.length - 1) * (w - 8) + 4;
+    const y = h - 8 - (val / maxV) * (h - 16);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  // 峰值虚线
+  ctx.strokeStyle = "rgba(255,208,107,.45)";
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  const py = h - 8 - (todayPeak / maxV) * (h - 16);
+  ctx.moveTo(4, py); ctx.lineTo(w - 4, py);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 跨档火花 + 完成冲击波
+  const level = levelOf(out, out >= 0.5);
+  if (level !== lastLevel) {
+    if (level > lastLevel) fireSparks();
+    lastLevel = level;
+  }
+  if (out >= 0.5) {
+    finishTimer += dt;
+    if (finishTimer > 2500 + Math.random() * 2500) { finishTimer = 0; fireShock(); }
+  }
+  render();
+}, 200);
+
+/* ---------------- 控件 ---------------- */
+function wireSeg(id, fn) {
+  const seg = document.getElementById(id);
+  seg.addEventListener("click", ev => {
+    const b = ev.target.closest("button"); if (!b) return;
+    seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    fn(b.dataset.v);
+  });
+}
+wireSeg("scene-seg", v => { scene = v; if (v === "idle") out = 0; });
+wireSeg("core-seg", v => { coreMode = v; render(); });
+wireSeg("fx-seg", v => { fxOn = v === "on"; if (!fxOn) fireShock = () => {}; });
+document.getElementById("finish").addEventListener("click", fireShock);
+
+/* 阶梯表 */
+  const body = document.getElementById("ladder-body");
+  THRESHOLDS.forEach((t, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td>" + (i + 1) + "</td>" +
+      '<td class="muted">≥ ' + t + "</td>" +
+      "<td>" + NAMES[i] + "</td>" +
+      '<td><span class="swatch" style="background:' + heat(i / 12, true) + '"></span></td>' +
+      '<td class="muted">' + t + " ~ " + (THRESHOLDS[i + 1] ? THRESHOLDS[i + 1] : "400+") + " tok/s</td>";
+    body.appendChild(tr);
+  });
+})();
+
+/* 启动 */
+out = 128; lastLevel = levelOf(out, true);
+render();
+</script>
+</body>
+</html>

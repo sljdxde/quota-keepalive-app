@@ -182,8 +182,9 @@ func TestBallMenuOriginPrefersLeftThenRight(t *testing.T) {
 	if want := 20 + ballSize + ballMenuGap; x != want {
 		t.Fatalf("左侧放不下时菜单应在右侧 %d，实际 %d", want, x)
 	}
-	// 靠上边缘：纵向钳进工作区。
-	_, y = ballMenuOrigin(area, 900, 2, ballSize, ballSize, ballMenuWidth, ballMenuHeight)
+	// 靠上边缘：纵向钳进工作区（窗口 122 后 ballY=2 已不再触发钳制，
+	// 用负坐标制造确实越界的情况）。
+	_, y = ballMenuOrigin(area, 900, -200, ballSize, ballSize, ballMenuWidth, ballMenuHeight)
 	if want := ballEdgeMargin; y != want {
 		t.Fatalf("菜单应钳到工作区内 %d，实际 %d", want, y)
 	}

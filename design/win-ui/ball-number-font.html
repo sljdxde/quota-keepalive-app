@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>悬浮球数字 · 等宽字体 / 更小字号 / 4 位承载对照</title>
+<style>
+/* ============================================================
+   对照原型：验证「52px 悬浮球球面速度数字」换等宽字体 + 收字号后，
+   1000+ 的真实形态（1.2k / 18.3k）能否承载。
+
+   真实格式化（bar.html compactTokenRate）：
+     <10        -> "1.8"      (3 字符)
+     10..999    -> "128"      (3 字符)
+     1000..9999 -> "1.2k"     (4 字符，含 "." 与 "k")
+     >=10000    -> "18.3k"    (5 字符，含 "." 与 "k")
+   等宽字体下每个字符（数字 / "." / "k" / "M" / "B"）推进宽度都 = 1ch
+   （实测 0.55em），所以 .roll 的 .cell 列宽用 1ch，与 .fix 固定字符等宽。
+
+   数字可用宽度 44px（52px 球减左右各 4px）。
+   ============================================================ */
+:root {
+  --bg: #e9e9ec; --bg2: #f1f1f2; --card: #fff; --line: #e4e4e7;
+  --ink: #111112; --ink2: #4a4a50; --ink3: #85858c; --accent: #1f7a8c;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+          "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --fs-base: 13px; --r-sm: 8px; --r-md: 10px;
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --bg2: #1b1b1e; --card: #161618; --line: #2a2a2e;
+  --ink: #f2f2f3; --ink2: #b3b3ba; --ink3: #7a7a82; --accent: #4aa3b5;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px 28px 40px;
+  background: var(--bg); color: var(--ink);
+  font: 400 var(--fs-base)/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+h1 { font-size: 20px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 4px; }
+.lead { color: var(--ink2); font-size: 12.5px; margin: 0 0 18px; max-width: 900px; }
+.lead code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+
+.controls {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+  padding: 12px 16px; margin-bottom: 22px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.ctl { display: flex; flex-direction: column; gap: 6px; }
+.ctl > span { font-size: 10.5px; color: var(--ink3); font-weight: 560; letter-spacing: .04em; text-transform: uppercase; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--ink2);
+  font: inherit; font-size: 12px; padding: 6px 11px; cursor: pointer;
+  border-right: 1px solid var(--line); white-space: nowrap;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 560; }
+.theme-toggle { margin-left: auto; }
+
+.block { margin-bottom: 24px; }
+.block-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.block-head h2 { font-size: 15px; font-weight: 650; }
+.block-head .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.tag.now { background: #f1f1f2; color: #4a4a50; }
+.tag.pick { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.block-head .spec { margin-left: auto; font-size: 11.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+
+.row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+.case { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.case .cap { font-size: 10.5px; color: var(--ink3); white-space: nowrap; font-variant-numeric: tabular-nums; text-align: center; }
+.case .cap b { color: var(--ink2); font-weight: 600; }
+
+/* 放大容器：52px 球整体 scale(3)，真实像素不变，肉眼可判 */
+.zoom { width: 156px; height: 156px; display: grid; place-items: center; }
+.ball {
+  position: relative; width: 52px; height: 52px;
+  transform: scale(3);
+  display: grid; place-items: center; border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255,255,255,.18), transparent 44%),
+    radial-gradient(circle at 74% 86%, color-mix(in srgb, hsl(193 92% 60%) 26%, transparent), transparent 64%),
+    linear-gradient(158deg, #2c3038 0%, #17191e 52%, #090a0d 100%);
+  border: 1px solid rgba(255,255,255,.11);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.2), inset 0 -9px 20px rgba(0,0,0,.55), 0 12px 26px -10px rgba(0,0,0,.62);
+  color: #f4f7fb; overflow: hidden;
+}
+.ball .core { display: grid; place-items: center; gap: 2px; line-height: 1; pointer-events: none; }
+.ball .pet { width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(255,255,255,.14); box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+.ball .ring { position: absolute; inset: 0; pointer-events: none; }
+.ball .ring circle { fill: none; }
+.ball .ring .track { stroke: rgba(255,255,255,.1); stroke-width: 1; }
+.ball .ring .bar { stroke: #6fd0e6; stroke-width: 2.4; stroke-linecap: round; filter: drop-shadow(0 0 2.5px rgba(111,208,230,.7)); }
+
+/* ---- 滚动数字：两套方案通过 class 切换 ---- */
+.roll { display: inline-flex; align-items: flex-start; overflow: hidden; line-height: 1; letter-spacing: 0; }
+.roll .cell { display: block; flex: none; width: var(--cw, .62em); height: 1em; line-height: 1em; overflow: hidden; text-align: center; position: relative; }
+.roll .reel { display: block; line-height: 1em; transform: translateY(0); }
+.roll .reel > span { display: block; height: 1em; line-height: 1em; font-variant-numeric: tabular-nums; }
+.roll .fix { display: inline-block; line-height: 1em; }
+
+/* 现行：系统无衬线 13/12/10 + .62em 列宽 */
+.ball.now .roll {
+  font-family: var(--font);
+  font-weight: 650;
+}
+/* 落地：等宽 11/10/9 + 1ch 列宽（--fz 由 JS 按字符数写） */
+.ball.pick .roll {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+}
+
+/* 结论卡 */
+.summary { padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); font-size: 12.5px; color: var(--ink2); }
+.summary b { color: var(--ink); font-weight: 650; }
+.summary table { border-collapse: collapse; margin-top: 10px; width: 100%; font-size: 11.5px; }
+.summary th, .summary td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.summary th { color: var(--ink3); font-weight: 560; }
+.summary td.good { color: #2f7d53; font-weight: 600; }
+
+/* 1:1 真实尺寸 */
+.life { display: flex; gap: 20px; align-items: center; margin-top: 22px; padding: 14px 16px; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md); }
+.life .lab { font-size: 11.5px; color: var(--ink3); }
+.life .ball { transform: none; }
+</style>
+</head>
+<body>
+  <h1>悬浮球数字 · 等宽字体 / 更小字号 / 4 位承载</h1>
+  <p class="lead">球面 <code>52px</code> 深色圆，数字可用宽度约 <code>44px</code>。速度到 1000+ 时格式化是 <code>1.2k</code> 这种（带 <code>.</code> 和 <code>k</code>），不是 <code>1200</code>；odometer 里数字逐位滚动、<code>.</code>/<code>k</code> 是固定字符。下面球放大 3 倍便于看字，最下方有 1:1 真实尺寸。</p>
+
+  <div class="controls">
+    <div class="ctl">
+      <span>速度样例</span>
+      <div class="seg" id="seg-text">
+        <button data-v="1.8" aria-pressed="false">1.8（3 字符）</button>
+        <button data-v="128" aria-pressed="false">128（3 字符）</button>
+        <button data-v="1.2k" aria-pressed="true">1.2k（4 字符 · 1000+）</button>
+        <button data-v="9.9k" aria-pressed="false">9.9k（4 字符）</button>
+        <button data-v="18.3k" aria-pressed="false">18.3k（5 字符）</button>
+        <button data-v="99k" aria-pressed="false">99k（3 字符）</button>
+      </div>
+    </div>
+    <div class="ctl theme-toggle">
+      <span>主题</span>
+      <div class="seg" id="seg-theme">
+        <button data-v="light" aria-pressed="true">浅</button>
+        <button data-v="dark" aria-pressed="false">深</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="blocks"></div>
+  <div class="summary" id="summary"></div>
+  <div class="life">
+    <span class="lab">1:1 真实尺寸</span>
+    <div id="life-now"></div>
+    <div id="life-pick"></div>
+  </div>
+
+<script>
+// 真实会出现的文本（bar.html compactTokenRate 输出）
+const CASES = [
+  { t: "1.8",   note: "&lt;10 tok/s" },
+  { t: "128",   note: "10–999" },
+  { t: "1.2k",  note: "1000+" },
+  { t: "9.9k",  note: "近 10k" },
+  { t: "18.3k", note: "≥10k" },
+];
+
+// 两套方案：字号按「字符数」分档，列宽各自给
+const SCHEMES = {
+  now: {
+    cls: "now", label: "现行", tag: "now",
+    ff: null, weight: 650, cell: ".62em",
+    size: n => n >= 5 ? 10 : n === 4 ? 12 : 13,
+  },
+  pick: {
+    cls: "pick", label: "落地后（等宽 + 更小）", tag: "pick",
+    ff: null, weight: 600, cell: "1ch",
+    size: n => n >= 5 ? 9 : n === 4 ? 10 : 11,
+  },
+};
+
+function setRoll(el, text) {
+  el.innerHTML = text.split("").map(ch => {
+    if (ch < "0" || ch > "9") return '<span class="fix">' + ch + "</span>";
+    return '<span class="cell"><span class="reel">' +
+      "0123456789".split("").map(d => "<span>" + d + "</span>").join("") +
+      "</span></span>";
+  }).join("");
+  const reels = Array.from(el.querySelectorAll(".reel"));
+  let i = 0;
+  text.split("").forEach(ch => {
+    if (ch >= "0" && ch <= "9") reels[i++].style.transform = "translateY(" + -Number(ch) + "em)";
+  });
+}
+
+function ballHTML(scheme, text, cap, zoom) {
+  const px = scheme.size(text.length);
+  return '<div class="case">' +
+    '<div class="zoom"><div class="ball ' + scheme.cls + '" style="--cw:' + scheme.cell +
+      '" data-roll="' + Math.random().toString(36).slice(2,9) + '">' +
+      '<svg class="ring" viewBox="0 0 64 64"><circle class="track" cx="32" cy="32" r="30.5"/>' +
+      '<circle class="bar" cx="32" cy="32" r="30.5" stroke-dasharray="191.6" stroke-dashoffset="120" transform="rotate(-90 32 32)"/></svg>' +
+      '<div class="core"><span class="pet"></span>' +
+      '<b class="roll" style="--fz:' + px + 'px;font-size:' + px + 'px">' + '</b>' +
+      '</div></div></div>' +
+    '<span class="cap">' + cap + "</span></div>";
+}
+
+let state = { text: "1.2k", theme: "light" };
+
+function render() {
+  document.documentElement.dataset.theme = state.theme;
+  const pick = SCHEMES.pick, now = SCHEMES.now;
+
+  function block(scheme, note) {
+    const balls = CASES.map(c => ballHTML(scheme, c.t,
+      "<b>" + c.t + "</b> · " + scheme.size(c.t.length) + "px<br>" + c.note)).join("");
+    // 当前选中样例的实测 DOM 宽度（.roll 的 scrollWidth / clientWidth）
+    return '<div class="block" data-scheme="' + scheme.cls + '">' +
+      '<div class="block-head"><h2>' + scheme.label + "</h2>" +
+      '<span class="tag ' + scheme.tag + '">' + (scheme.cls === "pick" ? "推荐" : "现状") + "</span>" +
+      '<span class="spec">' + note + "</span></div>" +
+      '<div class="row">' + balls + "</div></div>";
+  }
+
+  document.getElementById("blocks").innerHTML =
+    block(now, "系统无衬线 · 13 / 12 / 10px · 列宽 .62em") +
+    block(pick, "等宽 · 11 / 10 / 9px · 列宽 1ch");
+
+  // 落 odometer + 量 DOM 实际宽度
+  const widths = {};
+  document.querySelectorAll(".block").forEach(bl => {
+    const scheme = bl.dataset.scheme === "pick" ? pick : now;
+    bl.querySelectorAll(".ball .roll").forEach((el, i) => {
+      const t = CASES[i].t;
+      setRoll(el, t);
+      if (t === state.text) widths[bl.dataset.scheme] = {
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        fontSize: scheme.size(t.length),
+      };
+    });
+  });
+
+  // canvas 精确测量：等宽字体每字符 1ch
+  const ff = 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace';
+  const c = document.createElement("canvas").getContext("2d");
+  c.font = "600 100px " + ff;
+  const ch = c.measureText("0").width / 100;
+  const measure = t => +((c.measureText(t).width / 100) * pick.size(t.length)).toFixed(1);
+
+  let rows = CASES.map(x => {
+    const wNow = +((function(){ c.font = "650 100px " + getComputedStyle(document.body).fontFamily; return c.measureText(x.t).width/100; })() * now.size(x.t.length)).toFixed(1);
+    const wPick = measure(x.t);
+    const ok = wPick <= 44;
+    return "<tr><td>" + x.t + " · " + x.note + "</td><td>" + now.size(x.t.length) + "px</td>" +
+      "<td>" + pick.size(x.t.length) + "px</td>" +
+      '<td class="' + (ok ? "good" : "") + '">' + wPick + "px " + (ok ? "✓" : "✗") + "</td></tr>";
+  }).join("");
+
+  document.getElementById("summary").innerHTML =
+    "<b>4 位 = " + "1.2k" + "（不是 1200）</b>：等宽字体下 <code>.</code>/<code>k</code> 与数字同为 <code>1ch</code>" +
+    "（实测 " + ch.toFixed(2) + "em），列宽用 <code>1ch</code> 后固定字符与数字列严格等宽、滚动不串位。" +
+    "落地字号（11/10/9px）下各形态实测宽度均 ≤ 44px：" +
+    "<table><thead><tr><th>形态</th><th>现行字号</th><th>落地字号</th><th>落地后宽度</th></tr></thead><tbody>" +
+    rows + "</tbody></table>" +
+    "<div style='margin-top:8px'>当前选中 <b>" + state.text + "</b> 的 DOM 实测：" +
+    " 现行 <code>scrollWidth=" + (widths.now ? widths.now.scrollWidth : "?") + "px / clientWidth=" + (widths.now ? widths.now.clientWidth : "?") + "px</code>；" +
+    " 落地 <code>scrollWidth=" + (widths.pick ? widths.pick.scrollWidth : "?") + "px / clientWidth=" + (widths.pick ? widths.pick.clientWidth : "?") + "px</code>。" +
+    " scrollWidth == clientWidth 即无溢出、不裁字。</div>";
+
+  // 1:1 真实尺寸
+  [["life-now", now, "现行"], ["life-pick", pick, "落地"]].forEach(([host, sc, lab]) => {
+    document.getElementById(host).innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;gap:6px">' +
+      ballHTML(sc, state.text, lab).replace(/transform: scale\(3\);/g, "") + "</div>";
+    const el = document.getElementById(host).querySelector(".roll");
+    if (el) setRoll(el, state.text);
+  });
+}
+
+function wire(segId, key) {
+  document.getElementById(segId).addEventListener("click", e => {
+    const btn = e.target.closest("button[data-v]");
+    if (!btn) return;
+    state[key] = btn.dataset.v;
+    document.querySelectorAll("#" + segId + " button").forEach(b => b.setAttribute("aria-pressed", String(b === btn)));
+    render();
+  });
+}
+wire("seg-text", "text"); wire("seg-theme", "theme");
+render();
+</script>
+</body>
+</html>

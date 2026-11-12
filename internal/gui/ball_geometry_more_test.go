@@ -112,8 +112,8 @@ func TestBallMenuOriginPrefersLeftAndClamps(t *testing.T) {
 	if want := 10 + ballSize + ballMenuGap; x != want {
 		t.Fatalf("球贴左时菜单应翻到右侧 %d，实际 %d", want, x)
 	}
-	// 贴顶：菜单顶被钳进工作区。
-	_, y = ballMenuOrigin(area, 500, 2, ballSize, ballSize, ballMenuWidth, ballMenuHeight)
+	// 贴顶：菜单顶被钳进工作区（窗口 122 后 ballY=2 已不越界）。
+	_, y = ballMenuOrigin(area, 500, -200, ballSize, ballSize, ballMenuWidth, ballMenuHeight)
 	if y != ballEdgeMargin {
 		t.Fatalf("菜单顶应钳到 %d，实际 %d", ballEdgeMargin, y)
 	}
