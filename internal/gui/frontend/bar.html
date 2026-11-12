@@ -71,6 +71,13 @@
   import * as Bound from "./bindings/qka/internal/gui/boundservice.js";
   import { setRoll } from "./assets/odometer.js";
   import {
+    FADE_DURATION_MS,
+    fadeValue,
+    normalizeSpeedDisplay,
+    rollDurationFor,
+    shouldAnimateSpeed,
+  } from "./assets/speed-display.js";
+  import {
     normalizeTitleTheme,
     titleLevelForSpeed,
     titleThresholds,
@@ -122,6 +129,70 @@
   const RING_LENGTH = 191.6;
   const SPARK_RADIUS = 28.6;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // 速度数字的显示方式与采样频率跟随主应用设置（token_speed_display /
+  // token_speed_poll）：主应用切「平滑缓动」或「直接替换」时球面同步，
+  // 滚轮时长也用同一公式，避免球面 520ms 整圈被 500ms 推送反复打断、
+  // 数字永远在途中落不了位。
+  let speedDisplayMode = "roll";
+  let speedPollMillis = 500;
+  let speedSeenOnce = false;
+  let speedFadeValue = 0;
+  let speedFadeFrame = 0;
+
+  function loadSpeedSettings() {
+    Bound.SettingsGet()
+      .then(function (raw) {
+        const values = asJSON(raw) || {};
+        speedDisplayMode = normalizeSpeedDisplay(values.token_speed_display);
+        speedPollMillis = Number(values.token_speed_poll) || 500;
+      })
+      .catch(function () {});
+  }
+  Events.On("token-speed-settings-changed", loadSpeedSettings);
+  loadSpeedSettings();
+
+  // renderBallSpeed 按当前设置渲染球面数字。roll 走连滚引擎（时长随采样
+  // 频率自适应）；fade 从上一个值插值；direct 直接替换。纯文本模式直接给
+  // textContent 赋值即可拆掉滚轮列；切回 roll 时引擎按「列已脱离 DOM」重建。
+  function renderBallSpeed(value) {
+    const text = compactTokenRate(value);
+    if (speedFadeFrame) {
+      cancelAnimationFrame(speedFadeFrame);
+      speedFadeFrame = 0;
+    }
+    const animate = shouldAnimateSpeed(speedDisplayMode, {
+      first: !speedSeenOnce,
+      reducedMotion: reducedMotion,
+    });
+    speedSeenOnce = true;
+    if (speedDisplayMode === "roll") {
+      setRoll(valueNode, text, { duration: rollDurationFor(speedPollMillis) });
+      speedFadeValue = value;
+      return;
+    }
+    if (!animate) {
+      valueNode.textContent = text;
+      speedFadeValue = value;
+      return;
+    }
+    if (speedDisplayMode === "direct") {
+      valueNode.textContent = text;
+      speedFadeValue = value;
+      return;
+    }
+    const from = speedFadeValue || 0;
+    const started = performance.now();
+    function step(now) {
+      const progress = Math.min(1, (now - started) / FADE_DURATION_MS);
+      const current = progress >= 1 ? value : fadeValue(from, value, progress);
+      valueNode.textContent = compactTokenRate(current);
+      speedFadeValue = current;
+      if (progress < 1) speedFadeFrame = requestAnimationFrame(step);
+      else speedFadeFrame = 0;
+    }
+    speedFadeFrame = requestAnimationFrame(step);
+  }
 
   const SELECTED_KEY = "qka.pet.selected";
   const CAUGHT_KEY = "qka.pet.caught.v1";
@@ -311,10 +382,9 @@
     currentSpeed = speed;
     currentText = compactTokenRate(speed);
 
-    setRoll(valueNode, currentText);
+    renderBallSpeed(speed);
     ball.classList.toggle("idle", !active);
     ball.classList.toggle("live", active);
-
     const progress = ringProgress(speed, active);
     ringBar.setAttribute("stroke-dashoffset", String(RING_LENGTH * (1 - progress / 100)));
     animateSpark(progress);

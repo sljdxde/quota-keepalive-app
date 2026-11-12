@@ -584,13 +584,14 @@ func (a *App) undockBar(restoreX, restoreY int) {
 	a.shapeBall(bar)
 }
 
-// BarToggle 实现悬浮球左键点击：贴边时先弹回，否则切换迷你宠物。
+// BarToggle 实现悬浮球左键点击：贴边时先弹回，否则切换三 tab 面板
+// （panel.html，与 macOS 菜单栏面板同一页面）。
 func (a *App) BarToggle() {
 	if goos != "windows" {
 		return
 	}
 	if side, rx, ry := a.barDockState(); side != "" {
-		// 贴边态点击只把球弹回浮动态；再点一次才开宠物窗口。登记「待收起」，
+		// 贴边态点击只把球弹回浮动态；再点一次才开面板。登记「待收起」，
 		// 让用户点桌面/空白（球窗失焦）时球自动收回贴边。
 		a.armBarRedock(side, rx, ry)
 		a.undockBar(rx, ry)
@@ -599,11 +600,11 @@ func (a *App) BarToggle() {
 		a.focusBar()
 		return
 	}
-	// 浮动态点击是打开宠物窗口，取消任何待收起登记。
+	// 浮动态点击是打开面板，取消任何待收起登记。
 	a.clearBarRedock()
-	a.hideBallPanel()
+	a.hidePetMini()
 	a.hideBallMenu()
-	a.togglePetMini()
+	a.toggleBallPanel()
 }
 
 // armBarRedock / clearBarRedock / takeBarRedock 管理「贴边弹回后待重新收起」的
@@ -1517,8 +1518,10 @@ func panelOptions(theme string) application.WebviewWindowOptions {
 	return opts
 }
 
-// ballPanelOptions 是 Windows 悬浮球的精简状态面板（244×180）：不透明卡片、
-// 固定尺寸、失焦由 ballPanelFocus 守卫收起、Esc 直接收起。macOS 不使用。
+// ballPanelOptions 是 Windows 悬浮球左键弹出的面板（392×620）：加载与
+// macOS 菜单栏面板同一份 panel.html（签到 / 速度 / 宠物三 tab），不透明
+// 背景（panel.html 自己按 platform-opaque 铺底色）、固定尺寸、失焦由
+// ballPanelFocus 守卫收起、Esc 直接收起。macOS 的菜单栏面板不走这里。
 func ballPanelOptions(theme string) application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
 		Name:           "ballPanel",
@@ -1535,7 +1538,7 @@ func ballPanelOptions(theme string) application.WebviewWindowOptions {
 		DisableResize:  true,
 		HideOnEscape:   true,
 		BackgroundType: application.BackgroundTypeSolid,
-		URL:            themedURL("/ballpanel.html", theme),
+		URL:            themedURL("/panel.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,
 		},

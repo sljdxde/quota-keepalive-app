@@ -154,10 +154,16 @@ func TestBallPanelOriginPrefersRightThenLeft(t *testing.T) {
 	if want := area.Height - ballPanelHeight - ballEdgeMargin; y != want {
 		t.Fatalf("面板应钳到工作区内 %d，实际 %d", want, y)
 	}
-	// 工作区太窄：两侧都放不下时贴左边界。
-	x, _ = ballPanelOrigin(application.Rect{Width: 300, Height: 600}, 100, 100, ballSize, ballPanelWidth, ballPanelHeight)
+	// 工作区较窄：两侧都放不下时贴左边界（panel 244 时贴 ballEdgeMargin）。
+	x, _ = ballPanelOrigin(application.Rect{Width: 300, Height: 600}, 100, 100, ballSize, 244, ballPanelHeight)
 	if want := ballEdgeMargin; x != want {
 		t.Fatalf("窄屏面板应贴左边界 %d，实际 %d", want, x)
+	}
+	// 面板比工作区还宽（392 > 300）：8px 边距没有意义，钳到左边界 0，
+	// 至少能多显示几列内容。
+	x, _ = ballPanelOrigin(application.Rect{Width: 300, Height: 600}, 100, 100, ballSize, ballPanelWidth, ballPanelHeight)
+	if x != 0 {
+		t.Fatalf("超宽面板应钳到左边界 0，实际 %d", x)
 	}
 }
 

@@ -26,10 +26,10 @@ const (
 	ballEdgeMargin = 8
 	// ballPanelGap 是悬浮球与状态面板之间的间距。
 	ballPanelGap = 12
-	// ballPanelWidth/Height 是精简状态面板的固定尺寸（原型 244px 卡片；
-	// 高度取 182，让 32px 数字 + 四行内容 + 底部按钮刚好不触底）。
-	ballPanelWidth  = 244
-	ballPanelHeight = 182
+	// ballPanelWidth/Height 是悬浮球左键弹出的固定尺寸：加载 panel.html
+	//（签到 / 速度 / 宠物三 tab），与 macOS 菜单栏面板同一页面同一尺寸。
+	ballPanelWidth  = 392
+	ballPanelHeight = 620
 	// petMiniWidth/Height 是左键弹出的迷你宠物窗口：只放伙伴、等级和当日
 	// Token，不承载名单/进度/签到。
 	petMiniWidth  = 220

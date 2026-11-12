@@ -5,7 +5,8 @@
 //
 // 取自 design/win-ui/number-roll-prototype.html 的验证版引擎， replacing
 // 旧的单步 setRoll。主窗口速度页（speed-display 模式的 roll 分支）、悬浮球
-// bar.html 与精简面板 ballpanel.html 三处共用；mac 菜单栏面板不经过本文件。
+// bar.html 与菜单栏面板（assets/panel.js）三处共用；显示方式设置（roll/
+// fade/direct）由各调用方自己接，本文件只负责 roll 的连滚渲染。
 //
 // 约束（沿用既定规则）：首次渲染不播动画；位数更新被打断时先落位上一目标
 // 再起滚，不产生累积漂移；reduced-motion 全部退化为直接落位；没有

@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // 悬浮球替换掉旧的深色渐变胶囊：圆形卡、称号色进度环、滚动数字、可拖动、
@@ -88,57 +90,45 @@ func TestFloatingBallUsesPrototypeStructure(t *testing.T) {
 	}
 }
 
-// 精简状态面板：只保留状态速览（生成状态 / tok/s / 称号与下一级 / 今日合计），
-// 底部「打开主界面」，不再塞签到/宠物/模型管理。
-func TestBallPanelShowsCompactStatusOnly(t *testing.T) {
-	data, err := frontendFS.ReadFile("frontend/ballpanel.html")
+// 悬浮球左键面板：加载与 macOS 菜单栏面板同一份 panel.html（签到 / 速度 /
+// 宠物三 tab），固定尺寸、不透明背景、带主题参数；不再是旧精简卡片。
+func TestBallPanelOptionsLoadSharedPanelPage(t *testing.T) {
+	opts := ballPanelOptions("dark")
+	if opts.Width != ballPanelWidth || opts.Height != ballPanelHeight ||
+		opts.MinWidth != ballPanelWidth || opts.MinHeight != ballPanelHeight ||
+		opts.MaxWidth != ballPanelWidth || opts.MaxHeight != ballPanelHeight {
+		t.Fatalf("面板尺寸应固定为 %d×%d，实际 %+v", ballPanelWidth, ballPanelHeight, opts)
+	}
+	if !opts.Frameless || !opts.AlwaysOnTop || !opts.DisableResize || !opts.HideOnEscape {
+		t.Errorf("面板缺少弹出层行为: %+v", opts)
+	}
+	if opts.URL != "/panel.html?theme=dark" {
+		t.Errorf("面板应加载与菜单栏相同的 panel.html，实际 %q", opts.URL)
+	}
+	if opts.BackgroundType != application.BackgroundTypeSolid {
+		t.Errorf("Windows 面板应使用不透明背景（panel.html 按 platform-opaque 铺底），实际 %+v", opts.BackgroundType)
+	}
+}
+
+// bar.html 球面速度数字必须跟随主应用的显示方式设置：接入
+// speed-display.js（roll/fade/direct）与采样频率自适应时长，禁止退回
+// 固定时长连滚（500ms 推送下 520ms 动画永远落不了位）。
+func TestBallSpeedFollowsDisplaySettings(t *testing.T) {
+	data, err := frontendFS.ReadFile("frontend/bar.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	page := string(data)
 	for _, want := range []string{
-		`class="ball-panel idle"`,
-		`id="live-text"`,
-		`id="panel-speed"`,
-		`id="rank-level"`,
-		`id="rank-name"`,
-		`id="rank-next"`,
-		`id="today"`,
-		`今日合计`,
-		`id="open-main"`,
-		`Events.Emit("open-main")`,
-		`tokenspeed-changed`,
-		`titleThresholds`,
-		`assets/odometer.js`,
+		`"./assets/speed-display.js"`,
+		`normalizeSpeedDisplay(values.token_speed_display)`,
+		`rollDurationFor(speedPollMillis)`,
+		`"token-speed-settings-changed"`,
+		`shouldAnimateSpeed`,
 	} {
 		if !strings.Contains(page, want) {
-			t.Errorf("精简面板缺少 %q", want)
+			t.Errorf("球面速度渲染缺少设置接入 %q", want)
 		}
-	}
-	for _, forbidden := range []string{
-		`保活`,
-		`data-panel-tab`,
-		`pet-stage`,
-		`Bound.Run()`,
-	} {
-		if strings.Contains(page, forbidden) {
-			t.Errorf("精简面板不应包含 %q", forbidden)
-		}
-	}
-}
-
-func TestBallPanelOptionsAreCompactAndFixed(t *testing.T) {
-	opts := ballPanelOptions("dark")
-	if opts.Width != ballPanelWidth || opts.Height != ballPanelHeight ||
-		opts.MinWidth != ballPanelWidth || opts.MinHeight != ballPanelHeight ||
-		opts.MaxWidth != ballPanelWidth || opts.MaxHeight != ballPanelHeight {
-		t.Fatalf("精简面板尺寸应固定为 %d×%d，实际 %+v", ballPanelWidth, ballPanelHeight, opts)
-	}
-	if !opts.Frameless || !opts.AlwaysOnTop || !opts.DisableResize || !opts.HideOnEscape {
-		t.Errorf("精简面板缺少弹出层行为: %+v", opts)
-	}
-	if opts.URL != "/ballpanel.html?theme=dark" {
-		t.Errorf("精简面板应带主题 URL，实际 %q", opts.URL)
 	}
 }
 
