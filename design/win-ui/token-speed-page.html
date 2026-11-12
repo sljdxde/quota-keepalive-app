@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA · Token 速度页原型（agent-speed 版式）</title>
+<style>
+/* ============================================================
+   Token 速度页重做原型。版式与视觉全部取自 agent-speed 的
+   Dashboard（spec/DESIGN.md §4）：368pt 面板的每一段搬到 QKA 960px
+   主窗口里等比展开，不发明新组件。
+
+   要点（与人家的规范一一对应）：
+   - Hero：112px 球（同一渲染核，环特效压到柔和）+ 44px 粗数字 + 热谱称号
+     + 一行上下文（生成中 3 · 工具 1）
+   - 实时图表：1m/2m/5m 分段，96px 高，Catmull-Rom 平滑面积图，
+     填充按数值走热谱，虚线标今日峰值，右端在飞部分 45% 透明 + 虚线顶
+   - 来源行：色点 + 名称 + 实时 tok/s（右）+ 今日输出（次要）
+   - Agent 行：项目（半粗）+ 来源·模型（次要，省略）+ 阶段徽章 + ts/s
+   - 今日：2×2 指标网格（输出 / 输入含缓存 / 请求 / 平均速度）+ 峰值
+   - 间距 4/8/12/16/20/24/32，正文 13px，数字等宽 tabular
+   ============================================================ */
+:root {
+  color-scheme: dark;
+  --bg: #0a0c13; --panel: #12161f; --panel-2: #0e1219; --line: #232a38;
+  --ink: #eef2f8; --ink-2: #a8b4c6; --ink-3: #6e7a8c;
+  --heat-0: #7C8798; --accent: #38BDF8;
+  --ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+        "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --num: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --r: 14px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6fa; --panel: #ffffff; --panel-2: #f7f9fc; --line: #e3e8f0;
+  --ink: #131722; --ink-2: #4c5566; --ink-3: #8a93a3;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 13px/1.5 var(--ui);
+  -webkit-font-smoothing: antialiased;
+  padding: 20px 24px 28px;
+}
+h1 { font-size: 19px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+.sub { color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+.topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px;
+  padding: 0 10px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--ink-2); font-size: 11.5px; font-weight: 600; background: var(--panel);
+}
+.pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #35c287; }
+.pill.idle .dot { background: var(--ink-3); }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 20px; margin-top: 16px;
+}
+.section-title {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  font-size: 13px; font-weight: 650; letter-spacing: .01em; margin: 0 0 12px;
+}
+.section-title small { color: var(--ink-3); font-size: 11.5px; font-weight: 500; }
+.hairline { height: 1px; background: var(--line); margin: 16px 0; }
+
+/* ---------- Hero ---------- */
+.hero { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 22px; align-items: center; }
+.hero-orb { position: relative; width: 112px; height: 112px; }
+.hero-orb canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.hero-main { min-width: 0; }
+.hero-kicker { display: flex; align-items: center; gap: 7px; color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.hero-kicker .dot { width: 7px; height: 7px; border-radius: 50%; background: #35c287; }
+.hero-readout { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; }
+.hero-value {
+  font-family: var(--num); font-size: 44px; font-weight: 800; line-height: .92;
+  letter-spacing: -.04em; font-variant-numeric: tabular-nums;
+}
+.hero-unit { color: var(--ink-3); font-size: 14px; font-weight: 600; letter-spacing: .04em; }
+.hero-title {
+  font-size: 18px; font-weight: 750; letter-spacing: .02em; margin-top: 6px;
+}
+.hero-context { color: var(--ink-3); font-size: 12px; margin-top: 3px; }
+.hero-strip { position: relative; margin-top: 14px; max-width: 460px; }
+.hero-strip canvas { display: block; width: 100%; height: 14px; }
+.hero-peak-flag {
+  position: absolute; top: -16px; transform: translateX(-50%);
+  font: 600 9.5px/1 var(--num); color: #f2b544; white-space: nowrap; opacity: .95;
+}
+.hero-side { display: grid; gap: 8px; justify-items: end; }
+.hero-phrase { color: var(--ink-3); font-size: 11px; letter-spacing: .04em; text-align: right; }
+.hero-next {
+  padding: 8px 12px; border-radius: 10px; background: var(--panel-2);
+  border: 1px solid var(--line); text-align: right; min-width: 150px;
+}
+.hero-next small { display: block; color: var(--ink-3); font-size: 10.5px; }
+.hero-next b { font-family: var(--num); font-size: 15px; font-weight: 700; }
+
+/* ---------- 实时图表 ---------- */
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--ink-3);
+  font: 600 12px var(--ui); padding: 5px 11px; border-radius: 7px; cursor: pointer;
+}
+.seg button.on { background: #222a3a; color: var(--ink); }
+:root[data-theme="light"] .seg button.on { background: #eef2f8; color: var(--ink); }
+.chart-wrap { position: relative; }
+#chart { display: block; width: 100%; height: 132px; }
+.chart-tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity .12s;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px;
+  padding: 7px 9px; font-size: 11.5px; white-space: nowrap; transform: translate(-50%, -100%);
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+}
+.chart-tip b { font-family: var(--num); font-size: 13px; }
+.legend { display: flex; gap: 14px; color: var(--ink-3); font-size: 11px; margin-top: 6px; }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 1px dashed currentColor; vertical-align: middle; margin-right: 5px; }
+
+/* ---------- 双栏 ---------- */
+.cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* ---------- 来源 / Agent 行 ---------- */
+.rows { display: grid; gap: 1px; }
+.row {
+  display: grid; align-items: center; gap: 10px; padding: 9px 8px;
+  border-radius: 9px; cursor: default;
+}
+.row:hover { background: var(--panel-2); }
+.row.src { grid-template-columns: 8px minmax(0, 1fr) auto auto; }
+.row.agent { grid-template-columns: 10px minmax(0, 1fr) auto auto; }
+.row .name { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { color: var(--ink-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .live {
+  font-family: var(--num); font-size: 13px; font-weight: 700; text-align: right;
+  font-variant-numeric: tabular-nums; min-width: 62px;
+}
+.row .live.dim { color: var(--ink-3); font-weight: 600; }
+.row .today { color: var(--ink-3); font-size: 11px; text-align: right; min-width: 74px; }
+.sdot { width: 8px; height: 8px; border-radius: 50%; }
+.phase {
+  width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid currentColor;
+}
+.phase.gen { border-color: #35c287; box-shadow: 0 0 0 3px rgba(53,194,135,.12); }
+.phase.tools { border-color: #f2b544; }
+.phase.idle { border-color: var(--ink-3); }
+
+/* ---------- 今日 ---------- */
+.today-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.metric { padding: 12px 14px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; }
+.metric .k { color: var(--ink-3); font-size: 11px; }
+.metric .v {
+  font-family: var(--num); font-size: 22px; font-weight: 750; margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.metric .s { color: var(--ink-3); font-size: 10.5px; margin-top: 2px; }
+.peak-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line);
+  color: var(--ink-2); font-size: 12px;
+}
+.peak-row b { color: #f2b544; font-family: var(--num); font-size: 15px; }
+
+/* ---------- 说明 ---------- */
+.notes { color: var(--ink-3); font-size: 11.5px; margin-top: 14px; padding-left: 1.1em; }
+.notes li { margin: 2px 0; }
+@media (max-width: 880px) { .cols { grid-template-columns: 1fr; } .today-grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>Token 速度</h1>
+      <div class="sub">只读本机 Agent 日志；速度 = 输出 token ÷ 实际生成时间，多个 agent 相加</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="pill" id="live-pill"><i class="dot"></i><span id="live-pill-text">实时测量中</span></span>
+      <div class="seg" id="theme-seg">
+        <button data-v="dark" class="on">深色</button>
+        <button data-v="light">浅色</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1. Hero -->
+  <div class="card">
+    <div class="hero">
+      <div class="hero-orb" id="hero-orb">
+        <canvas id="hero-gl"></canvas>
+        <canvas id="hero-fx"></canvas>
+      </div>
+      <div class="hero-main">
+        <div class="hero-kicker"><i class="dot"></i><span id="hero-state">ZCode 正在生成</span></div>
+        <div class="hero-readout">
+          <span class="hero-value" id="hero-value">0</span>
+          <span class="hero-unit">tok/s</span>
+        </div>
+        <div class="hero-title" id="hero-title">待机</div>
+        <div class="hero-context" id="hero-context">生成中 0 · 工具 0</div>
+        <div class="hero-strip">
+          <canvas id="hero-strip"></canvas>
+          <span class="hero-peak-flag" id="hero-peak-flag">今日峰值</span>
+        </div>
+      </div>
+      <div class="hero-side">
+        <div class="hero-phrase">速度等级 <span id="hero-level">00</span> / 13</div>
+        <div class="hero-next">
+          <small>下一级</small>
+          <b id="hero-next">—</b>
+        </div>
+        <div class="hero-phrase" id="hero-redline">红线 2000 tok/s</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 实时图表 -->
+  <div class="card">
+    <div class="chart-head">
+      <div class="section-title" style="margin:0">实时速率 <small id="chart-hint">最近 2 分钟</small></div>
+      <div class="seg" id="range-seg">
+        <button data-v="60">1m</button>
+        <button data-v="120" class="on">2m</button>
+        <button data-v="300">5m</button>
+      </div>
+    </div>
+    <div class="chart-wrap" id="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div class="chart-tip" id="chart-tip"></div>
+    </div>
+    <div class="legend">
+      <span><i></i>今日峰值</span>
+      <span>右端斜纹 = 在飞估算（<span id="est-share">0</span>%）</span>
+    </div>
+  </div>
+
+  <!-- 3. 来源 + Agent -->
+  <div class="cols">
+    <div class="card" style="margin-top:0">
+      <div class="section-title">来源 <small>按实时速率排序</small></div>
+      <div class="rows" id="source-rows"></div>
+    </div>
+    <div class="card" style="margin-top:0">
+      <div class="section-title">Agent <small>按实时速率排序</small></div>
+      <div class="rows" id="agent-rows"></div>
+    </div>
+  </div>
+
+  <!-- 4. 今日 -->
+  <div class="card">
+    <div class="section-title">今日 <small>北京时间</small></div>
+    <div class="today-grid">
+      <div class="metric"><div class="k">输出</div><div class="v" id="today-out">0</div><div class="s">token</div></div>
+      <div class="metric"><div class="k">输入（含缓存）</div><div class="v" id="today-in">0</div><div class="s">token</div></div>
+      <div class="metric"><div class="k">请求</div><div class="v" id="today-req">0</div><div class="s">条响应</div></div>
+      <div class="metric"><div class="k">平均速度</div><div class="v" id="today-avg">0</div><div class="s">tok/s</div></div>
+    </div>
+    <div class="peak-row">
+      <span>今日峰值 <span id="peak-time" style="color:var(--ink-3)"></span></span>
+      <b id="today-peak">0 tok/s</b>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li>版式照 agent-speed 的 Dashboard（DESIGN §4）：Hero 球 + 热谱称号 + 实时图表 + 来源行 + Agent 行 + 今日网格，间距 4/8/12/16/20/24/32。</li>
+    <li>球体与悬浮球共用同一个渲染核（逐字移植的 <code>led-effects</code>），这里环特效压到柔和——它是仪表，不该比悬浮球吵。</li>
+    <li>图表是 Catmull-Rom 平滑面积图，填充按数值走热谱；虚线是今日峰值，右端 45% 透明部分是在飞估算，完成即被实测替换。</li>
+    <li>数字全部等宽 tabular；实时值低于 0.05 显示 <code>–</code>，不显示 0（避免把「没测到」说成「零速度」）。</li>
+  </ul>
+
+<script type="module">
+  import { createAgentSpeedOrb } from "../../internal/gui/frontend/assets/orb-agent-speed.js";
+  import { drawLedStrip, formatSpeed, heatColor, heatForSpeed } from "../../internal/gui/frontend/assets/tokenspeed-viz.js";
+
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const REDLINE = 2000;
+  const TITLES = ["步行", "自行车", "电动车", "摩托车", "汽车", "跑车", "高铁", "赛车",
+    "磁悬浮列车", "喷气客机", "战斗机", "高超音速飞机", "火箭"];
+  const RATIOS = [0, .02, .03, .04, .06, .08, .12, .17, .24, .34, .5, .7, 1];
+  const THRESHOLDS = RATIOS.map((r, i) => (i === 0 ? 0.5 : Math.round(r * REDLINE * 100) / 100));
+
+  const SOURCES = [
+    { id: "zcode", label: "ZCode", color: "#466BFF" },
+    { id: "codex", label: "Codex", color: "#34D399" },
+    { id: "claude", label: "Claude Code", color: "#FF8A65" },
+    { id: "workbuddy", label: "WorkBuddy", color: "#11A68B" },
+    { id: "dsh", label: "DeepSeek Harness", color: "#4D6BFE" },
+  ];
+
+  // ---------- Hero 球体 ----------
+  const orb = createAgentSpeedOrb({
+    stage: document.getElementById("hero-orb"),
+    glCanvas: document.getElementById("hero-gl"),
+    fxCanvas: document.getElementById("hero-fx"),
+    size: 112, clip: false, redline: REDLINE, reduceMotion: reduce,
+  });
+  const heroValue = document.getElementById("hero-value");
+  const heroTitle = document.getElementById("hero-title");
+  const heroStrip = document.getElementById("hero-strip");
+  const heroPeakFlag = document.getElementById("hero-peak-flag");
+  const heroLevel = document.getElementById("hero-level");
+  const heroNext = document.getElementById("hero-next");
+  const heroContext = document.getElementById("hero-context");
+  const heroState = document.getElementById("hero-state");
+  const estShare = document.getElementById("est-share");
+  const todayPeakEl = document.getElementById("today-peak");
+  const peakTimeEl = document.getElementById("peak-time");
+
+
+  // ---------- 演示数据 ----------
+  const history = [];   // {t, value, estimated}
+  let historySpan = 120;
+  let peakToday = 0;
+  let peakAt = null;
+  let lastPeakAt = 0;
+  let value = 0;
+  let target = 0;
+  let tick = 0;
+  const started = performance.now();
+
+  // 预灌一段演示历史（1s 一个点，覆盖 5 分钟），图表一打开就是完整曲线。
+  (function seedHistory() {
+    const now = Date.now();
+    for (let i = 300; i >= 0; i -= 1) {
+      const t = 40 - (i % 40);
+      const base = demoTarget(t);
+      const v = base > 0 ? base * (0.72 + 0.28 * Math.sin(i * 0.7)) : 0;
+      history.push({ t: now - i * 1000, value: Math.max(0, v), estimated: 0 });
+      if (v > peakToday) { peakToday = v; peakAt = new Date(now - i * 1000); }
+    }
+  })();
+
+  // 一段真实感的会话：空闲 → 爬升 → 冲高 → 回落，周期 40s。
+  function demoTarget(t) {
+    const cycle = 40;
+    const k = t % cycle;
+    if (k < 4) return 0;
+    if (k < 14) return Math.round(120 * Math.pow((k - 4) / 10, 2));
+    if (k < 24) return Math.round(180 + 780 * Math.pow((k - 14) / 10, 1.3));
+    if (k < 31) return Math.round(960 + 240 * Math.sin((k - 24) * 0.8));
+    if (k < 37) return Math.round(Math.max(20, 960 - (k - 31) * 165));
+    return 0;
+  }
+
+  function sample() {
+    const t = (performance.now() - started) / 1000;
+    target = demoTarget(t);
+    // 目标值 + 一点测量噪声（窗口速率本身会抖）
+    const noisy = target > 0 ? Math.max(0, target + (Math.random() - 0.5) * target * 0.08) : 0;
+    value += (noisy - value) * 0.35;
+    if (value < 0.4) value = 0;
+    tick += 1;
+    if (value > peakToday + 1) {
+      const grewBy = value - peakToday;
+      peakToday = value;
+      peakAt = new Date();
+      // 与真机同一口径：≥20 tok/s、且距上次庆祝 ≥12s（真机 60s）。
+      if (growthOk(grewBy, t)) orb.peak();
+    }
+    // 响应完成事件：生成中每 1.4~2.6s 一次
+    if (value > 5 && Math.random() < 0.55) orb.pulse(0.4 + Math.min(0.6, value / 1600));
+    history.push({ t: Date.now(), value, estimated: value > 0 ? Math.min(0.55, value / 4000) : 0 });
+    const cutoff = Date.now() - 300000;
+    while (history.length && history[0].t < cutoff) history.shift();
+  }
+
+  function growthOk(grewBy, t) {
+    if (value < 20 || grewBy < 1) return false;
+    if (t - lastPeakAt < 12) return false;
+    lastPeakAt = t;
+    return true;
+  }
+
+  function levelFor(v) {
+    if (v < 0.5) return 0;
+    let level = 1;
+    for (let i = 0; i < THRESHOLDS.length; i += 1) if (v >= THRESHOLDS[i]) level = i + 1;
+    return level;
+  }
+
+  function renderHero() {
+    const level = levelFor(value);
+    const h = heatForSpeed(value, REDLINE);
+    const heatCss = heatColor(h);
+    const active = value >= 0.5;
+
+    orb.setState({ value, redline: REDLINE });
+    heroValue.textContent = active ? formatSpeed(value) : "0";
+    heroValue.style.color = h >= 0.25 ? heatCss : "";
+    heroValue.style.textShadow = h >= 0.55
+      ? "0 0 " + (18 + 22 * h).toFixed(0) + "px " + heatColor(h, 0.5) : "";
+    heroTitle.textContent = active ? TITLES[Math.max(0, level - 1)] : "待机";
+    heroTitle.style.color = active ? heatCss : "var(--ink-3)";
+    heroLevel.textContent = String(level).padStart(2, "0");
+    heroNext.textContent = level >= 13
+      ? "已到红线"
+      : TITLES[level] + " ≥ " + formatSpeed(THRESHOLDS[level]);
+    heroContext.textContent = "生成中 " + (active ? 1 + (level > 6 ? 1 : 0) : 0) +
+      " · 工具 " + (active && level > 8 ? 1 : 0);
+    heroState.textContent = active ? "ZCode 正在生成" : "当前空闲";
+    estShare.textContent = active ? String(Math.round(Math.min(55, value / 40))) : "0";
+
+    drawLedStrip(heroStrip, { value, redline: REDLINE, peak: peakToday });
+    const peakPct = Math.min(100, heatForSpeed(peakToday, REDLINE) * 100);
+    heroPeakFlag.style.left = peakPct.toFixed(1) + "%";
+
+    todayPeakEl.textContent = formatSpeed(peakToday) + " tok/s";
+    peakTimeEl.textContent = peakAt
+      ? "· " + peakAt.toLocaleTimeString("zh-CN", { hour12: false })
+      : "";
+    const pill = document.getElementById("live-pill");
+    pill.classList.toggle("idle", !active);
+    document.getElementById("live-pill-text").textContent = active ? "实时测量中" : "当前无可计速度";
+  }
+
+  // ---------- 图表：Catmull-Rom 平滑面积图 ----------
+  const chart = document.getElementById("chart");
+  const chartTip = document.getElementById("chart-tip");
+  const chartWrap = document.getElementById("chart-wrap");
+  let hoverX = -1;
+
+  function chartPoints() {
+    const now = Date.now();
+    const from = now - historySpan * 1000;
+    return history.filter((p) => p.t >= from);
+  }
+
+  function catmullRom(ctx, pts) {
+    if (pts.length < 2) return;
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 0; i < pts.length - 1; i += 1) {
+      const p0 = pts[i - 1] || pts[i];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = p1.y + (p2.y - p0.y) / 6;
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = p2.y - (p3.y - p1.y) / 6;
+      ctx.bezierCurveTo(c1x, c1y, c2x, c2y, p2.x, p2.y);
+    }
+  }
+
+  function renderChart() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = chart.clientWidth || 800;
+    const h = chart.clientHeight || 132;
+    if (chart.width !== Math.round(w * dpr) || chart.height !== Math.round(h * dpr)) {
+      chart.width = Math.round(w * dpr);
+      chart.height = Math.round(h * dpr);
+    }
+    const ctx = chart.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const pts = chartPoints();
+    const maxValue = Math.max(60, peakToday * 1.15, ...pts.map((p) => p.value));
+    const padTop = 10;
+    const padBottom = 16;
+    const usable = h - padTop - padBottom;
+    const now = Date.now();
+    const from = now - historySpan * 1000;
+
+    // 基线网格：颜色跟随主题
+    const isDark = document.documentElement.dataset.theme !== "light";
+    ctx.strokeStyle = isDark ? "rgba(255,255,255,.06)" : "rgba(16,24,40,.08)";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i += 1) {
+      const y = padTop + (usable * i) / 3;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    if (pts.length >= 2) {
+      const mapped = pts.map((p) => ({
+        x: ((p.t - from) / (now - from)) * w,
+        y: padTop + usable - (p.value / maxValue) * usable,
+        v: p.value,
+      }));
+      // 面积：按当前值的热谱色上到下落
+      const grad = ctx.createLinearGradient(0, padTop, 0, h - padBottom);
+      grad.addColorStop(0, heatColor(heatForSpeed(value, REDLINE), 0.34));
+      grad.addColorStop(1, heatColor(heatForSpeed(value, REDLINE), 0));
+      ctx.beginPath();
+      catmullRom(ctx, mapped);
+      ctx.lineTo(mapped[mapped.length - 1].x, h - padBottom);
+      ctx.lineTo(mapped[0].x, h - padBottom);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // 线：热谱色，1.5px
+      ctx.beginPath();
+      catmullRom(ctx, mapped);
+      ctx.strokeStyle = heatColor(heatForSpeed(value, REDLINE), 0.95);
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+
+      // 右端在飞估算：最后 6% 画虚线顶
+      const last = mapped[mapped.length - 1];
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = heatColor(heatForSpeed(value, REDLINE), 0.45);
+      ctx.beginPath();
+      ctx.moveTo(Math.max(0, last.x - 48), last.y);
+      ctx.lineTo(w, last.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 时间刻度：左端 / 中间 / 右端
+    ctx.fillStyle = isDark ? "rgba(255,255,255,.18)" : "rgba(16,24,40,.28)";
+    ctx.font = "600 9px ui-monospace, Consolas, monospace";
+    ctx.fillText("-" + (historySpan >= 60 ? historySpan / 60 + "m" : historySpan + "s"), 2, h - 3);
+    ctx.fillText("现在", w - 26, h - 3);
+
+    // 今日峰值虚线 + 标签
+    if (peakToday > 0) {
+      const y = padTop + usable - (peakToday / maxValue) * usable;
+      ctx.save();
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "rgba(255,183,77,.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(255,183,77,.9)";
+      ctx.font = "600 9.5px ui-monospace, Consolas, monospace";
+      ctx.fillText("今日峰值 " + formatSpeed(peakToday), 4, Math.max(10, y - 5));
+      ctx.restore();
+    }
+
+    // 悬停十字线
+    if (hoverX >= 0 && pts.length >= 2) {
+      const mapped = pts.map((p) => ({
+        x: ((p.t - from) / (now - from)) * w,
+        y: padTop + usable - (p.value / maxValue) * usable,
+      }));
+      let nearest = mapped[0];
+      for (const point of mapped) {
+        if (Math.abs(point.x - hoverX) < Math.abs(nearest.x - hoverX)) nearest = point;
+      }
+      ctx.strokeStyle = isDark ? "rgba(255,255,255,.18)" : "rgba(16,24,40,.22)";
+      ctx.beginPath();
+      ctx.moveTo(nearest.x, padTop);
+      ctx.lineTo(nearest.x, h - padBottom);
+      ctx.stroke();
+      ctx.fillStyle = isDark ? "#fff" : "#131722";
+      ctx.beginPath();
+      ctx.arc(nearest.x, nearest.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      const pointValue = pts.reduce((best, p) =>
+        Math.abs(((p.t - from) / (now - from)) * w - hoverX) <
+        Math.abs(((best.t - from) / (now - from)) * w - hoverX) ? p : best, pts[0]).value;
+      chartTip.style.opacity = "1";
+      chartTip.style.left = Math.min(w - 40, Math.max(40, nearest.x)) + "px";
+      chartTip.style.top = nearest.y - 8 + "px";
+      chartTip.innerHTML = "<b>" + formatSpeed(pointValue) + "</b> tok/s";
+    } else {
+      chartTip.style.opacity = "0";
+    }
+  }
+
+  chartWrap.addEventListener("pointermove", (event) => {
+    const rect = chartWrap.getBoundingClientRect();
+    hoverX = event.clientX - rect.left;
+  });
+  chartWrap.addEventListener("pointerleave", () => { hoverX = -1; });
+
+  // ---------- 来源 / Agent 行 ----------
+  const sourceRows = document.getElementById("source-rows");
+  const agentRows = document.getElementById("agent-rows");
+
+  function renderRows() {
+    const active = value >= 0.5;
+    const liveBySource = {
+      zcode: value * 0.62,
+      codex: value * 0.24,
+      claude: value * 0.09,
+      workbuddy: value * 0.05,
+      dsh: 0,
+    };
+    const todayBySource = {
+      zcode: 1.14e9, codex: 3.2e8, claude: 8.4e7, workbuddy: 2.1e7, dsh: 0,
+    };
+    const sorted = SOURCES.slice().sort((a, b) => liveBySource[b.id] - liveBySource[a.id]);
+    sourceRows.innerHTML = "";
+    for (const source of sorted) {
+      const live = active ? liveBySource[source.id] : 0;
+      if (live <= 0 && todayBySource[source.id] <= 0) continue;
+      const row = document.createElement("div");
+      row.className = "row src";
+      row.innerHTML =
+        '<span class="sdot" style="background:' + source.color + '"></span>' +
+        '<span class="name">' + source.label + "</span>" +
+        '<span class="live' + (live < 0.05 ? " dim" : "") + '">' +
+          (live < 0.05 ? "–" : formatSpeed(live) + " <span style=\"color:var(--ink-3);font-weight:500\">tok/s</span>") + "</span>" +
+        '<span class="today">' + (todayBySource[source.id] > 0 ? "今日 " + formatSpeed(todayBySource[source.id]) : "今日 –") + "</span>";
+      sourceRows.appendChild(row);
+    }
+
+    const agents = [
+      { project: "quota-keepalive-app", source: "ZCode", model: "glm-5.3", share: 0.62, phase: "gen" },
+      { project: "dsh-workbuddy-plugin", source: "Codex", model: "gpt-6.1-sol", share: 0.24, phase: "gen" },
+      { project: "quota-keepalive-app", source: "Claude Code", model: "claude-opus-5-5", share: 0.09, phase: "tools" },
+      { project: "magpie", source: "WorkBuddy", model: "deepseek-v4-pro", share: 0.05, phase: "idle" },
+    ];
+    agentRows.innerHTML = "";
+    for (const agent of agents) {
+      const live = active ? value * agent.share : 0;
+      const row = document.createElement("div");
+      row.className = "row agent";
+      row.innerHTML =
+        '<span class="phase ' + agent.phase + '"></span>' +
+        '<span style="min-width:0"><span class="name">' + agent.project + "</span>" +
+        '<div class="meta">' + agent.source + " · " + agent.model + "</div></span>" +
+        '<span class="live' + (live < 0.05 ? " dim" : "") + '">' +
+          (live < 0.05 ? "–" : formatSpeed(live)) + "</span>" +
+        '<span class="today" style="min-width:26px">' +
+          (agent.phase === "gen" ? "生成" : agent.phase === "tools" ? "工具" : "空闲") + "</span>";
+      agentRows.appendChild(row);
+    }
+  }
+
+  // ---------- 今日网格 ----------
+  function renderToday() {
+    const t = (performance.now() - started) / 1000;
+    document.getElementById("today-out").textContent = formatSpeed(1.62e9 + value * t * 0.4);
+    document.getElementById("today-in").textContent = formatSpeed(9.8e8 + value * t * 0.1);
+    document.getElementById("today-req").textContent = String(1842 + Math.round(t / 3));
+    document.getElementById("today-avg").textContent =
+      formatSpeed(1.62e9 / Math.max(1200, 4000 + t));
+  }
+
+  // ---------- 循环 ----------
+  let frame = 0;
+  function loop(now) {
+    frame += 1;
+    if (frame % 6 === 0) {
+      sample();
+      renderHero();
+      renderRows();
+      renderToday();
+    }
+    renderChart();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // ---------- 控件 ----------
+  document.getElementById("range-seg").addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    event.currentTarget.querySelectorAll("button").forEach((node) =>
+      node.classList.toggle("on", node === button));
+    historySpan = Number(button.dataset.v);
+    document.getElementById("chart-hint").textContent =
+      "最近 " + (historySpan / 60 === 1 ? "1" : historySpan === 120 ? "2" : "5") + " 分钟";
+  });
+  document.getElementById("theme-seg").addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    event.currentTarget.querySelectorAll("button").forEach((node) =>
+      node.classList.toggle("on", node === button));
+    document.documentElement.dataset.theme = button.dataset.v;
+    orb.setDark(button.dataset.v !== "light");
+  });
+</script>
+</body>
+</html>

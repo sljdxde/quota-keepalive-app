@@ -954,6 +954,11 @@ void main(){
       }
     },
     setRedline: applyRedline,
+    /** 切换深色/浅色球体（agent-speed 的 dark / porcelain 变体）。 */
+    setDark(dark) {
+      st.dark = !!dark;
+      render();
+    },
     resize,
     /** 全部静止时停帧，避免置顶小窗常驻 60fps 重绘。 */
     idle() {
