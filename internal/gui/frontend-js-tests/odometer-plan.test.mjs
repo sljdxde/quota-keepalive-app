@@ -86,14 +86,15 @@ test("identical text yields all-keep steps in aligned coordinates", function () 
   ]);
 });
 
-test("extra loops scale with duration so fast sampling stays nimble", function () {
-  // 采样密（时长短）不绕圈、只走最短路径，时长充裕才多绕一圈。
-  assert.equal(extraLoopsFor(110), 0);
-  assert.equal(extraLoopsFor(260), 0);
+test("extra loops always one full lap, for every duration", function () {
+  // 恒走一整圈：0.5 圈会让每列偏移 5（见下一条回归），0 圈会让快档退化成
+  // 跳变、丢掉连滚观感。任何采样档位都绕一圈：快档 110ms 走 10 位依然利落。
+  assert.equal(extraLoopsFor(110), 1);
+  assert.equal(extraLoopsFor(260), 1);
   assert.equal(extraLoopsFor(420), 1);
   assert.equal(extraLoopsFor(520), 1);
-  assert.equal(extraLoopsFor(undefined), 0);
-  assert.equal(extraLoopsFor(0), 0);
+  assert.equal(extraLoopsFor(undefined), 1);
+  assert.equal(extraLoopsFor(0), 1);
 });
 
 // 回归：额外圈数必须是整数。reel 是 0-9 循环，走半圈会让每列偏移 5 个数字，

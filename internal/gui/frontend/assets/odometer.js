@@ -50,20 +50,22 @@ export function planColumns(oldChars, newChars) {
 }
 
 /**
- * 每次更新的额外整圈数：滚动距离越短越跟手。duration 由调用方按采样间隔
- * 自适应（主窗口走 --roll-duration，即 speed-display.js 的 rollDurationFor
- * 公式；悬浮球没设时回退 SPIN_MS）；duration 短（采样快）不绕圈、只走最短
- * 路径，长才多绕一圈，保证「连滚」不拖沓。
+ * 每次更新的额外整圈数：恒为 1。两条约束的共同结论：
+ * 1) 必须是整数：reel 是 0-9 的循环，只有走满整圈才回到同一数字。早期返回
+ *    0.5（「半圈」）会让每列正好偏移 5 个数字——209 会显示成 754（3f87dc3）。
+ * 2) 不能是 0：「快档不绕圈」会让 200ms 采样档（rollDurationFor 给 110ms）
+ *    退化成快速跳变，「数字不断滚动」的里程表观感是本组件存在的意义。
+ *    快档 110ms 走 10 位依然利落，慢档（260-520ms）一圈更从容。
  *
- * **必须返回整数**：reel 是 0-9 的循环，只有走满整圈才回到同一数字。
- * 早期返回 0.5（「半圈」）会让每列正好偏移 5 个数字——209 会显示成 754，
- * 而菜单栏/徽标走纯文本不受影响，于是出现「面板大数字和其他位置不一致」。
+ * duration 由调用方按采样间隔自适应（主窗口走 --roll-duration，即
+ * speed-display.js 的 rollDurationFor 公式；悬浮球没设时回退 SPIN_MS）。
  *
  * @param {number} duration
- * @returns {number} 额外整圈数（0 或 1）
+ * @returns {number} 额外整圈数（恒为 1）
  */
 export function extraLoopsFor(duration) {
-  return Number(duration) >= 420 ? 1 : 0;
+  void duration;
+  return 1;
 }
 
 // 默认时长：球面与精简面板没有 --roll-duration，用这个；主窗口覆盖它。
