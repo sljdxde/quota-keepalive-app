@@ -87,11 +87,34 @@ test("identical text yields all-keep steps in aligned coordinates", function () 
 });
 
 test("extra loops scale with duration so fast sampling stays nimble", function () {
-  // 采样密（时长短）只走半圈，时长充裕才走整圈。
-  assert.equal(extraLoopsFor(110), 0.5);
-  assert.equal(extraLoopsFor(260), 0.5);
+  // 采样密（时长短）不绕圈、只走最短路径，时长充裕才多绕一圈。
+  assert.equal(extraLoopsFor(110), 0);
+  assert.equal(extraLoopsFor(260), 0);
   assert.equal(extraLoopsFor(420), 1);
   assert.equal(extraLoopsFor(520), 1);
-  assert.equal(extraLoopsFor(undefined), 0.5);
-  assert.equal(extraLoopsFor(0), 0.5);
+  assert.equal(extraLoopsFor(undefined), 0);
+  assert.equal(extraLoopsFor(0), 0);
+});
+
+// 回归：额外圈数必须是整数。reel 是 0-9 循环，走半圈会让每列偏移 5 个数字，
+// 实际显示值变成 (目标+5)%10 —— 209 会显示成 754，而菜单栏与 tab 徽标走纯文本
+// 不受影响，于是表现为「面板大数字和其他位置不一致」。
+test("extra loops are whole turns so displayed digits stay correct", function () {
+  const DIGITS = "0123456789";
+  // 与 rollColumn 相同的位移推导：从归一化起点 0 出发，前进 forward 步再加整圈。
+  function shownDigit(target, extra) {
+    const forward = ((target - 0) % 10 + 10) % 10;
+    const to = forward + extra * 10;
+    return DIGITS[((to % 10) + 10) % 10];
+  }
+  for (const extra of [extraLoopsFor(110), extraLoopsFor(260), extraLoopsFor(520)]) {
+    assert.equal(Number.isInteger(extra), true, `额外圈数必须是整数，实际 ${extra}`);
+    for (let target = 0; target <= 9; target++) {
+      assert.equal(
+        shownDigit(target, extra),
+        String(target),
+        `extra=${extra} 时目标 ${target} 显示成了 ${shownDigit(target, extra)}`
+      );
+    }
+  }
 });
