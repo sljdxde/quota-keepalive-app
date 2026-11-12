@@ -26,10 +26,15 @@ const (
 	ballEdgeMargin = 8
 	// ballPanelGap 是悬浮球与状态面板之间的间距。
 	ballPanelGap = 12
+	// ballPanelCompactScale 是 Windows 弹出层的等比缩放系数：panel.html 在
+	// 非 macOS 上给根元素加 platform-compact，CSS zoom 用同一系数（0.86）。
+	// 逻辑视口保持 mac 的 392×620 排版，实际窗口按系数折算——字号、内边距、
+	// 留白一起收，布局不重排。改这里必须同步改 panel.html 的 zoom 值。
+	ballPanelCompactScale = 0.86
 	// ballPanelWidth/Height 是悬浮球左键弹出的固定尺寸：加载 panel.html
-	//（签到 / 速度 / 宠物三 tab），与 macOS 菜单栏面板同一页面同一尺寸。
-	ballPanelWidth  = 392
-	ballPanelHeight = 620
+	//（签到 / 速度 / 宠物三 tab），逻辑版面 392×620，再按 COMPACT_SCALE 折算。
+	ballPanelWidth  = 337 // round(392 × 0.86)
+	ballPanelHeight = 533 // round(620 × 0.86)
 	// petMiniWidth/Height 是左键弹出的迷你宠物窗口：只放伙伴、等级和当日
 	// Token，不承载名单/进度/签到。
 	petMiniWidth  = 220

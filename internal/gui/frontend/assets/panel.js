@@ -1180,29 +1180,21 @@ async function refreshSpeed() {
 
 function updateFooter() {
   const count = document.getElementById("count");
-  const run = document.getElementById("run");
-  // 签到页不再保留全局「巡检」按钮：自动执行每 2 小时跑一次，账号卡里也有
-  // 立即签到/立即活跃，这个入口属于重复且容易误触。速度页同样不需要按钮；
-  // 只有宠物页把同一个按钮复用为「放技能」。
+  // 底部不再有全局「巡检」按钮：自动执行每 2 小时跑一次，账号卡里也有
+  // 立即签到/立即活跃，这个入口属于重复且容易误触。宠物技能改为直接点
+  // 宠物舞台（短按放技能、长按蓄力抛球），底部只留计数与导航。
   if (activeTab === "checkin") {
     count.innerHTML = "<b>" + currentAccounts.length + "</b> 个账号";
-    run.hidden = true;
     return;
   }
   if (activeTab === "speed") {
     count.textContent = "自动刷新";
-    run.hidden = true;
     return;
   }
   if (activeTab === "pet") {
-    const tier = currentSkillTier();
-    count.innerHTML = "<b>" + romanStage(tier) + "</b> / III 技能";
-    run.hidden = false;
-    run.textContent = "放技能";
-    run.setAttribute("aria-label", "投出精灵球或放出伙伴");
+    count.innerHTML = "<b>" + romanStage(currentSkillTier()) + "</b> / III 技能";
     return;
   }
-  run.hidden = true;
 }
 
 function currentPet() {
@@ -2148,10 +2140,6 @@ document.getElementById("settings").addEventListener("click", function () {
   hidePanel();
 });
 document.getElementById("collapse").addEventListener("click", hidePanel);
-// 只有宠物页用它放技能；签到/速度页的按钮是隐藏的，不再承载「巡检」。
-document.getElementById("run").addEventListener("click", function () {
-  if (activeTab === "pet") panelPetAction();
-});
 document.getElementById("open-main").addEventListener("click", openMain);
 document.getElementById("quit").addEventListener("click", function () {
   Events.Emit("quit");

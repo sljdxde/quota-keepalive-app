@@ -54,8 +54,8 @@ func TestPanelAccountPrivacyMosaicToggle(t *testing.T) {
 	}
 }
 
-// 签到页的全局「巡检」按钮已移除：自动执行每 2 小时跑一次，账号卡里也有
-// 立即签到/立即活跃；同一位置的按钮只在宠物页复用为「放技能」。
+// 底部全局「巡检」按钮整只移除：自动执行每 2 小时跑一次，账号卡里也有
+// 立即签到/立即活跃；宠物技能改为直接点宠物舞台，底部只留计数与导航。
 func TestPanelDropsGlobalInspectButton(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/assets/panel.js")
 	if err != nil {
@@ -63,21 +63,23 @@ func TestPanelDropsGlobalInspectButton(t *testing.T) {
 	}
 	script := string(data)
 	for _, forbidden := range []string{
-		`run.textContent = "巡检"`,
+		`getElementById("run")`,
+		`run.textContent`,
+		`run.hidden`,
 		`Bound.Run()`,
 		`"正在执行今日巡检…"`,
 	} {
 		if strings.Contains(script, forbidden) {
-			t.Fatalf("面板签到页不应再保留全局巡检入口: %q", forbidden)
+			t.Fatalf("面板不应再保留巡检/放技能底部按钮: %q", forbidden)
 		}
 	}
-	for _, want := range []string{
-		`if (activeTab === "checkin") {`,
-		`run.hidden = true;`,
-		`run.textContent = "放技能";`,
-	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("面板底部按钮逻辑缺少 %q", want)
+	html, err := frontendFS.ReadFile("frontend/panel.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`id="run"`, `>巡检<`} {
+		if strings.Contains(string(html), forbidden) {
+			t.Fatalf("面板底部不应再有巡检按钮标记: %q", forbidden)
 		}
 	}
 }

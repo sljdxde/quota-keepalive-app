@@ -47,7 +47,10 @@ func barWindowOptions(theme string) application.WebviewWindowOptions {
 		AlwaysOnTop:    true,
 		DisableResize:  false,
 		Hidden:         true,
-		BackgroundType: application.BackgroundTypeSolid,
+		// 半透明而不是实心：WebView2 走 DirectComposition 合成，SetWindowRgn
+		// 裁出的圆角区域管不住合成层，实心底色会在球四周留下一个白色方框。
+		// Translucent 让窗口背景 alpha=0、由页面决定哪儿不透明，圆外自然透明。
+		BackgroundType: application.BackgroundTypeTranslucent,
 		URL:            themedURL("/bar.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,

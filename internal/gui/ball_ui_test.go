@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"math"
 	"os"
 	"runtime"
 	"strings"
@@ -107,6 +108,27 @@ func TestBallPanelOptionsLoadSharedPanelPage(t *testing.T) {
 	}
 	if opts.BackgroundType != application.BackgroundTypeSolid {
 		t.Errorf("Windows 面板应使用不透明背景（panel.html 按 platform-opaque 铺底），实际 %+v", opts.BackgroundType)
+	}
+	// 弹出层按 compact scale 折算：窗口尺寸必须等于逻辑版面 × 系数，
+	// 且 panel.html 的 CSS zoom 用的是同一个值，否则会溢出或被裁切。
+	if wantW := int(math.Round(392 * ballPanelCompactScale)); ballPanelWidth != wantW {
+		t.Errorf("面板宽应按 %v 缩放：want %d, got %d", ballPanelCompactScale, wantW, ballPanelWidth)
+	}
+	if wantH := int(math.Round(620 * ballPanelCompactScale)); ballPanelHeight != wantH {
+		t.Errorf("面板高应按 %v 缩放：want %d, got %d", ballPanelCompactScale, wantH, ballPanelHeight)
+	}
+	page, err := frontendFS.ReadFile("frontend/panel.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{`"platform-compact"`, "html.platform-compact { zoom: .86; }"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("panel.html 缺少 Windows 缩放实现 %q", want)
+		}
+	}
+	if ballPanelCompactScale != 0.86 {
+		t.Errorf("ballPanelCompactScale=%v 必须与 panel.html 的 zoom 值一致（0.86）", ballPanelCompactScale)
 	}
 }
 
@@ -305,6 +327,11 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	}
 	if !opts.Frameless || !opts.AlwaysOnTop || !opts.Hidden {
 		t.Errorf("悬浮球窗口缺少置顶/无边框/初始隐藏: %+v", opts)
+	}
+	// 必须半透明：WebView2 走 DirectComposition 合成，SetWindowRgn 裁出的圆形
+	// 区域管不住合成层，实心底色会在球四周露出一圈方形白角。
+	if opts.BackgroundType != application.BackgroundTypeTranslucent {
+		t.Errorf("悬浮球窗口应使用半透明背景，避免圆外出现方形白角，实际 %v", opts.BackgroundType)
 	}
 	if opts.URL != "/bar.html" {
 		t.Errorf("system 主题不应在 URL 中强制主题，实际 %q", opts.URL)

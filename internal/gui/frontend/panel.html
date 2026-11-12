@@ -15,6 +15,11 @@
     // 面板底色，否则窗口四角会露出默认白/黑底。
     if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
       document.documentElement.classList.add("platform-opaque");
+      // Windows 上这个面板是悬浮球旁的临时弹出层，392×620 对 52px 的球来说
+      // 太大。整页按 0.86 等比缩放（字号、内边距、行高一起收），窗口侧同步用
+      // COMPACT_SCALE 折算尺寸；逻辑视口仍是 392×620，布局与 mac 完全一致，
+      // 不会因为变窄触发换行/裁切。缩放写在 CSS 的 platform-compact 规则里。
+      document.documentElement.classList.add("platform-compact");
     }
   })();
 </script>
@@ -1942,6 +1947,16 @@
     backdrop-filter: blur(18px) saturate(1.2);
     -webkit-backdrop-filter: blur(18px) saturate(1.2);
   }
+  /* Windows 弹出层等比缩小（原因见 head 里的 platform-compact 注释）：逻辑
+     视口仍按 392 宽排版，整体渲染为 0.86——字号、内边距、行高一起收，布局
+     和 mac 完全一致，不会因变窄换行或裁切。窗口侧由 ball_geometry.go 的
+     ballPanelWidth/Height 同步折算（337×533）。
+     zoom 不会缩放 vh：100vh 仍是 533 CSS px，渲染出来只有 459px，底部留出
+     74px 空白。所以 body 用 100vh ÷ 0.86 = 116.28vh、面板改 100% 高度，
+     让整页真正铺满窗口。 */
+  html.platform-compact { zoom: .86; }
+  html.platform-compact body { width: 100%; height: 116.28vh; }
+  html.platform-compact .panel { height: 100%; }
 </style>
 <link rel="stylesheet" href="assets/liquid-ui.css">
 <link rel="stylesheet" href="assets/perf-mode.css">
@@ -2193,7 +2208,6 @@
     <div class="foot">
       <span class="count" id="count"></span>
       <span class="spacer"></span>
-      <button class="run" id="run">巡检</button>
       <button class="text" id="open-main">打开主窗口</button>
       <button class="text quiet" id="quit" title="退出 Quota Keepalive">退出</button>
     </div>

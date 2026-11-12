@@ -259,7 +259,6 @@ func TestMenuPanelSpeedMatchesAgentSpeedDensity(t *testing.T) {
 		`source-live-dot`,
 		`session.generating`,
 		`formatUpdated(view.updated_at)`,
-		`run.hidden = true`,
 		`document.getElementById("refresh").hidden = selected === "speed"`,
 		`count.textContent = "自动刷新"`,
 	)
