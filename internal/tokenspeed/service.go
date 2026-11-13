@@ -136,20 +136,20 @@ type Service struct {
 	mu sync.RWMutex
 	// snapshotMu 只保护已算好的快照。Poll 扫描会话文件要持 mu 写锁上百毫秒，
 	// 若 Snapshot 也读 mu，窗口初始化/刷新的绑定调用会被扫描整段挡住。
-	snapshotMu         sync.RWMutex
-	files              map[string]*fileState
-	records            map[string]responseRecord
-	deduper            map[string]string
-	dedupRing          []string
-	titleTheme         string
-	todayDate          string
-	todayTotal         int64
+	snapshotMu sync.RWMutex
+	files      map[string]*fileState
+	records    map[string]responseRecord
+	deduper    map[string]string
+	dedupRing  []string
+	titleTheme string
+	todayDate  string
+	todayTotal int64
 	// 今日的输入/输出/请求数与「实测输出 ÷ 实测时长」，速度页今日网格要用。
-	todayOutput    int64
-	todayInput     int64
-	todayRequests  int64
-	todayMeasured  int64 // Σ 实测输出的 token
-	todayMeasuredMS int64 // Σ 实测时长（毫秒）
+	todayOutput        int64
+	todayInput         int64
+	todayRequests      int64
+	todayMeasured      int64 // Σ 实测输出的 token
+	todayMeasuredMS    int64 // Σ 实测时长（毫秒）
 	todayContributions map[string]usage
 	todayBySource      map[string]usage
 	availableSources   map[string]bool

@@ -86,12 +86,12 @@ func buildICO(master []byte, sizes []int) []byte {
 			widthByte = 0
 		}
 		ico = append(ico,
-			widthByte,              // width
-			widthByte,              // height
-			0,                      // color count
-			0,                      // reserved
-			1, 0,                   // planes
-			32, 0,                  // bit count
+			widthByte, // width
+			widthByte, // height
+			0,         // color count
+			0,         // reserved
+			1, 0,      // planes
+			32, 0, // bit count
 			byte(len(img)), byte(len(img)>>8), byte(len(img)>>16), byte(len(img)>>24),
 			byte(offset), byte(offset>>8), byte(offset>>16), byte(offset>>24),
 		)
