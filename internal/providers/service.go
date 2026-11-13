@@ -747,6 +747,8 @@ func isCheckinCreditState(state string) bool {
 func (s *Service) upsertProvider(ctx context.Context, p providerruntime.Provider) error {
 	models, _ := json.Marshal(p.Models)
 	ts := s.now().UTC().Format(time.RFC3339)
+	// 只有展示/能力字段真的变化时才 UPDATE。enabled 是用户设置，不在
+	// DO UPDATE 列表里也不参与条件比较；零变化时 updated_at 保持原值。
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO providers
   (id, name, plugin_spec, icon, enabled, usage, checkin, keepalive, models_json, created_at, updated_at)
@@ -759,7 +761,14 @@ ON CONFLICT(id) DO UPDATE SET
   checkin = excluded.checkin,
   keepalive = excluded.keepalive,
   models_json = excluded.models_json,
-  updated_at = excluded.updated_at`,
+  updated_at = excluded.updated_at
+WHERE providers.name IS NOT excluded.name
+   OR providers.plugin_spec IS NOT excluded.plugin_spec
+   OR providers.icon IS NOT excluded.icon
+   OR providers.usage IS NOT excluded.usage
+   OR providers.checkin IS NOT excluded.checkin
+   OR providers.keepalive IS NOT excluded.keepalive
+   OR providers.models_json IS NOT excluded.models_json`,
 		p.ID, p.Name, p.Spec, p.Icon, boolInt(defaultProviderEnabled(p.ID)),
 		boolInt(p.Usage), boolInt(p.Checkin),
 		boolInt(providerActivitySupported(p)), string(models), ts, ts)

@@ -26,11 +26,12 @@ type ManagedCredentialDeleter interface {
 type Service struct {
 	db          *sql.DB
 	credentials ManagedCredentialDeleter
+	now         func() time.Time
 }
 
 // NewService 构造账号服务。
 func NewService(db *sql.DB) *Service {
-	return &Service{db: db}
+	return &Service{db: db, now: time.Now}
 }
 
 // SetManagedCredentialDeleter 注入受管凭据清理能力。
@@ -38,8 +39,8 @@ func (s *Service) SetManagedCredentialDeleter(deleter ManagedCredentialDeleter) 
 	s.credentials = deleter
 }
 
-func nowTS() string {
-	return time.Now().UTC().Format(time.RFC3339)
+func (s *Service) nowTS() string {
+	return s.now().UTC().Format(time.RFC3339)
 }
 
 // Discover 写入/更新账号及其发现来源（幂等 upsert）。
@@ -51,7 +52,7 @@ func (s *Service) Discover(ctx context.Context, target string, accounts []Discov
 	defer tx.Rollback()
 
 	for _, a := range accounts {
-		ts := nowTS()
+		ts := s.nowTS()
 		kind := string(a.SourceKind)
 		if kind == "" {
 			kind = string(KindManaged)
@@ -69,18 +70,24 @@ func (s *Service) Discover(ctx context.Context, target string, accounts []Discov
 		if health == HealthHealthy {
 			enabled = 1
 		}
+		// 零变化的重复发现不应写库：仅展示字段真的变化时才 UPDATE。
+		// enabled 不在 DO UPDATE 列表里，保持已有账号的用户启停设置。
 		_, err := tx.ExecContext(ctx, `
 INSERT INTO accounts (id, target, display_name, masked_identity, enabled, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(target, id) DO UPDATE SET
   display_name = excluded.display_name,
   masked_identity = excluded.masked_identity,
-  updated_at = excluded.updated_at`,
+  updated_at = excluded.updated_at
+WHERE accounts.display_name IS NOT excluded.display_name
+   OR accounts.masked_identity IS NOT excluded.masked_identity`,
 			a.ID, target, a.DisplayName, a.MaskedIdentity, enabled, ts, ts)
 		if err != nil {
 			return err
 		}
 
+		// health 的 CASE 会把 reauth_required 保留下来；WHERE 与最终写入值比较，
+		// 避免每次发现都把「待重登」来源误判成变化而重写 updated_at。
 		_, err = tx.ExecContext(ctx, `
 INSERT INTO sources (id, target, account_id, kind, read_only, health, pinned, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
@@ -92,7 +99,14 @@ ON CONFLICT(target, account_id, id) DO UPDATE SET
     THEN sources.health
     ELSE excluded.health
   END,
-  updated_at = excluded.updated_at`,
+  updated_at = excluded.updated_at
+WHERE sources.kind IS NOT excluded.kind
+   OR sources.read_only IS NOT excluded.read_only
+   OR sources.health IS NOT CASE
+        WHEN sources.health = 'reauth_required' AND excluded.health = 'healthy'
+        THEN sources.health
+        ELSE excluded.health
+      END`,
 			a.SourceID, target, a.ID, kind, readOnly, health, ts, ts)
 		if err != nil {
 			return err
@@ -103,7 +117,7 @@ ON CONFLICT(target, account_id, id) DO UPDATE SET
 
 // ImportSource 导入一个已存在来源，标记 imported/read_only。
 func (s *Service) ImportSource(ctx context.Context, target, accountID, sourceID string) error {
-	ts := nowTS()
+	ts := s.nowTS()
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO sources (id, target, account_id, kind, read_only, health, pinned, created_at, updated_at)
 VALUES (?, ?, ?, 'imported', 1, 'healthy', 0, ?, ?)
@@ -115,7 +129,7 @@ ON CONFLICT(target, account_id, id) DO UPDATE SET
 
 // EstablishManagedSource 经官方登录 verified 建立受管来源。
 func (s *Service) EstablishManagedSource(ctx context.Context, target, accountID, sourceID string) error {
-	ts := nowTS()
+	ts := s.nowTS()
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO sources (id, target, account_id, kind, read_only, health, pinned, created_at, updated_at)
 VALUES (?, ?, ?, 'managed', 0, 'healthy', 0, ?, ?)
@@ -133,7 +147,7 @@ func (s *Service) PinSource(ctx context.Context, target, accountID, sourceID str
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sources SET pinned = ?, updated_at = ? WHERE target = ? AND account_id = ? AND id = ?`,
-		p, nowTS(), target, accountID, sourceID)
+		p, s.nowTS(), target, accountID, sourceID)
 	return err
 }
 
@@ -153,7 +167,7 @@ func (s *Service) SetEnabled(ctx context.Context, target, accountID string, enab
 	}
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE accounts SET enabled = ?, updated_at = ? WHERE target = ? AND id = ?`,
-		e, nowTS(), target, accountID)
+		e, s.nowTS(), target, accountID)
 	return err
 }
 
@@ -174,7 +188,7 @@ func (s *Service) SetTaskEnabled(
 	if enabled {
 		e = 1
 	}
-	ts := nowTS()
+	ts := s.nowTS()
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO account_task_preferences
   (target, account_id, operation, enabled, created_at, updated_at)
@@ -284,7 +298,7 @@ UPDATE sources SET
   health = CASE WHEN kind = 'imported' THEN 'disabled' ELSE 'reauth_required' END,
   updated_at = ?
 WHERE target = ? AND account_id = ? AND id = ?`,
-		nowTS(), target, accountID, sourceID)
+		s.nowTS(), target, accountID, sourceID)
 	return err
 }
 
@@ -294,7 +308,7 @@ func (s *Service) MarkSourceHealthy(ctx context.Context, target, accountID, sour
 	_, err := s.db.ExecContext(ctx, `
 UPDATE sources SET health = 'healthy', updated_at = ?
 WHERE target = ? AND account_id = ? AND id = ? AND kind = 'managed'`,
-		nowTS(), target, accountID, sourceID)
+		s.nowTS(), target, accountID, sourceID)
 	return err
 }
 
