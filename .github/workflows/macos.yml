@@ -15,6 +15,7 @@ on:
       - 'packaging/**'
       - 'scripts/**'
       - 'build/**'
+      - 'internal/gui/frontend/**'
       - 'VERSION'
       - 'go.mod'
       - 'go.sum'
@@ -61,3 +62,13 @@ jobs:
 
       - name: Frontend JS unit tests
         run: node --test internal/gui/frontend-js-tests/*.test.mjs
+
+      # 内置中文字体是按界面实际用字做的子集（410KB），不是完整字库。
+      # 界面文案新增汉字后必须重跑 scripts/subset-font.py，否则新字会回退到
+      # 系统字体：不出方框，但字重与正文不一致，在 Windows 上尤其明显
+      # （系统中文只有 400/700 两档，正是这个字体要解决的问题）。
+      # 这条校验只比对「必需字符是否都被子集覆盖」，不改任何文件。
+      - name: Font subset is up to date
+        run: |
+          python3 -m pip install --quiet fonttools brotli
+          python3 scripts/subset-font.py --check

@@ -46,30 +46,52 @@ FONT_URLS = (
     "main/Sans/Variable/OTF/Subset/NotoSansSC-VF.otf",
 )
 
-# 字符集来源：前端所有 html/js/css + Go 侧的界面文案（错误提示、日志前缀等
-# 会原样显示在界面上，必须一并收录）。
-SOURCE_GLOBS = (
+# 字符集来源：
+#   1. 前端全部 html/js/css —— 界面文案的主来源。
+#   2. Go 侧的**字符串字面量** —— 错误提示、状态名等会原样显示在界面上。
+#      只取字面量、不取注释：注释里的汉字（实现说明、issue 引用）永远不上屏，
+#      收进字库只会让子集变大、并让 --check 因无关改动而误报。
+FRONTEND_GLOBS = (
     "internal/gui/frontend/*.html",
     "internal/gui/frontend/assets/*.js",
     "internal/gui/frontend/assets/*.css",
-    "internal/**/*.go",
 )
+GO_GLOBS = ("internal/**/*.go",)
 
 CJK = re.compile(r"[\u4e00-\u9fff]")
+# Go 字符串字面量：双引号（含转义）与反引号（raw string）。
+GO_STRING_LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"|`([^`]*)`')
+# 注释：先剥掉，避免注释里的汉字进字库。
+GO_LINE_COMMENT = re.compile(r"//[^\n]*")
+GO_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+
+
+def _read(path: str) -> str:
+    try:
+        return pathlib.Path(path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
 
 
 def collect_chars() -> set[str]:
     """收集界面可能出现的全部字符。"""
     chars: set[str] = set()
-    for pattern in SOURCE_GLOBS:
+    for pattern in FRONTEND_GLOBS:
         for path in glob.glob(str(ROOT / pattern), recursive=True):
-            if "_test.go" in path or "vendor" in path or "node_modules" in path:
+            if "vendor" in path or "node_modules" in path:
                 continue
-            try:
-                text = pathlib.Path(path).read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            chars.update(CJK.findall(_read(path)))
+
+    for pattern in GO_GLOBS:
+        for path in glob.glob(str(ROOT / pattern), recursive=True):
+            if "_test.go" in path or "vendor" in path:
                 continue
-            chars.update(CJK.findall(text))
+            src = _read(path)
+            if not src:
+                continue
+            src = GO_BLOCK_COMMENT.sub("", GO_LINE_COMMENT.sub("", src))
+            for match in GO_STRING_LITERAL.finditer(src):
+                chars.update(CJK.findall(match.group(1) or match.group(2) or ""))
 
     # ASCII 可打印
     chars.update(chr(c) for c in range(0x20, 0x7F))
