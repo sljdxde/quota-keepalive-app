@@ -15,6 +15,24 @@
 //
 // 除这些之外没有重写任何视觉逻辑——要改效果请先改上游原型再同步。
 
+import { PERFORMANCE_LOW_FPS, performanceLow } from "./perf-mode.js";
+
+// 静止判定：速度与目标值都已归零、显示值也收敛到 0，且没有任何待播特效
+// 时，帧循环可以自停。抽成纯函数，node --test 无需 WebGL/DOM 也能覆盖。
+// state 即渲染核内部的 st；waves/parts/bolts/zaps/arcs 是各类特效队列。
+export function orbSettled(state) {
+  const s = state || {};
+  const v = Number(s.v);
+  const target = Number(s.target);
+  const peakAge = s.peakAge === undefined ? 99 : Number(s.peakAge);
+  const shown = s.shown === undefined ? 0 : Number(s.shown);
+  if (!Number.isFinite(v) || !Number.isFinite(target) ||
+      !Number.isFinite(peakAge) || !Number.isFinite(shown)) return false;
+  const has = list => !!list && list.length > 0;
+  return v < 0.05 && target < 0.05 && shown < 0.5 && peakAge > 1.3 &&
+    !has(s.waves) && !has(s.parts) && !has(s.bolts) && !has(s.zaps) && !has(s.arcs);
+}
+
 /**
  * @param {{
  *   stage?: HTMLElement,
@@ -887,26 +905,70 @@ void main(){
   }
 
   // ---------- 对外 API ----------
-  let lastFrame = 0, rafId = 0, started = false;
+  // 正常模式用 rAF；低配模式（performanceLow）改用 20fps 的 setTimeout，
+  // 把每秒 60 次唤醒降到 20 次，静止/低性能窗口都更省 CPU。
+  const LOW_FRAME_MS = 1000 / PERFORMANCE_LOW_FPS;
+  let lastFrame = 0, rafId = 0, started = false, timerMode = false;
+
+  function nowMs() {
+    return typeof performance !== "undefined" && performance.now
+      ? performance.now()
+      : Date.now();
+  }
+
+  function scheduleNext() {
+    if (performanceLow()) {
+      timerMode = true;
+      rafId = setTimeout(function () { rafId = 0; frame(nowMs()); }, LOW_FRAME_MS);
+    } else {
+      timerMode = false;
+      rafId = requestAnimationFrame(frame);
+    }
+  }
 
   function frame(now) {
-    const dt = Math.min(.05, (now - lastFrame) / 1000);
+    if (!started) return;
+    const dt = Math.min(.05, Math.max(0, (now - lastFrame) / 1000));
     lastFrame = now;
     step(dt);
     render();
-    rafId = requestAnimationFrame(frame);
+    // 静止自停：必须同时复位 started，否则之后 setState/pulse/peak 调
+    // start() 会被挡在门外，速度数字不再更新。
+    if (orbSettled(st)) {
+      started = false;
+      rafId = 0;
+      timerMode = false;
+      return;
+    }
+    scheduleNext();
   }
 
   function start() {
     if (started) return;
     started = true;
-    lastFrame = performance.now();
-    rafId = requestAnimationFrame(frame);
+    lastFrame = nowMs();
+    scheduleNext();
   }
   function stop() {
     started = false;
-    if (rafId) cancelAnimationFrame(rafId);
+    if (rafId) {
+      if (timerMode) clearTimeout(rafId);
+      else cancelAnimationFrame(rafId);
+    }
     rafId = 0;
+    timerMode = false;
+  }
+
+  // ---------- 可见性 ----------
+  // 隐藏窗口不跑帧；回到前台时只有未静止才重启（静止画面已经画好）。
+  const doc = typeof document !== "undefined" ? document : null;
+  function onVisibilityChange() {
+    if (!doc) return;
+    if (doc.hidden) stop();
+    else if (!orbSettled(st)) start();
+  }
+  if (doc && typeof doc.addEventListener === "function") {
+    doc.addEventListener("visibilitychange", onVisibilityChange);
   }
 
   function applyRedline(value) {
@@ -989,12 +1051,14 @@ void main(){
     resize,
     /** 全部静止时停帧，避免置顶小窗常驻 60fps 重绘。 */
     idle() {
-      if (st.v < .05 && !st.waves.length && st.peakAge > 1.3 &&
-          !parts.length && !bolts.length && !zaps.length && !arcs.length) {
-        stop();
+      if (orbSettled(st)) stop();
+    },
+    destroy() {
+      stop();
+      if (doc && typeof doc.removeEventListener === "function") {
+        doc.removeEventListener("visibilitychange", onVisibilityChange);
       }
     },
-    destroy: stop,
     get state() { return st; },
   };
 }
