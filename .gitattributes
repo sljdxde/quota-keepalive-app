@@ -5,3 +5,9 @@ internal/gui/frontend/** text eol=lf
 internal/gui/frontend/**/*.png binary
 internal/gui/frontend/**/*.glb binary
 internal/gui/frontend/**/*.wasm binary
+# 字体是二进制：上面的 `** text eol=lf` 会把它当文本做换行归一化，
+# 悄悄改写字节导致 woff2 无法解码（brotli: decoder failed）。
+internal/gui/frontend/**/*.woff2 binary
+internal/gui/frontend/**/*.woff binary
+internal/gui/frontend/**/*.ttf binary
+internal/gui/frontend/**/*.otf binary
