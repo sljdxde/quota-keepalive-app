@@ -272,6 +272,14 @@ func (s *Service) readDSHSources(ctx context.Context, now time.Time) {
 // readDSHFile 增量读取一个压缩会话文件：未变化直接跳过，增长时只解压新增 frame，
 // 其余情况回退整文件解压。
 func (s *Service) readDSHFile(path string, now time.Time) {
+	// 先 stat 比较上次解压时记录的大小/mtime：没变化就不 open，省掉空转
+	// 轮次里的打开与解压器准备开销。stat 失败时仍走 open（与原来一样忽略错误）。
+	if prev := s.dsh[path]; prev != nil && prev.view != nil {
+		if info, err := os.Stat(path); err == nil &&
+			prev.lastSize == info.Size() && prev.lastModMS == info.ModTime().UnixMilli() {
+			return
+		}
+	}
 	file, err := openTranscript(path)
 	if err != nil {
 		return

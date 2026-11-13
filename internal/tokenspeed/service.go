@@ -540,6 +540,13 @@ func (s *Service) discoverAndRead(ctx context.Context, now time.Time) {
 					continue
 				}
 				seen[path] = struct{}{}
+				// 快路径与重扫分支一致：先 stat 比较上次读完时记下的
+				// size/mtime，没变化就不 open。否则空闲时每轮仍会对每个
+				// 已知会话文件付一次 open（Windows 上还有杀软扫描）。
+				if info, err := os.Stat(path); err == nil &&
+					state.size == info.Size() && state.modNS == info.ModTime().UnixNano() {
+					continue
+				}
 				s.readFile(path, root.Source, now)
 			}
 			continue
