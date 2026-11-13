@@ -104,7 +104,7 @@ func TestAccountCardLeadsWithCheckinAndQuota(t *testing.T) {
 		// 不再用 8.5-9.5px 的灰字（夜间看不清）。
 		`font-size: var(--fs-base); font-weight: 600;`,
 		`font-size: var(--fs-sm); line-height: 1;`,
-		`font-size: var(--fs-sm); font-weight: 560; cursor: pointer;`,
+		`font-size: var(--fs-sm); font-weight: 500; cursor: pointer;`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("账号卡缺少 mac 风格样式 %q", want)
@@ -232,7 +232,10 @@ func TestProviderLoginHasInteractivePikachu(t *testing.T) {
 		`id="provider-login-pokemon-bubble"`,
 		`id="provider-login-pokemon-particles"`,
 		`pokemonById,`,
-		`import { createPokemon3D } from "./assets/pokemon-3d.js"`,
+		// 3D 资源按需加载：皮卡丘艺术图只在打开登录对话框时才创建，
+		// 因此这里断言的是 loader 而不是 pokemon-3d.js 的静态导入。
+		`import { loadPokemon3D } from "./assets/pokemon-3d-loader.js"`,
+		`function ensureProviderLoginPokemonViewer()`,
 		`const providerLoginPikachu = pokemonById("pikachu")`,
 		`class="pokemon-3d-canvas"`,
 		`models: [providerLoginPikachu.stages[0].model]`,

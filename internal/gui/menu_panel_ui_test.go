@@ -313,7 +313,10 @@ func TestMenuPanelPetUnlocksPersistAndPlay(t *testing.T) {
 		`POKEMON_EVOLUTION_THRESHOLDS`,
 		`POKEMON_MAX_DAILY_TOKENS`,
 		`const petCatalog = POKEMON_CATALOG`,
-		`import { createPokemon3D } from "./pokemon-3d.js"`,
+		// 3D 资源按需加载：只在宠物页可见时经 loader 动态 import。
+		`import { loadPokemon3D } from "./pokemon-3d-loader.js"`,
+		`loadPokemon3D().then(`,
+		`if (activeTab === "pet") ensurePetViewer(pet);`,
 		`import { aimForClientPoint } from "./pet-gaze.js"`,
 		`function currentSkillTier(`,
 		`today_total_tokens`,

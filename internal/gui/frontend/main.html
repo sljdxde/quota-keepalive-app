@@ -3348,7 +3348,7 @@
     activityStateText,
     activitySummaryText,
   } from "./assets/activity.js";
-  import { createPokemon3D } from "./assets/pokemon-3d.js";
+  import { loadPokemon3D } from "./assets/pokemon-3d-loader.js";
   import {
     initPerformanceMode,
     PERFORMANCE_MODE_KEY,
@@ -4537,6 +4537,15 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     });
   }
 
+  // 正在等待 3D 模块下载的宠物 id：避免同一只宠物重复排队。
+  let mainPetViewerPending = "";
+  // 单调递增的创建序号：A→B→A 快速切换时会有两个同 id 的 Promise 在飞，
+  // 只比对 id 会让先回来的那个在已废弃的 canvas 上再建一个 WebGL 上下文，
+  // 所以用序号判定「这次请求是否仍是当前有效的那次」。
+  let mainPetViewerGen = 0;
+  // 当前 DOM 里画的是哪只宠物的 2D 立绘（3D 未创建时也要跟着切宠物更新）。
+  let mainPetArtId = "";
+
   function ensureMainPetViewer(pet) {
     const viewerNode = document.getElementById("main-pet-viewer");
     if (!viewerNode) return;
@@ -4544,17 +4553,53 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       mainPetViewer.setEffectIntensity(mainPetEffectPower(mainPetStageForToday()));
       return;
     }
+    // 宠物页不可见时不下载 3D：首屏停在其它页签，2.5MB 的 three.js/GLTF/Draco
+    // 一次都不请求。这里只保证 2D 立绘与当前宠物一致，切到宠物页会经
+    // renderMainPet 再进来，走下面的真正加载路径。
+    if (!petTabVisible()) {
+      // 在飞的加载结果作废：作废序号，否则切回这只宠物会被拦住不加载。
+      mainPetViewerPending = "";
+      mainPetViewerGen++;
+      // 已有 viewer 且仍是同一只宠物：保持现状，别重写 innerHTML 把它的
+      // canvas 拆掉。换了宠物才回收旧 viewer。
+      if (mainPetViewer && mainPetViewerId !== pet.id) {
+        mainPetViewer.dispose();
+        mainPetViewer = null;
+      }
+      if (!mainPetViewer && mainPetArtId !== pet.id) {
+        mainPetArtId = pet.id;
+        mainPetViewerId = pet.id;
+        viewerNode.innerHTML =
+          '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + pet.art;
+        viewerNode.className = "main-pet-viewer";
+        const idleStage = document.getElementById("main-pet-stage");
+        if (idleStage) idleStage.style.setProperty("--pet-accent", pet.accent);
+      }
+      return;
+    }
+    // 同一只宠物的模块还在路上：DOM 已画好，等 then 里创建即可。
+    if (mainPetViewerPending === pet.id) return;
     if (mainPetViewer) mainPetViewer.dispose();
     mainPetViewer = null;
     mainPetViewerId = pet.id;
+    mainPetViewerPending = pet.id;
+    mainPetViewerGen++;
+    const gen = mainPetViewerGen;
+    mainPetArtId = pet.id;
+    // 先上 2D 立绘 + is-loading，3D 就绪前不白屏。
     viewerNode.innerHTML =
       '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + pet.art;
     viewerNode.className = "main-pet-viewer is-loading";
     const stageNode = document.getElementById("main-pet-stage");
     stageNode.style.setProperty("--pet-accent", pet.accent);
-    mainPetViewer = createPokemon3D(
-      viewerNode.querySelector(".pokemon-3d-canvas"),
-      {
+    loadPokemon3D().then(function (createPokemon3D) {
+      // 竞态：加载期间切了宠物 / 重建过 / 已切走页签，这次结果作废。
+      if (gen !== mainPetViewerGen) return;
+      if (mainPetViewerId !== pet.id) return;
+      mainPetViewerPending = "";
+      const canvas = viewerNode.querySelector(".pokemon-3d-canvas");
+      if (!canvas) return;
+      mainPetViewer = createPokemon3D(canvas, {
         models: pet.stages.map(function (entry) { return entry.model; }),
         boneAdjust: pet.stages[0].pose || null,
         eyeMaterial: pet.eyeMaterial || null,
@@ -4585,8 +4630,22 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           viewerNode.classList.remove("is-3d", "is-loading");
           viewerNode.classList.add("model-fallback");
         },
+      });
+      // 3D 创建完成后补上捕获态：异步窗口期内 renderMainPet 已经跑过，
+      // 当时 mainPetViewer 还是 null，不补就会丢精灵球状态。
+      if (mainPetViewer && !mainPetViewer.isCapturing()) {
+        mainPetViewer.setCaught(
+          mainPetIsCaught(pet.id) || mainPetViewer.isCaught(), false);
       }
-    );
+      // 创建期间可能已经切走页签：按当前可见性校准启停，避免后台空转。
+      if (mainPetViewer) mainPetViewer.setEnabled(petTabVisible());
+    }).catch(function () {
+      // 模块下载/解析失败：退回 2D 立绘（与 onUnavailable 同一视觉状态）。
+      if (gen !== mainPetViewerGen) return;
+      mainPetViewerPending = "";
+      viewerNode.classList.remove("is-3d", "is-loading");
+      viewerNode.classList.add("model-fallback");
+    });
   }
 
   function renderMainPet() {
@@ -7492,18 +7551,28 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   let providerLoginPokemonZapTimer = 0;
   let providerLoginPokemonViewer = null;
 
-  if (providerLoginPikachu && providerLoginPokemonArt) {
+  // 供应商登录艺术图（皮卡丘）只在真正打开对话框时才创建 3D：
+  // 页面加载阶段不下载 three.js，也不为隐藏对话框建 WebGL 上下文。
+  let providerLoginPokemonViewerPending = false;
+
+  function ensureProviderLoginPokemonViewer() {
+    if (!providerLoginPikachu || !providerLoginPokemonArt) return;
+    if (providerLoginPokemonViewer || providerLoginPokemonViewerPending) return;
+    providerLoginPokemonViewerPending = true;
     providerLoginPokemonArt.innerHTML =
       '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' +
       providerLoginPikachu.art;
     providerLoginPokemonArt.classList.add("is-loading");
-    providerLoginPokemonViewer = createPokemon3D(
-      providerLoginPokemonArt.querySelector(".pokemon-3d-canvas"),
-      {
+    loadPokemon3D().then(function (createPokemon3D) {
+      providerLoginPokemonViewerPending = false;
+      const canvas = providerLoginPokemonArt.querySelector(".pokemon-3d-canvas");
+      // 期间对话框被关掉、艺术图被重写：放弃这次创建，2D 立绘仍在。
+      if (!canvas) return;
+      providerLoginPokemonViewer = createPokemon3D(canvas, {
         models: [providerLoginPikachu.stages[0].model],
         modelRotations: [providerLoginPikachu.stages[0].rotation || null],
         stage: 1,
-        enabled: false,
+        enabled: providerLoginPokemonVisible(),
         onLoading: function (loading) {
           providerLoginPokemonArt.classList.toggle("is-loading", loading !== false);
         },
@@ -7519,8 +7588,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           providerLoginPokemonArt.classList.remove("is-3d", "is-loading");
           providerLoginPokemonArt.classList.add("model-fallback");
         },
-      }
-    );
+      });
+    }).catch(function () {
+      providerLoginPokemonViewerPending = false;
+      providerLoginPokemonArt.classList.remove("is-3d", "is-loading");
+      providerLoginPokemonArt.classList.add("model-fallback");
+    });
   }
 
   function providerLoginPokemonMessage(text) {
@@ -7686,6 +7759,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
     document.getElementById("provider-login-submit").disabled = true;
     document.getElementById("provider-login-submit").textContent = "继续";
+    ensureProviderLoginPokemonViewer();
     providerLoginDialog.showModal();
     if (providerLoginPokemonViewer) providerLoginPokemonViewer.setEnabled(true);
   }

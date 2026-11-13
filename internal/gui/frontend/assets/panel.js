@@ -26,7 +26,7 @@ import {
   sweepProgress,
   timingAccuracy,
 } from "./pet-motion.js";
-import { createPokemon3D } from "./pokemon-3d.js";
+import { loadPokemon3D } from "./pokemon-3d-loader.js";
 import { initPerformanceMode, PERFORMANCE_MODE_KEY } from "./perf-mode.js";
 import { populateProviderIcon, providerIconSpec } from "./provider-icons.js";
 import {
@@ -1251,62 +1251,108 @@ function petEffectIntensity() {
   return 3 + Math.round(strengthened * 2);
 }
 
+// 等待 3D 模块下载的宠物 id：同一只宠物不重复排队。
+let petViewerPending = "";
+// 单调递增的创建序号：A→B→A 快速切换会有两个同 id 的 Promise 在飞，
+// 只比对 id 会让先回来的那个在已废弃的 canvas 上再建一个 WebGL 上下文。
+let petViewerGen = 0;
+// 当前 DOM 里画的是哪只宠物的 2D 立绘（3D 未创建时也要跟着切宠物更新）。
+let petAvatarArtId = "";
+
 function ensurePetViewer(pet) {
   const avatar = document.getElementById("pet-avatar");
   if (petViewer && petViewerPetId === pet.id) {
     petViewer.setEffectIntensity(petEffectIntensity());
     return;
   }
+  // 宠物页不可见时不下载 3D：面板默认停在签到页，首屏不该为隐藏页付 2.5MB。
+  // 这里只保证 2D 立绘与当前宠物一致；activateTab 切到 pet 时会调用 renderPet
+  // -> renderPetAvatar 再进来，走下面的真正加载路径。
+  if (activeTab !== "pet") {
+    // 在飞的加载结果作废：作废序号，否则切回宠物页会被拦住不加载。
+    petViewerPending = "";
+    petViewerGen++;
+    if (!petViewer && petAvatarArtId !== pet.id) {
+      petAvatarArtId = pet.id;
+      petViewerPetId = pet.id;
+      avatar.innerHTML =
+        '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + pet.art;
+      avatar.className = "pet-avatar pet-" + pet.id;
+    }
+    return;
+  }
+  // 同一只宠物的模块还在路上：DOM 已画好，等 then 里创建即可。
+  if (petViewerPending === pet.id) return;
 
   if (petViewer) petViewer.dispose();
   petViewer = null;
   petViewerPetId = pet.id;
+  petViewerPending = pet.id;
+  petViewerGen++;
+  const gen = petViewerGen;
+  petAvatarArtId = pet.id;
+  // 先上 2D 立绘 + is-loading，3D 就绪前不白屏。
   avatar.innerHTML =
     '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + pet.art;
   avatar.className = "pet-avatar pet-" + pet.id + " is-loading";
-  const canvas = avatar.querySelector(".pokemon-3d-canvas");
-  petViewer = createPokemon3D(canvas, {
-    models: pet.stages.map(function (entry) { return entry.model; }),
-    boneAdjust: pet.stages[0].pose || null,
-    eyeMaterial: pet.eyeMaterial || null,
-    eyeMesh: pet.eyeMesh || null,
-    modelRotations: pet.stages.map(function (entry) { return entry.rotation || null; }),
-    stage: 1,
-    enabled: activeTab === "pet",
-    effectIntensity: petEffectIntensity(),
-    onLoading: function (loading) {
-      if (petViewerPetId === pet.id) {
-        avatar.classList.toggle("is-loading", loading !== false);
-      }
-    },
-    onReady: function () {
-      if (petViewerPetId !== pet.id) return;
-      avatar.classList.remove("is-loading", "model-fallback");
-      avatar.classList.add("is-3d");
-      if (latestPointer.x !== null && latestPointer.y !== null) {
-        applyGazeAtClient(latestPointer.x, latestPointer.y);
-      }
-    },
-    onUnavailable: function () {
-      if (petViewerPetId !== pet.id) return;
-      avatar.classList.remove("is-3d", "is-loading");
-      avatar.classList.add("model-fallback");
-    },
-    onError: function () {
-      if (petViewerPetId !== pet.id) return;
-      avatar.classList.remove("is-3d", "is-loading");
-      avatar.classList.add("model-fallback");
-    },
+  loadPokemon3D().then(function (createPokemon3D) {
+    // 竞态：加载期间切了宠物 / 重建过，这次结果作废。
+    if (gen !== petViewerGen) return;
+    if (petViewerPetId !== pet.id) return;
+    petViewerPending = "";
+    const canvas = avatar.querySelector(".pokemon-3d-canvas");
+    if (!canvas) return;
+    petViewer = createPokemon3D(canvas, {
+      models: pet.stages.map(function (entry) { return entry.model; }),
+      boneAdjust: pet.stages[0].pose || null,
+      eyeMaterial: pet.eyeMaterial || null,
+      eyeMesh: pet.eyeMesh || null,
+      modelRotations: pet.stages.map(function (entry) { return entry.rotation || null; }),
+      stage: 1,
+      enabled: activeTab === "pet",
+      effectIntensity: petEffectIntensity(),
+      onLoading: function (loading) {
+        if (petViewerPetId === pet.id) {
+          avatar.classList.toggle("is-loading", loading !== false);
+        }
+      },
+      onReady: function () {
+        if (petViewerPetId !== pet.id) return;
+        avatar.classList.remove("is-loading", "model-fallback");
+        avatar.classList.add("is-3d");
+        if (latestPointer.x !== null && latestPointer.y !== null) {
+          applyGazeAtClient(latestPointer.x, latestPointer.y);
+        }
+      },
+      onUnavailable: function () {
+        if (petViewerPetId !== pet.id) return;
+        avatar.classList.remove("is-3d", "is-loading");
+        avatar.classList.add("model-fallback");
+      },
+      onError: function () {
+        if (petViewerPetId !== pet.id) return;
+        avatar.classList.remove("is-3d", "is-loading");
+        avatar.classList.add("model-fallback");
+      },
+    });
+    if (petViewer && !petViewer.isCapturing()) {
+      petViewer.setCaught(panelPetIsCaught(pet.id) || petViewer.isCaught(), false);
+    }
+  }).catch(function () {
+    // 模块下载/解析失败：退回 2D 立绘，与 onUnavailable 同一视觉状态。
+    if (gen !== petViewerGen) return;
+    petViewerPending = "";
+    avatar.classList.remove("is-3d", "is-loading");
+    avatar.classList.add("model-fallback");
   });
-  if (petViewer && !petViewer.isCapturing()) {
-    petViewer.setCaught(panelPetIsCaught(pet.id) || petViewer.isCaught(), false);
-  }
 }
 
 function renderPetAvatar(pet) {
   const avatar = document.getElementById("pet-avatar");
   const stageNode = document.getElementById("pet-stage");
-  ensurePetViewer(pet);
+  // 只在宠物页可见时才建 3D：面板默认停在签到页，隐藏页不该触发 2.5MB 下载。
+  // activateTab 切到 pet 时会调用 renderPet，从而在这里补上加载。
+  if (activeTab === "pet") ensurePetViewer(pet);
   if (stageNode) stageNode.classList.toggle("is-caught", panelPetIsCaught(pet.id));
   avatar.dataset.renderedPet = pet.id;
   avatar.dataset.evolution = "1";

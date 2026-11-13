@@ -243,7 +243,7 @@
     evolutionStageForDailyTokens,
     pokemonById,
   } from "./assets/pokemon-art.js";
-  import { createPokemon3D } from "./assets/pokemon-3d.js";
+  import { loadPokemon3D } from "./assets/pokemon-3d-loader.js";
   import { aimForClientPoint } from "./assets/pet-gaze.js";
   import { initPerformanceMode } from "./assets/perf-mode.js";
   import {
@@ -465,55 +465,80 @@
     if (viewer) viewer.setEffectIntensity(effectIntensity());
   }
 
+  // 等待 3D 模块下载的宠物 id：同一只宠物不重复排队。
+  let viewerPending = "";
+  // 单调递增的创建序号：A→B→A 快速切换会有两个同 id 的 Promise 在飞，
+  // 只比对 id 会让先回来的那个在已废弃的 canvas 上再建一个 WebGL 上下文。
+  let viewerGen = 0;
+
   function ensureViewer(nextPet) {
     if (viewer && viewerPetId === nextPet.id) {
       viewer.setEffectIntensity(effectIntensity());
       return;
     }
+    // 同一只宠物的模块还在路上：DOM 已画好，等 then 里创建即可。
+    if (viewerPending === nextPet.id) return;
     if (viewer) viewer.dispose();
     viewer = null;
     viewerPetId = nextPet.id;
+    viewerPending = nextPet.id;
+    viewerGen++;
+    const gen = viewerGen;
+    // 先上 2D 立绘 + is-loading，3D 就绪前不白屏。
     avatar.innerHTML =
       '<canvas class="pokemon-3d-canvas" aria-hidden="true"></canvas>' + nextPet.art;
     avatar.className = "pm-avatar pet-" + nextPet.id + " is-loading";
     mini.style.setProperty("--pet-accent", nextPet.accent);
-    const canvas = avatar.querySelector(".pokemon-3d-canvas");
-    viewer = createPokemon3D(canvas, {
-      models: [nextPet.stages[0].model],
-      boneAdjust: nextPet.stages[0].pose || null,
-      eyeMaterial: nextPet.eyeMaterial || null,
-      eyeMesh: nextPet.eyeMesh || null,
-      modelRotations: [nextPet.stages[0].rotation || null],
-      stage: 1,
-      enabled: true,
-      effectIntensity: effectIntensity(),
-      onLoading: function (loading) {
-        if (viewerPetId === nextPet.id) {
-          avatar.classList.toggle("is-loading", loading !== false);
-        }
-      },
-      onReady: function () {
-        if (viewerPetId !== nextPet.id) return;
-        avatar.classList.remove("is-loading", "model-fallback");
-        avatar.classList.add("is-3d");
-        if (latestPointer.x !== null && latestPointer.y !== null) {
-          viewer.setPointer(latestPointer.x, latestPointer.y);
-        }
-      },
-      onUnavailable: function () {
-        if (viewerPetId !== nextPet.id) return;
-        avatar.classList.remove("is-3d", "is-loading");
-        avatar.classList.add("model-fallback");
-      },
-      onError: function () {
-        if (viewerPetId !== nextPet.id) return;
-        avatar.classList.remove("is-3d", "is-loading");
-        avatar.classList.add("model-fallback");
-      },
+    loadPokemon3D().then(function (createPokemon3D) {
+      // 竞态：加载期间切了宠物 / 重建过，这次结果作废。
+      if (gen !== viewerGen) return;
+      if (viewerPetId !== nextPet.id) return;
+      viewerPending = "";
+      const canvas = avatar.querySelector(".pokemon-3d-canvas");
+      if (!canvas) return;
+      viewer = createPokemon3D(canvas, {
+        models: [nextPet.stages[0].model],
+        boneAdjust: nextPet.stages[0].pose || null,
+        eyeMaterial: nextPet.eyeMaterial || null,
+        eyeMesh: nextPet.eyeMesh || null,
+        modelRotations: [nextPet.stages[0].rotation || null],
+        stage: 1,
+        enabled: true,
+        effectIntensity: effectIntensity(),
+        onLoading: function (loading) {
+          if (viewerPetId === nextPet.id) {
+            avatar.classList.toggle("is-loading", loading !== false);
+          }
+        },
+        onReady: function () {
+          if (viewerPetId !== nextPet.id) return;
+          avatar.classList.remove("is-loading", "model-fallback");
+          avatar.classList.add("is-3d");
+          if (latestPointer.x !== null && latestPointer.y !== null) {
+            viewer.setPointer(latestPointer.x, latestPointer.y);
+          }
+        },
+        onUnavailable: function () {
+          if (viewerPetId !== nextPet.id) return;
+          avatar.classList.remove("is-3d", "is-loading");
+          avatar.classList.add("model-fallback");
+        },
+        onError: function () {
+          if (viewerPetId !== nextPet.id) return;
+          avatar.classList.remove("is-3d", "is-loading");
+          avatar.classList.add("model-fallback");
+        },
+      });
+      if (viewer && !viewer.isCapturing()) {
+        viewer.setCaught(isCaught(nextPet.id) || viewer.isCaught(), false);
+      }
+    }).catch(function () {
+      // 模块下载/解析失败：退回 2D 立绘，与 onUnavailable 同一视觉状态。
+      if (gen !== viewerGen) return;
+      viewerPending = "";
+      avatar.classList.remove("is-3d", "is-loading");
+      avatar.classList.add("model-fallback");
     });
-    if (viewer && !viewer.isCapturing()) {
-      viewer.setCaught(isCaught(nextPet.id) || viewer.isCaught(), false);
-    }
   }
 
   function refreshPet() {
