@@ -44,6 +44,20 @@ func menuBarLabel(style string, speed float64) string {
 	}
 }
 
+// visibleMenuBarLabel 返回标签里用户能看到的文字（去掉 ANSI 颜色序列）。
+// 菜单栏补空白时只能按可见文字量宽，否则颜色序列会被当成字符算进去。
+func visibleMenuBarLabel(label string) string {
+	parts, err := parseMenuBarLabel(label)
+	if err != nil {
+		return label
+	}
+	var builder strings.Builder
+	for _, part := range parts {
+		builder.WriteString(part.Text)
+	}
+	return builder.String()
+}
+
 // menuBarTooltip 是菜单栏图标的悬停说明。compact 样式不显示单位，
 // 靠这里把完整含义补回来。
 func menuBarTooltip(style string, speed float64) string {

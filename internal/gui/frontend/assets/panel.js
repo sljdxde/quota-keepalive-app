@@ -1138,7 +1138,12 @@ function renderSpeed(raw) {
   document.getElementById("panel-speed-title").textContent = view.title || "待机";
   document.getElementById("panel-speed-theme").textContent =
     view.title_theme || "交通工具";
-  document.getElementById("panel-speed-agents").textContent = String(generating);
+  // 「活跃」按最近速度统计：DSH 按 step 批量落盘，两次 step 之间没有
+  // generating，但界面仍显示保留速率，此时说 0 个 Agent 活跃是自相矛盾的。
+  const activeAgents = (view.sources || []).filter(
+    (source) => (Number(source.output_tokens_per_second) || 0) > 0).length;
+  document.getElementById("panel-speed-agents").textContent =
+    String(activeAgents || generating);
   document.getElementById("panel-speed-today").textContent =
     compactTokenCount(Number(view.today_total_tokens) || 0);
   renderPanelTitle(view);

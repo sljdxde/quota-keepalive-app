@@ -68,11 +68,14 @@ type fileState struct {
 	lastContentMS int64
 	modernUsage   bool
 	lastLineMS    int64
-	model         string
-	project       string
-	prevTotals    *usage
-	claude        claudeFileState
-	workbuddy     workbuddyFileState
+	// jobOpen 是尚未 settled 的后台任务数（当前只有 DSH 会写这类事件）：
+	// 工具执行期间没有 token，但会话仍在活动，保留速率不应过期。
+	jobOpen    int
+	model      string
+	project    string
+	prevTotals *usage
+	claude     claudeFileState
+	workbuddy  workbuddyFileState
 	// backfill 非空时表示正在补读实时尾部之前的历史字节。首次打开超大会话
 	// 文件时实时读取只保留尾部，历史补读用于还原当日 token 总量；它使用独立
 	// 的 fileState，避免历史顺序打乱实时计时状态。
@@ -265,6 +268,20 @@ func (s *Service) nextPollInterval() time.Duration {
 	s.snapshotMu.RLock()
 	active := s.snapshot.Active || s.snapshot.GeneratingAgents > 0
 	s.snapshotMu.RUnlock()
+	if active {
+		return s.livePollInterval()
+	}
+	// 有后台任务在跑（工具执行）也按活跃节奏轮询：工具结束到下一步开始之间
+	// 会写 step/end + step/start，2 秒的空闲间隔会让「生成中」和估算值晚
+	// 一个空闲周期才出现，手感上就是「速度变化很慢」。
+	s.mu.RLock()
+	for _, state := range s.files {
+		if state != nil && state.jobOpen > 0 {
+			active = true
+			break
+		}
+	}
+	s.mu.RUnlock()
 	if active {
 		return s.livePollInterval()
 	}
@@ -560,7 +577,14 @@ func (s *Service) discoverAndRead(ctx context.Context, now time.Time) {
 			return nil
 		})
 	}
-	for path := range s.files {
+	for path, state := range s.files {
+		// DSH 的会话文件（.jsonl.zstd）由 readDSHSources 单独扫描，不会出现在
+		// 这一轮的 seen 里；这里若按「没扫到」删掉，DSH 的实时状态就永远从
+		// s.files 消失（active/lastLineMS 全丢），速率也会退回只能在响应结束
+		// 瞬间亮一下。保留 DSH 条目，让后面的 readDSHSources 继续增量更新。
+		if state != nil && state.source == "dsh" {
+			continue
+		}
 		if _, ok := seen[path]; !ok {
 			delete(s.files, path)
 		}

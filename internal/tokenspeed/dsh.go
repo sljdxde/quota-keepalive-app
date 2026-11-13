@@ -404,6 +404,22 @@ func (s *Service) ingestDSH(path string, state *dshFileState, line []byte) {
 	if json.Unmarshal(line, &event) != nil {
 		return
 	}
+	if state != nil && state.view != nil {
+		// 任何事件都说明会话还活着：工具调用、后台任务、请求头都会刷新
+		// 活动时间，让「保留速率」在长时间工具执行期间不过期。只改活动
+		// 时间，不改 active/streaming（那仍然只由 step/start 与消息结束决定）。
+		if event.Time > state.view.lastLineMS {
+			state.view.lastLineMS = event.Time
+		}
+		switch event.Type {
+		case "job/registered":
+			state.view.jobOpen++
+		case "job/settled":
+			if state.view.jobOpen > 0 {
+				state.view.jobOpen--
+			}
+		}
+	}
 	if event.Type == "session" && state != nil && state.view != nil {
 		// 子代理会话在会话头里给出 parentSession，记下来供快照折叠回顶层会话。
 		sid := dshSessionID(path)

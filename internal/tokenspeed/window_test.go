@@ -39,8 +39,9 @@ func TestWindowOverlapAndTokens(t *testing.T) {
 	}
 }
 
-// 3 秒滑窗：一条 2 秒、3000 token 的响应结束后，数字随窗口滑动自然衰减到 0。
-func TestLiveRateDecaysAfterResponseEnds(t *testing.T) {
+// 一条 2 秒、3000 token 的响应结束后，速率保留最后一次实测窗口值，不再
+// 随实时窗口滑过而掉到 0；只有超过 staleAfter 没有活动才归零。
+func TestRateHoldsAfterResponseEnds(t *testing.T) {
 	start := time.Now().UTC().Add(-time.Minute)
 	root := t.TempDir()
 	path := filepath.Join(root, "session.jsonl")
@@ -84,16 +85,24 @@ func TestLiveRateDecaysAfterResponseEnds(t *testing.T) {
 	service.Poll()
 	assertNear(t, service.Snapshot().OutputTokensPerSecond, 1000)
 
-	// 再推 1 秒：窗口 [start+1.5s, start+4.5s]，只剩一半解码窗口 → 500。
+	// 再推 1 秒：实时窗口 [start+1.5s, start+4.5s] 只剩一半解码窗口，
+	// 实时值是 500；但保留值仍是响应结束时刻的 1000（两者取大），所以
+	// 界面不会在两次响应之间衰减到 0。
 	now = start.Add(4500 * time.Millisecond)
 	service.Poll()
-	assertNear(t, service.Snapshot().OutputTokensPerSecond, 500)
+	assertNear(t, service.Snapshot().OutputTokensPerSecond, 1000)
 
-	// 窗口完全滑过响应 → 0（不再像旧实现那样一直挂在最后一条速率上）。
+	// 实时窗口完全滑过响应后，保留值继续生效：显示 1000（3 秒分母的口径），
+	// 而不是响应自身的 3000 tok/s，也不是 0。
 	now = start.Add(6 * time.Second)
 	service.Poll()
+	assertNear(t, service.Snapshot().OutputTokensPerSecond, 1000)
+
+	// 普通闲置只保留 liveWindow（15 秒），之后要尽快回落，数字才会「跟手」。
+	now = start.Add(2*time.Second + liveWindow + time.Second)
+	service.Poll()
 	if got := service.Snapshot().OutputTokensPerSecond; got != 0 {
-		t.Fatalf("窗口滑过后速率应归零，实际 %.3f", got)
+		t.Fatalf("闲置超过 15 秒后速率应归零，实际 %.3f", got)
 	}
 }
 
@@ -151,5 +160,48 @@ func TestPeakAndEventSequences(t *testing.T) {
 	}
 	if again.PeakTodayTokensPerSecond < first.PeakTodayTokensPerSecond {
 		t.Fatalf("峰值只升不降: %+v", again)
+	}
+}
+
+// 长 step 空窗时保留的速率必须与实时窗口同口径：同样按 3 秒分母折算，
+// 否则从「实时」切到「保留」会突然跳成响应自身的瞬时速度。
+func TestHeldLiveRateMatchesLiveWindow(t *testing.T) {
+	const (
+		endMS     = int64(100_000)
+		decodeMS  = int64(1_000)
+		outTokens = int64(3_000)
+	)
+	record := responseRecord{
+		agentID:        "codex:agent",
+		source:         "codex",
+		model:          "gpt-5.5",
+		startMS:        endMS - decodeMS,
+		hasStart:       true,
+		decodeStartMS:  endMS - decodeMS,
+		hasDecodeStart: true,
+		endMS:          endMS,
+		final:          true,
+		usage:          usage{output: outTokens},
+	}
+	measured := []timedResponse{{
+		responseRecord: record,
+		startMS:        endMS - decodeMS,
+		durationMS:     decodeMS,
+	}}
+	// 解码窗口 [end-1s, end] 完整落在 [end-3s, end] 内 → 3000 token / 3s。
+	output, total, ok := heldLiveRate(measured, record.agentID, endMS)
+	if !ok {
+		t.Fatal("最近有实测响应时应能保留速率")
+	}
+	assertNear(t, output, 1000)
+	assertNear(t, total, 1000)
+
+	// 别的 agent 没有可保留的响应。
+	if _, _, ok := heldLiveRate(measured, "codex:other", endMS); ok {
+		t.Fatal("没有实测响应的 agent 不应保留速率")
+	}
+	// 最后一刻过去太久（窗口完全不重叠）同样没有可保留值。
+	if _, _, ok := heldLiveRate(measured, record.agentID, endMS+10_000); ok {
+		t.Fatal("窗口完全过去后不应再保留速率")
 	}
 }

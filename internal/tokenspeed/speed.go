@@ -220,11 +220,33 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	generatingBySource := make(map[string]int)
 	generatingByAgent := make(map[string]bool)
 	lastActiveByAgent := make(map[string]int64)
+	// lastResponseEndByAgent 是每个 agent 最近一条已完成响应的结束时间：
+	// 速率「保留」要按这个时刻的 3 秒窗口取值，而不是按最后活动时间（工具
+	// 事件会把活动时间推到现在，但那一刻并没有新的 token）。
+	lastResponseEndByAgent := make(map[string]int64)
+	// agentMeta 记录每个 agent 最近响应的来源与模型，供没有实时窗口贡献、
+	// 只靠保留速率的 agent 也能生成正确的来源/会话行。
+	agentMeta := make(map[string]liveRate)
+	// busyByAgent 记录有后台任务在跑（工具执行）的 agent：这段时间没有 token，
+	// 但会话确实在忙，保留速率可以一直显示到任务结束；普通闲置只保留 15 秒，
+	// 让数字在 agent 真正停下后尽快回到 0（用户反馈「变动非常慢」）。
+	busyByAgent := make(map[string]bool)
 	generatingAgents := 0
 
 	rememberActive := func(agentID string, atMS int64) {
 		if atMS > lastActiveByAgent[agentID] {
 			lastActiveByAgent[agentID] = atMS
+		}
+	}
+	rememberResponseEnd := func(agentID string, endMS int64) {
+		if endMS > lastResponseEndByAgent[agentID] {
+			lastResponseEndByAgent[agentID] = endMS
+		}
+	}
+	rememberMeta := func(agentID, source, model string, atMS int64) {
+		current, ok := agentMeta[agentID]
+		if !ok || atMS >= current.endMS {
+			agentMeta[agentID] = liveRate{source: source, model: model, endMS: atMS}
 		}
 	}
 
@@ -234,6 +256,8 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 			continue
 		}
 		rememberActive(response.agentID, response.endMS)
+		rememberResponseEnd(response.agentID, response.endMS)
+		rememberMeta(response.agentID, response.source, response.model, response.endMS)
 		tokens, windowMS, overallMS := responseMeasure(response)
 		if tokens <= 0 || windowMS <= 0 {
 			continue
@@ -297,6 +321,10 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 		if agentID == "" {
 			continue
 		}
+		rememberMeta(agentID, state.source, state.model, state.lastLineMS)
+		if state.jobOpen > 0 {
+			busyByAgent[agentID] = true
+		}
 		if !state.active || state.lastLineMS == 0 ||
 			nowMS-state.lastLineMS > staleAfter.Milliseconds() {
 			rememberActive(agentID, state.lastLineMS)
@@ -322,6 +350,7 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	}
 
 	for _, response := range unmeasured {
+		rememberMeta(response.agentID, response.source, response.model, response.endMS)
 		if nowMS-response.endMS > staleAfter.Milliseconds() ||
 			generatingByAgent[response.agentID] {
 			rememberActive(response.agentID, response.endMS)
@@ -357,6 +386,46 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 		}
 		contributedTokens += output
 		estimatedTokens += estimatedContrib[agentID]
+	}
+	// 实时窗口只有 3 秒：DSH 这类按 step 批量落盘的来源，一次工具执行或长思考
+	// 可以几分钟没有新的已完成响应，窗口里没有贡献，界面就会一直显示 0（用户
+	// 反馈「速度经常是 0」）。对「最近仍有活动」的 agent，保留它最后一条响应
+	// 结束时刻按同一 3 秒窗口算出的速率，并与实时值取较大者：数字只在新的实测
+	// 响应结束时更新，不在两次响应之间断崖式掉到 0。普通闲置只保留 15 秒，
+	// 让 agent 停下后数字尽快回落；工具执行期间（jobOpen）一直保留最后一次
+	// 实测值。实时值更大时（流式来源正在生成）仍用实时值，保持灵敏。
+	for agentID, endMS := range lastResponseEndByAgent {
+		if endMS <= 0 {
+			continue
+		}
+		// 普通闲置只保留 liveWindow（15 秒，与旧版一致），让 agent 真正停下
+		// 后数字尽快回落；工具执行期间（jobOpen）没有 token，但会话在忙，
+		// 保留到最后一次实测值，直到任务结束。
+		if !busyByAgent[agentID] && nowMS-endMS > liveWindow.Milliseconds() {
+			continue
+		}
+		heldOutput, heldTotal, ok := heldLiveRate(measured, agentID, endMS)
+		if !ok {
+			continue
+		}
+		if current, ok := ratesByAgent[agentID]; ok {
+			if heldOutput > current.output {
+				current.output = heldOutput
+			}
+			if heldTotal > current.total {
+				current.total = heldTotal
+			}
+			ratesByAgent[agentID] = current
+			continue
+		}
+		meta := agentMeta[agentID]
+		ratesByAgent[agentID] = liveRate{
+			source: meta.source,
+			model:  meta.model,
+			output: heldOutput,
+			total:  heldTotal,
+			endMS:  endMS,
+		}
 	}
 	estimatedShare := 0.0
 	if contributedTokens > 0 {
@@ -552,6 +621,41 @@ func (s *Service) computeSnapshot(now time.Time) Snapshot {
 	out.EstimatedShare = roundRate(estimatedShare)
 	s.trackLiveEvents(&out, nowMS)
 	return out
+}
+
+// heldLiveRate 计算某个 agent 在 atMS 时刻按 3 秒实时窗口取值会得到多少：
+// 只统计该 agent 在 [atMS-3s, atMS] 内仍有重叠的已完成响应，口径与实时速率
+// 完全一致（同样的折算函数与分母），因此从「实时」切到「保留」不会跳数。
+// 没有可折算的响应时返回 false，调用方保持 0。
+func heldLiveRate(measured []timedResponse, agentID string, atMS int64) (output, total float64, ok bool) {
+	if atMS <= 0 {
+		return 0, 0, false
+	}
+	fromMS := atMS - liveRateWindow.Milliseconds()
+	for _, response := range measured {
+		if response.agentID != agentID || response.endMS > atMS {
+			continue
+		}
+		tokens, windowMS, overallMS := responseMeasure(response)
+		if tokens <= 0 || windowMS <= 0 {
+			continue
+		}
+		out := measuredWindowTokens(response.endMS, windowMS, tokens, fromMS, atMS)
+		if out <= 0 {
+			continue
+		}
+		output += out
+		total += out
+		if overallMS > 0 && response.usage.input > 0 {
+			total += inputWindowTokens(response.startMS, response.endMS,
+				response.usage.input, fromMS, atMS)
+		}
+	}
+	if output <= 0 {
+		return 0, 0, false
+	}
+	seconds := liveRateWindow.Seconds()
+	return output / seconds, total / seconds, true
 }
 
 // trackLiveEvents 维护「今日峰值」与两个轻量事件序号。调用方必须已持有

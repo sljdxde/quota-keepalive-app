@@ -105,3 +105,20 @@ func TestMenuBarTooltipExplainsCompactStyle(t *testing.T) {
 		t.Fatalf("其它样式的 tooltip = %q", got)
 	}
 }
+
+// 菜单栏补空白只按可见文字量宽：颜色序列不能算进宽度。
+func TestVisibleMenuBarLabelStripsColor(t *testing.T) {
+	colored := menuBarLabel(settings.MenuBarSpeedTinted, 128)
+	if strings.Contains(visibleMenuBarLabel(colored), "\033") {
+		t.Fatalf("可见文字里不应残留转义码：%q", visibleMenuBarLabel(colored))
+	}
+	if got := visibleMenuBarLabel(colored); got != "128 tok/s" {
+		t.Fatalf("tinted 可见文字 = %q", got)
+	}
+	if got := visibleMenuBarLabel(menuBarLabel(settings.MenuBarSpeedCompact, 128)); got != "128" {
+		t.Fatalf("compact 可见文字 = %q", got)
+	}
+	if got := visibleMenuBarLabel(menuBarLabel(settings.MenuBarSpeedLabel, 128)); got != "128 tok/s" {
+		t.Fatalf("label 可见文字 = %q", got)
+	}
+}

@@ -290,3 +290,62 @@ func TestDSHIngestHeaderAndStepEdges(t *testing.T) {
 		t.Fatalf("完成后应推进游标: %+v count=%d", state.view, state.messageCount)
 	}
 }
+
+// 工具执行期间没有新 token，但会话仍在活动：保留最后一次实测速率，不能
+// 因为「最近没有新响应」在 5 分钟后掉成 0；job settled 且真正闲置后才归零。
+func TestDSHOpenJobKeepsHeldRate(t *testing.T) {
+	root := t.TempDir()
+	base := dshFixedNow()
+	endBase := base.UnixMilli()
+	path := dshSessionPath(root, "jobhold0-0000-4000-8000-000000000001")
+	frame := dshFrame(t,
+		`{"type":"session","version":4,"id":"jobhold0"}`,
+		dshStepStart(1, 1, endBase-2600),
+		dshTimedAssistantEvent("msg-job", endBase,
+			endBase-1100, endBase-1100, endBase-500, endBase-459,
+			50, 30, 100, 150),
+	)
+	dshWriteFile(t, path, frame)
+
+	now := base.Add(2 * time.Second)
+	// 用可变时钟：dshNewService 把 now 按值捕获，后续推进时间不会生效。
+	service := New(Config{
+		Roots: []Root{{Source: "dsh", Path: root}},
+		Now:   func() time.Time { return now },
+	})
+	service.Poll()
+	want := service.Snapshot().OutputTokensPerSecond
+	if want < 23.2 || want > 23.5 {
+		t.Fatalf("初始实测速率 = %.3f, want 23.333", want)
+	}
+
+	// 普通闲置超过 liveWindow（15 秒）后回落，保证数字在 agent 停下后尽快归零。
+	now = base.Add(20 * time.Second)
+	service.Poll()
+	if got := service.Snapshot().OutputTokensPerSecond; got != 0 {
+		t.Fatalf("闲置超过 15 秒应归零，实际 %.3f", got)
+	}
+
+	// 工具注册后长时间执行：会话在忙、只是没有 token，保留最后实测值。
+	jobMS := now.UnixMilli()
+	dshAppendFile(t, path, dshFrame(t,
+		fmt.Sprintf(`{"type":"job/registered","seq":50,"time":%d}`, jobMS)))
+	now = base.Add(20 * time.Minute)
+	service.Poll()
+	if state := service.files[path]; state == nil || state.jobOpen != 1 {
+		t.Fatalf("jobOpen = %+v, want 1", state)
+	}
+	if got := service.Snapshot().OutputTokensPerSecond; got != want {
+		t.Fatalf("工具执行期间应保留 %.3f，实际 %.3f", want, got)
+	}
+
+	// job 结束后回到普通闲置：liveWindow 之后归零。
+	dshAppendFile(t, path, dshFrame(t,
+		fmt.Sprintf(`{"type":"job/settled","seq":51,"time":%d}`, now.UnixMilli())))
+	service.Poll()
+	now = now.Add(liveWindow + time.Second)
+	service.Poll()
+	if got := service.Snapshot().OutputTokensPerSecond; got != 0 {
+		t.Fatalf("任务结束并闲置超时后应归零，实际 %.3f", got)
+	}
+}

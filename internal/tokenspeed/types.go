@@ -152,7 +152,13 @@ func titleCatalogFor(redline float64) []TitleThemeDefinition {
 	return out
 }
 
-// Snapshot is the credential-free live speed view exposed to the UI.
+// Snapshot is the credential-free speed view exposed to the UI.
+//
+// OutputTokensPerSecond 不是纯 3 秒窗口的实时值：每个 agent 取「实时值」与
+// 「最后一次响应结束时刻的窗口值」的较大者：普通闲置保留 liveWindow（15 秒），
+// 工具执行（jobOpen）期间一直保留，生成中的 step 则用在飞估算继续出数。
+// 这样 DSH 这类按 step 批量落盘的来源在工具执行/长思考期间不会掉成 0；
+// 面板大数字、来源行、会话行与菜单栏读的是同一个值，内外不会不一致。
 type Snapshot struct {
 	OutputTokensPerSecond float64                `json:"output_tokens_per_second"`
 	InputTokensPerSecond  float64                `json:"input_tokens_per_second"`

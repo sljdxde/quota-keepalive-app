@@ -277,6 +277,15 @@ func New(deps Deps) *App {
 	tray.SetMenu(menu)
 
 	result.tray = tray
+	// 恢复上次的菜单栏伙伴/精灵球状态：前端把选择存在 WebView 的
+	// localStorage，后端启动时读不到；不恢复的话每次重启都会先退回 Q 图标。
+	savedTray := loadTrayState()
+	if savedTray.Pet == "" {
+		savedTray.Pet = defaultTrayPet
+	}
+	result.trayPet = savedTray.Pet
+	result.trayCaught = savedTray.Caught
+	result.applyTrayState(savedTray.Pet, savedTray.Caught)
 	// 常驻悬浮球（Windows 菜单栏状态项）在事件循环启动后由
 	// installPlatformWindowBehavior 创建：此时窗口系统才真正就绪，位置和
 	// 圆形区域才设得上。
@@ -980,6 +989,10 @@ func (a *App) PanelToggleAt(x, y int) { a.togglePanelAtNotch(x, y) }
 
 func (a *App) onApplicationStarted(*application.ApplicationEvent) {
 	a.startedAt.Store(time.Now().UnixNano())
+	// 菜单栏速度项固定宽度：数字位数变化时不再左右挤动相邻状态项。
+	// 事件循环启动后状态项才真正创建，所以放在这里；monitorTokenSpeed
+	// 每一轮也会再试一次，成功一次即停。
+	installMenuBarFixedWidth(a.tray)
 }
 
 // trayPetFromEventData 从「pet-selected」事件里取出伙伴 id：前端发的是
@@ -1022,6 +1035,7 @@ func (a *App) setTrayPet(petID string) {
 	a.trayPet = petID
 	caught := a.trayCaught
 	a.trayStateMu.Unlock()
+	saveTrayState(trayState{Pet: petID, Caught: caught})
 	a.applyTrayState(petID, caught)
 }
 
@@ -1031,6 +1045,7 @@ func (a *App) setTrayCaught(caught bool) {
 	a.trayCaught = caught
 	petID := a.trayPet
 	a.trayStateMu.Unlock()
+	saveTrayState(trayState{Pet: petID, Caught: caught})
 	a.applyTrayState(petID, caught)
 }
 
@@ -1854,6 +1869,7 @@ func (a *App) monitorTokenSpeed(ctx context.Context) {
 	lastTooltip := ""
 	lastSignature := ""
 	lastInterval := interval
+	lastLabelAt := time.Time{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -1863,12 +1879,20 @@ func (a *App) monitorTokenSpeed(ctx context.Context) {
 				ticker.Reset(next)
 				lastInterval = next
 			}
+			// 状态项未就绪时这里拿不到原生指针，成功后会置位、后续直接返回。
+			installMenuBarFixedWidth(a.tray)
 			snapshot := a.tokenSpeed.Snapshot()
 			style := a.menuBarSpeedStyle()
 			label := menuBarLabel(style, snapshot.OutputTokensPerSecond)
-			if label != lastLabel {
+			// 补到固定宽度：状态项会把「图标 + 标题」整体居中，位数变一位
+			// 数字就左右挪几像素；补齐后数字左缘固定在这个位置上。
+			label = padMenuBarLabel(label, visibleMenuBarLabel(label))
+			// 内容变化才刷新；另外每 10 秒补写一次，防止某个系统版本上
+			// 状态项标题被 AppKit 重排/重建后丢掉，让数字自己恢复。
+			if label != lastLabel || time.Since(lastLabelAt) >= 10*time.Second {
 				a.tray.SetLabel(label)
 				lastLabel = label
+				lastLabelAt = time.Now()
 			}
 			// compact 样式不显示单位，tooltip 必须把「tok/s」补回来。
 			if tooltip := menuBarTooltip(style, snapshot.OutputTokensPerSecond); tooltip != lastTooltip {
