@@ -104,9 +104,9 @@ func (a *App) runOperation(ctx context.Context, target, accountID, operation str
 	if target == "workbuddy-cn" && operation == "checkin" {
 		return a.runWorkBuddyCheckin(ctx, accountID)
 	}
-	host, ok := a.hosts[target]
-	if !ok {
-		return nil, fmt.Errorf("目标适配器未运行: %s", target)
+	host, err := a.hostFor(ctx, target)
+	if err != nil {
+		return nil, err
 	}
 
 	key := engine.Key{Target: target, AccountID: accountID, Operation: engine.Operation(operation)}
@@ -131,12 +131,13 @@ func (a *App) lastInvocation(ctx context.Context) time.Time {
 }
 
 func (a *App) effectsComplete() bool {
-	if len(a.loaded) == 0 {
+	loaded := a.loadedSnapshot()
+	if len(loaded) == 0 {
 		return false
 	}
-	for _, l := range a.loaded {
-		if l.Host == nil {
-			continue
+	for _, l := range loaded {
+		if l.LoadErr != nil {
+			return false
 		}
 		if len(l.Manifest.Actions) == 0 {
 			return false

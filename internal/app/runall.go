@@ -200,9 +200,9 @@ func (a *App) providerExecutionView(
 
 // discoverViaHost 调用目标适配器的 accounts.discover，把脱敏结果解析为发现账号。
 func (a *App) discoverViaHost(ctx context.Context, target string) ([]accounts.DiscoveredAccount, error) {
-	host, ok := a.hosts[target]
-	if !ok {
-		return nil, fmt.Errorf("目标适配器未运行: %s", target)
+	host, err := a.hostFor(ctx, target)
+	if err != nil {
+		return nil, err
 	}
 
 	raw, err := host.Call(ctx, "accounts.discover")

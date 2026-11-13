@@ -520,8 +520,9 @@ func (s *guiState) agentStatus(context.Context) (gui.AgentView, error) {
 }
 
 func (s *guiState) plugins(context.Context) (gui.PluginsView, error) {
-	rows := make([]gui.PluginRow, 0, len(s.app.loaded))
-	for _, l := range s.app.loaded {
+	loaded := s.app.LoadedAdapters()
+	rows := make([]gui.PluginRow, 0, len(loaded))
+	for _, l := range loaded {
 		rows = append(rows, gui.PluginRow{
 			ID:      l.Manifest.ID,
 			Name:    l.Manifest.Name,

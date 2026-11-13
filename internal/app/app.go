@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"qka/internal/accounts"
@@ -43,11 +44,13 @@ type Config struct {
 	Now func() time.Time
 }
 
-// Loaded 是一个适配器的加载结果（宿主或启动错误）。
+// Loaded 是一个适配器的发现结果（目录与 manifest）及其按需启动状态。
 type Loaded struct {
 	Manifest adapterhost.Manifest
-	Host     *adapterhost.Host
-	LoadErr  error
+	// Dir 是适配器目录，供首次使用时启动。
+	Dir     string
+	Host    *adapterhost.Host
+	LoadErr error
 }
 
 // App 是装配好的应用。
@@ -59,6 +62,7 @@ type App struct {
 
 	loaded    []Loaded
 	hosts     map[string]*adapterhost.Host
+	hostsMu   sync.Mutex
 	engine    *engine.Engine
 	registry  *registry.Registry
 	accounts  *accounts.Service
@@ -74,7 +78,7 @@ type App struct {
 	workBuddySessions workBuddyManagedSessionCache
 }
 
-// Build 装配应用：打开 store、发现并启动适配器、构造各服务。
+// Build 装配应用：打开 store、发现适配器（不启动进程）、构造各服务。
 func Build(ctx context.Context, cfg Config) (*App, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -97,7 +101,7 @@ func Build(ctx context.Context, cfg Config) (*App, error) {
 		riskGuard: requestguard.New(cfg.Now),
 	}
 
-	if err := a.launchAdapters(ctx); err != nil {
+	if err := a.discoverAdapters(); err != nil {
 		_ = st.Close()
 		return nil, err
 	}
@@ -151,19 +155,35 @@ func (a *App) ConfigDir() string { return a.cfg.ConfigDir }
 // AdaptersRoot 返回适配器父目录（供状态输出）。
 func (a *App) AdaptersRoot() string { return a.cfg.AdaptersRoot }
 
-// Loaded 暴露适配器加载结果（供形态层/诊断使用）。
-func (a *App) LoadedAdapters() []Loaded { return a.loaded }
+// Loaded 暴露适配器加载结果（供形态层/诊断使用）。返回副本：适配器是按需
+// 启动的，Host/LoadErr 会在运行期被 hostFor 改写，直接返回底层切片会与
+// 并发调用产生数据竞争。
+func (a *App) LoadedAdapters() []Loaded { return a.loadedSnapshot() }
 
-// Close 终止所有适配器子进程并关闭数据库。
+// loadedSnapshot 在锁内复制一份加载结果，供只读消费者安全遍历。
+func (a *App) loadedSnapshot() []Loaded {
+	a.hostsMu.Lock()
+	defer a.hostsMu.Unlock()
+	out := make([]Loaded, len(a.loaded))
+	copy(out, a.loaded)
+	return out
+}
+
+// Close 终止所有已启动的适配器子进程并关闭数据库；未启动的适配器直接跳过。
 func (a *App) Close() error {
 	a.stopLogPruner()
 	if a.providers != nil {
 		_ = a.providers.Close()
 	}
+	a.hostsMu.Lock()
+	defer a.hostsMu.Unlock()
 	for _, l := range a.loaded {
 		if l.Host != nil {
 			_ = l.Host.Close()
 		}
+	}
+	if a.store == nil {
+		return nil
 	}
 	return a.store.Close()
 }

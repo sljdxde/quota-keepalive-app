@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,9 +15,9 @@ import (
 	"qka/internal/registry"
 )
 
-// launchAdapters 发现 AdaptersRoot 下的适配器目录并逐个启动。
-// 缺 manifest 的目录（如 _template、node_modules）跳过；单个适配器启动失败不拖垮其余。
-func (a *App) launchAdapters(ctx context.Context) error {
+// discoverAdapters 发现 AdaptersRoot 下的适配器目录并只加载 manifest，不启动进程。
+// 缺 manifest 的目录（如 _template、node_modules）跳过；进程在首次使用时按需启动。
+func (a *App) discoverAdapters() error {
 	entries, err := os.ReadDir(a.cfg.AdaptersRoot)
 	if err != nil {
 		return err
@@ -36,17 +37,46 @@ func (a *App) launchAdapters(ctx context.Context) error {
 		if err != nil {
 			continue // 不是有效适配器目录，跳过
 		}
-		loaded := Loaded{Manifest: manifest}
-		host, err := a.launchOne(ctx, dir, manifest)
-		if err != nil {
-			loaded.LoadErr = err
-		} else {
-			loaded.Host = host
-			a.hosts[manifest.ID] = host
-		}
-		a.loaded = append(a.loaded, loaded)
+		a.loaded = append(a.loaded, Loaded{Manifest: manifest, Dir: dir})
 	}
 	return nil
+}
+
+// hostFor 返回 target 对应的适配器宿主。首次调用时按记录目录启动并缓存；
+// 后续调用复用同一实例。启动失败记录到 Loaded.LoadErr 并直接返回错误。
+func (a *App) hostFor(ctx context.Context, target string) (*adapterhost.Host, error) {
+	a.hostsMu.Lock()
+	defer a.hostsMu.Unlock()
+
+	if host, ok := a.hosts[target]; ok && host != nil {
+		return host, nil
+	}
+
+	idx := -1
+	for i := range a.loaded {
+		if a.loaded[i].Manifest.ID == target {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil, fmt.Errorf("目标适配器未运行: %s", target)
+	}
+	if err := a.loaded[idx].LoadErr; err != nil {
+		return nil, err
+	}
+
+	host, err := a.launchOne(ctx, a.loaded[idx].Dir, a.loaded[idx].Manifest)
+	if err != nil {
+		a.loaded[idx].LoadErr = err
+		return nil, err
+	}
+	if a.hosts == nil {
+		a.hosts = map[string]*adapterhost.Host{}
+	}
+	a.hosts[target] = host
+	a.loaded[idx].Host = host
+	return host, nil
 }
 
 // launchOne 为单个适配器装配反向钩子（http.fetch / log.write）并完成握手。
@@ -70,17 +100,22 @@ func (a *App) launchOne(ctx context.Context, dir string, manifest adapterhost.Ma
 	fetch := capabilities.NewHTTPFetch(allowed, grant)
 
 	adapterwiring.RegisterHTTPFetch(mux, fetch)
-	adapterwiring.RegisterLogWrite(mux, a.store.DB())
+	if a.store != nil {
+		adapterwiring.RegisterLogWrite(mux, a.store.DB())
+	}
 
-	return adapterhost.LaunchWith(ctx, a.cfg.BunPath, dir, mux)
+	// 进程生命周期不跟随触发它的请求：仅 initialize 握手沿用调用方超时预算。
+	return adapterhost.LaunchWith(context.WithoutCancel(ctx), a.cfg.BunPath, dir, mux)
 }
 
-// registryAdapters 把加载结果转为 registry 视图输入；启动失败的适配器标记为禁用。
+// registryAdapters 把加载结果转为 registry 视图输入；仅启动失败的适配器标记为禁用。
+// Host 为空属于正常的懒加载状态，不代表禁用。
 func (a *App) registryAdapters() []registry.LoadedAdapter {
-	out := make([]registry.LoadedAdapter, 0, len(a.loaded))
-	for _, l := range a.loaded {
+	loaded := a.loadedSnapshot()
+	out := make([]registry.LoadedAdapter, 0, len(loaded))
+	for _, l := range loaded {
 		la := registry.LoadedAdapter{Manifest: l.Manifest}
-		if l.Host == nil {
+		if l.LoadErr != nil {
 			la.Disabled = true
 		}
 		out = append(out, la)

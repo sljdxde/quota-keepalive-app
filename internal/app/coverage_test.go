@@ -96,10 +96,11 @@ func TestAdapterDiscoveryViewsAndCapabilities(t *testing.T) {
 
 	viewApp := &App{loaded: []Loaded{
 		{Manifest: adapterhost.Manifest{ID: "with", Capabilities: []string{"keepalive"}}, Host: &adapterhost.Host{}},
+		{Manifest: adapterhost.Manifest{ID: "lazy"}},
 		{Manifest: adapterhost.Manifest{ID: "failed"}, LoadErr: errors.New("failed")},
 	}}
 	views := viewApp.registryAdapters()
-	if len(views) != 2 || views[0].Disabled || !views[1].Disabled {
+	if len(views) != 3 || views[0].Disabled || views[1].Disabled || !views[2].Disabled {
 		t.Fatalf("registry views = %+v", views)
 	}
 	if got := viewApp.capabilitiesFor("with"); len(got) != 1 || got[0] != "checkin" {
@@ -185,13 +186,24 @@ func TestToolDispatchHelpersAndLockFallbacks(t *testing.T) {
 	if a.effectsComplete() {
 		t.Fatal("无适配器时 effectsComplete 应为 false")
 	}
-	a.loaded = []Loaded{{Manifest: adapterhost.Manifest{ID: "failed"}}}
+	a.loaded = []Loaded{{Manifest: adapterhost.Manifest{ID: "empty"}}}
+	if a.effectsComplete() {
+		t.Fatal("未声明 actions 的适配器应让 effectsComplete 为 false")
+	}
+	a.loaded = []Loaded{{
+		Manifest: adapterhost.Manifest{ID: "failed", Actions: []adapterhost.Action{{Op: "x"}}},
+		LoadErr:  errors.New("failed"),
+	}}
+	if a.effectsComplete() {
+		t.Fatal("启动失败的适配器应让 effectsComplete 为 false")
+	}
+	a.loaded = []Loaded{{Manifest: adapterhost.Manifest{Actions: []adapterhost.Action{{Op: "x"}}}}}
 	if !a.effectsComplete() {
-		t.Fatal("失败适配器不阻断其余适配器完整性判断")
+		t.Fatal("未启动但发现正常的完整适配器 effectsComplete 应为 true")
 	}
 	a.loaded = []Loaded{{Manifest: adapterhost.Manifest{Actions: []adapterhost.Action{{Op: "x"}}}, Host: &adapterhost.Host{}}}
 	if !a.effectsComplete() {
-		t.Fatal("完整适配器 effectsComplete 应为 true")
+		t.Fatal("已启动的完整适配器 effectsComplete 应为 true")
 	}
 	a.loaded = nil
 	if strArg(nil, "x") != "" || strArg(map[string]any{"x": 1}, "x") != "" ||
