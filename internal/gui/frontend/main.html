@@ -2931,6 +2931,15 @@
             </div>
           </div>
           <div class="speed-setting">
+            <span class="speed-setting-label">扫描</span>
+            <div class="speed-seg" id="speed-walk-seg" role="radiogroup" aria-label="会话目录扫描间隔">
+              <button type="button" data-value="3000" role="radio" aria-checked="false">3s</button>
+              <button type="button" data-value="8000" role="radio" aria-checked="false">8s</button>
+              <button type="button" data-value="15000" role="radio" aria-checked="true" class="active">15s</button>
+              <button type="button" data-value="30000" role="radio" aria-checked="false">30s</button>
+            </div>
+          </div>
+          <div class="speed-setting">
             <span class="speed-setting-label">数字</span>
             <div class="speed-seg" id="speed-display-seg" role="radiogroup" aria-label="数字显示方式">
               <button type="button" data-value="roll" role="radio" aria-checked="true" class="active">逐位滚轮</button>
@@ -5117,9 +5126,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   // 速度显示设置：采样频率、数字动效、菜单栏样式。三个窗口共用同一份设置，
   // 保存后由 token-speed-settings-changed 事件同步过来。
   const SPEED_POLL_KEY = "token_speed_poll";
+  const SPEED_WALK_KEY = "token_speed_walk";
   const SPEED_DISPLAY_KEY = "token_speed_display";
   const SPEED_MENUBAR_KEY = "token_speed_menubar";
   let speedPollMillis = 500;
+  let speedWalkMillis = 15000;
   let speedDisplayMode = "roll";
   let speedMenubarStyle = "label";
   let speedFadeFrame = 0;
@@ -5386,9 +5397,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     try {
       const values = asJSON(await Bound.SettingsGet());
       speedPollMillis = Number(values[SPEED_POLL_KEY]) || 500;
+      speedWalkMillis = Number(values[SPEED_WALK_KEY]) || 15000;
       speedDisplayMode = normalizeSpeedDisplay(values[SPEED_DISPLAY_KEY]);
       speedMenubarStyle = values[SPEED_MENUBAR_KEY] || "label";
       paintSpeedSeg("speed-poll-seg", speedPollMillis);
+      paintSpeedSeg("speed-walk-seg", speedWalkMillis);
       paintSpeedSeg("speed-display-seg", speedDisplayMode);
       paintSpeedSeg("speed-menubar-seg", speedMenubarStyle);
       // 菜单栏样式只在 macOS 有意义；其它平台隐藏这一行。
@@ -5402,6 +5415,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   bindSpeedSeg("speed-poll-seg", SPEED_POLL_KEY);
+  bindSpeedSeg("speed-walk-seg", SPEED_WALK_KEY);
   bindSpeedSeg("speed-display-seg", SPEED_DISPLAY_KEY);
   bindSpeedSeg("speed-menubar-seg", SPEED_MENUBAR_KEY);
   Events.On("token-speed-settings-changed", function () {

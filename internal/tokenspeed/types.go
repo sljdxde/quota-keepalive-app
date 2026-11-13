@@ -58,8 +58,14 @@ type Config struct {
 	// 到 2s 能显著降低空闲 CPU，又不会让新会话出现得太迟。为 0 时沿用它
 	// PollInterval（测试默认）。
 	IdlePollInterval time.Duration
-	// WalkInterval 是完整重启目录扫描的最小间隔；两次扫描之间只对已知文件做
+	// WalkInterval 是完整目录扫描的最小间隔；两次扫描之间只对已知文件做
 	// 增量 stat/读取。为 0 时每轮都重扫（测试默认，保证新建文件立刻可见）。
+	//
+	// 完整扫描是轮询里唯一有量级成本的一步：实测本机真实目录（约 1800 个
+	// 目录、1000 个会话文件，其中 workbuddy 一棵树就有 556 个目录）单次
+	// 15.6ms。默认 3s 时每分钟扫 20 次 ≈ 占单核 0.52%；放宽到 15s 后
+	// 每分钟 4 次 ≈ 0.10%，省下 0.42 个百分点，而新会话最多晚 15s 出现
+	// （空闲态本来就在等 2s 轮询，用户几乎感知不到）。
 	WalkInterval time.Duration
 	// Redline 是红线速率（tok/s）：热谱、档位与称号阈值按它缩放。为 0 时用
 	// DefaultRedline（与 agent-speed 的默认红线 2000 一致）。
@@ -294,10 +300,15 @@ func DefaultConfig() Config {
 		Roots:            roots,
 		PollInterval:     750 * time.Millisecond,
 		IdlePollInterval: 2 * time.Second,
-		WalkInterval:     3 * time.Second,
+		WalkInterval:     DefaultWalkInterval,
 		Now:              time.Now,
 	}
 }
+
+// DefaultWalkInterval 是完整目录扫描的默认最小间隔（15s）。
+// 见 Config.WalkInterval 的实测依据：从 3s 放宽到 15s 可省约 0.42% 单核，
+// 代价是新会话最多晚 15s 出现在速度页。
+const DefaultWalkInterval = 15 * time.Second
 
 // FormatSpeed mirrors Agent Speed's compact menu-bar number formatting.
 func FormatSpeed(value float64) string {

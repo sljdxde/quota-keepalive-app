@@ -184,6 +184,8 @@ func (a *App) guiDeps() gui.Deps {
 			tokenSpeed.SetTitleTheme(st.GetString("title_theme"))
 			// 采样频率是运行时可调项：改完下一次轮询就按新间隔调度。
 			tokenSpeed.SetPollInterval(st.SpeedPollInterval())
+			// 完整目录扫描间隔同理：改完下一次 walkDue 判定就用新值。
+			tokenSpeed.SetWalkInterval(st.SpeedWalkInterval())
 			// 红线控制热谱与称号阶梯的缩放，改完立即重算快照。
 			tokenSpeed.SetRedline(st.SpeedRedline())
 			return state.afterSaveSettings(st)

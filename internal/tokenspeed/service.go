@@ -191,6 +191,9 @@ type Service struct {
 	// 采样频率，无需重启服务；0 表示沿用 cfg.PollInterval。用 atomic 是因为
 	// 写入来自 GUI 线程、读取来自轮询 goroutine。
 	livePollNanos atomic.Int64
+	// liveWalkNanos 是「完整目录扫描间隔」的纳秒值，语义同 livePollNanos：
+	// 0 表示沿用 cfg.WalkInterval。
+	liveWalkNanos atomic.Int64
 }
 
 // New creates a service. Call Start to begin polling.
@@ -469,12 +472,13 @@ func (s *Service) poll(ctx context.Context) {
 }
 
 // walkDue 判断本轮是否需要重扫目录树；需要时顺带记下这次扫描时间。
-// WalkInterval 为 0 时每轮都扫（测试默认行为，新建文件立刻可见）。
+// 间隔为 0 时每轮都扫（测试默认行为，新建文件立刻可见）。
 func (s *Service) walkDue(now time.Time) bool {
-	if s.cfg.WalkInterval <= 0 {
+	interval := s.walkInterval()
+	if interval <= 0 {
 		return true
 	}
-	if s.lastWalk.IsZero() || now.Sub(s.lastWalk) >= s.cfg.WalkInterval {
+	if s.lastWalk.IsZero() || now.Sub(s.lastWalk) >= interval {
 		s.lastWalk = now
 		return true
 	}
@@ -483,14 +487,38 @@ func (s *Service) walkDue(now time.Time) bool {
 
 // dshWalkDue 与 walkDue 同理，但单独计时：普通日志源和 DSH 源的扫描互不影响。
 func (s *Service) dshWalkDue(now time.Time) bool {
-	if s.cfg.WalkInterval <= 0 {
+	interval := s.walkInterval()
+	if interval <= 0 {
 		return true
 	}
-	if s.lastDSHWalk.IsZero() || now.Sub(s.lastDSHWalk) >= s.cfg.WalkInterval {
+	if s.lastDSHWalk.IsZero() || now.Sub(s.lastDSHWalk) >= interval {
 		s.lastDSHWalk = now
 		return true
 	}
 	return false
+}
+
+// walkInterval 返回当前生效的完整扫描间隔：设置页改过就用新值，否则用
+// 启动时的配置。与 livePollInterval 同一套「运行中可调」语义。
+func (s *Service) walkInterval() time.Duration {
+	if nanos := s.liveWalkNanos.Load(); nanos > 0 {
+		return time.Duration(nanos)
+	}
+	return s.cfg.WalkInterval
+}
+
+// SetWalkInterval 在运行中调整完整目录扫描间隔，下一次判定立即按新值。
+// 非正值表示忽略（保留当前值），避免设置项被清空后把重扫打成每轮都扫。
+func (s *Service) SetWalkInterval(interval time.Duration) {
+	if interval <= 0 {
+		return
+	}
+	s.liveWalkNanos.Store(int64(interval))
+}
+
+// WalkInterval 返回当前生效的完整扫描间隔，供设置页回显与诊断使用。
+func (s *Service) WalkInterval() time.Duration {
+	return s.walkInterval()
 }
 
 // pollLocked 是 Poll 的加锁主体：耗时的统计放在锁外记录，避免日志写盘时

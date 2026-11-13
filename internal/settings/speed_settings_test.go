@@ -8,6 +8,9 @@ func TestTokenSpeedSettingsDefaults(t *testing.T) {
 	if got := def.SpeedPollInterval(); got.String() != "500ms" {
 		t.Fatalf("默认采样间隔 = %v，want 500ms", got)
 	}
+	if got := def.SpeedWalkInterval().String(); got != "15s" {
+		t.Fatalf("默认扫描间隔 = %v，want 15s", got)
+	}
 	if got := def.GetString(KeyTokenSpeedDisplay); got != "roll" {
 		t.Fatalf("默认数字显示 = %q，want roll", got)
 	}
@@ -42,6 +45,38 @@ func TestSpeedPollIntervalClampsAndFallsBack(t *testing.T) {
 	}
 }
 
+// TestSpeedWalkIntervalClampsAndFallsBack 固定扫描间隔的取值与回退：
+// 这是速度页唯一有量级成本的周期任务，非法值必须收敛到安全默认而不是
+// 让服务每轮都重扫（那会把空闲 CPU 拉高一个量级）。
+func TestSpeedWalkIntervalClampsAndFallsBack(t *testing.T) {
+	s := Default()
+	for value, want := range map[string]string{
+		"3000": "3s", "8000": "8s", "15000": "15s", "30000": "30s",
+	} {
+		if err := s.SetString(KeyTokenSpeedWalk, value); err != nil {
+			t.Fatalf("SetString(%q) = %v", value, err)
+		}
+		if got := s.SpeedWalkInterval().String(); got != want {
+			t.Fatalf("SpeedWalkInterval() = %v，want %v", got, want)
+		}
+	}
+	for _, broken := range []string{"0", "abc", "500", "999", "120001", ""} {
+		s.values[KeyTokenSpeedWalk] = broken
+		if got := s.SpeedWalkInterval().String(); got != "15s" {
+			t.Fatalf("越界值 %q 应回退 15s，实际 %v", broken, got)
+		}
+	}
+	// 边界值本身合法：1s 与 120s 都应被接受。
+	s.values[KeyTokenSpeedWalk] = "1000"
+	if got := s.SpeedWalkInterval().String(); got != "1s" {
+		t.Fatalf("下边界 1s 应被接受，实际 %v", got)
+	}
+	s.values[KeyTokenSpeedWalk] = "120000"
+	if got := s.SpeedWalkInterval().String(); got != "2m0s" {
+		t.Fatalf("上边界 120s 应被接受，实际 %v", got)
+	}
+}
+
 func TestMenuBarSpeedStyleFallsBack(t *testing.T) {
 	s := Default()
 	s.values[KeyTokenSpeedMenuBar] = "future"
@@ -51,7 +86,7 @@ func TestMenuBarSpeedStyleFallsBack(t *testing.T) {
 }
 
 func TestIsTokenSpeedKey(t *testing.T) {
-	for _, key := range []string{KeyTokenSpeedPoll, KeyTokenSpeedDisplay, KeyTokenSpeedMenuBar} {
+	for _, key := range []string{KeyTokenSpeedPoll, KeyTokenSpeedWalk, KeyTokenSpeedDisplay, KeyTokenSpeedMenuBar} {
 		if !IsTokenSpeedKey(key) {
 			t.Errorf("%q 应被识别为速度设置", key)
 		}

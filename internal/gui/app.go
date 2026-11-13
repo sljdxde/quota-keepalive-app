@@ -1932,14 +1932,16 @@ func (a *App) menuBarSpeedStyle() string {
 	return a.settings().MenuBarSpeedStyle()
 }
 
-// applyTokenSpeedPoll 把「速度采样频率」设置应用到速度服务。
-// 设置来源或服务缺失时安全跳过（测试与零值 App）。
+// applyTokenSpeedPoll 把「速度采样频率」「目录扫描间隔」「红线」设置应用到
+// 速度服务。设置来源或服务缺失时安全跳过（测试与零值 App）。
 func applyTokenSpeedPoll(service *tokenspeed.Service, readSettings func() *settings.Settings) {
 	if service == nil || readSettings == nil {
 		return
 	}
-	service.SetPollInterval(readSettings().SpeedPollInterval())
-	service.SetRedline(readSettings().SpeedRedline())
+	st := readSettings()
+	service.SetPollInterval(st.SpeedPollInterval())
+	service.SetWalkInterval(st.SpeedWalkInterval())
+	service.SetRedline(st.SpeedRedline())
 }
 
 // tokenSpeedSignature 把快照收敛成内容指纹。UpdatedAt 每轮都变，必须排除，

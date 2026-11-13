@@ -154,6 +154,19 @@ var Schema = []Field{
 		},
 	},
 	{
+		Key:         "token_speed_walk",
+		Type:        FieldSelect,
+		Label:       "会话目录扫描间隔",
+		Description: "完整重扫本机 Agent 会话目录的间隔。这是速度页唯一有量级成本的一步（实测单次约 15ms），放慢能明显降低空闲 CPU，代价是新会话最多晚这么久出现在速度页。",
+		Default:     "15000",
+		Options: []Option{
+			{Value: "3000", Label: "及时（3s）"},
+			{Value: "8000", Label: "较快（8s）"},
+			{Value: "15000", Label: "平衡（15s）"},
+			{Value: "30000", Label: "省电（30s）"},
+		},
+	},
+	{
 		Key:         "token_speed_display",
 		Type:        FieldSelect,
 		Label:       "速度数字显示",
@@ -255,6 +268,8 @@ const (
 	KeyTokenSpeedRedline = "token_speed_redline"
 	// KeyTokenSpeedMenuBar 是 macOS 菜单栏速度样式。
 	KeyTokenSpeedMenuBar = "token_speed_menubar"
+	// KeyTokenSpeedWalk 是完整会话目录扫描间隔（毫秒，字符串形式）。
+	KeyTokenSpeedWalk = "token_speed_walk"
 )
 
 // 菜单栏速度样式。
@@ -287,6 +302,17 @@ func (s *Settings) SpeedPollInterval() time.Duration {
 	return time.Duration(millis) * time.Millisecond
 }
 
+// SpeedWalkInterval 返回完整会话目录扫描间隔；值非法时回退到 15s。
+// 允许范围 1s-120s：更快的重扫收益递减而成本线性上升，更慢会让新会话
+// 出现得明显滞后。
+func (s *Settings) SpeedWalkInterval() time.Duration {
+	millis, err := strconv.Atoi(s.GetString(KeyTokenSpeedWalk))
+	if err != nil || millis < 1000 || millis > 120000 {
+		millis = 15000
+	}
+	return time.Duration(millis) * time.Millisecond
+}
+
 // MenuBarSpeedStyle 返回菜单栏速度样式；未知值回退到纯文本。
 func (s *Settings) MenuBarSpeedStyle() string {
 	return normalizedChoice(s.GetString(KeyTokenSpeedMenuBar), []string{
@@ -308,7 +334,7 @@ func normalizedChoice(value string, allowed []string, fallback string) string {
 // 保存后触发即时刷新，避免为一堆无关设置项也广播速度事件。
 func IsTokenSpeedKey(key string) bool {
 	switch key {
-	case KeyTokenSpeedPoll, KeyTokenSpeedDisplay, KeyTokenSpeedRedline, KeyTokenSpeedMenuBar:
+	case KeyTokenSpeedPoll, KeyTokenSpeedWalk, KeyTokenSpeedDisplay, KeyTokenSpeedRedline, KeyTokenSpeedMenuBar:
 		return true
 	default:
 		return false

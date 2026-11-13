@@ -137,14 +137,55 @@ func TestWalkDueAlwaysTrueWithoutInterval(t *testing.T) {
 	}
 }
 
-// TestDefaultConfigSetsPerformanceWindows 固定出厂默认：空闲 2s、目录 3s。
+// TestDefaultConfigSetsPerformanceWindows 固定出厂默认：空闲 2s、目录 15s。
+// 目录扫描从 3s 放宽到 15s 的依据见 Config.WalkInterval：实测单次完整重扫
+// 15.6ms，3s 一次约占单核 0.52%，15s 一次约 0.10%。
 func TestDefaultConfigSetsPerformanceWindows(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.IdlePollInterval != 2*time.Second {
 		t.Fatalf("默认空闲间隔 = %v，want 2s", cfg.IdlePollInterval)
 	}
-	if cfg.WalkInterval != 3*time.Second {
-		t.Fatalf("默认目录扫描间隔 = %v，want 3s", cfg.WalkInterval)
+	if cfg.WalkInterval != DefaultWalkInterval {
+		t.Fatalf("默认目录扫描间隔 = %v，want %v", cfg.WalkInterval, DefaultWalkInterval)
+	}
+	if DefaultWalkInterval != 15*time.Second {
+		t.Fatalf("DefaultWalkInterval = %v，want 15s", DefaultWalkInterval)
+	}
+}
+
+// TestSetWalkIntervalTakesEffectAtRuntime 确认设置页能在运行中改完整扫描间隔：
+// 改完下一次 walkDue 判定就用新值，非法值不会把重扫打成每轮都扫。
+func TestSetWalkIntervalTakesEffectAtRuntime(t *testing.T) {
+	service := New(Config{
+		PollInterval:     750 * time.Millisecond,
+		IdlePollInterval: 2 * time.Second,
+		WalkInterval:     15 * time.Second,
+	})
+	if got := service.WalkInterval(); got != 15*time.Second {
+		t.Fatalf("初始 WalkInterval = %v，want 15s", got)
+	}
+	// 首轮总是重扫（lastWalk 为零值）。
+	now := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
+	if !service.walkDue(now) {
+		t.Fatal("首轮应重扫")
+	}
+	if service.walkDue(now.Add(5 * time.Second)) {
+		t.Fatal("5s < 15s 时不应重扫")
+	}
+
+	service.SetWalkInterval(3 * time.Second)
+	if got := service.WalkInterval(); got != 3*time.Second {
+		t.Fatalf("SetWalkInterval 后 = %v，want 3s", got)
+	}
+	if !service.walkDue(now.Add(5 * time.Second)) {
+		t.Fatal("改成 3s 后 5s 应触发重扫")
+	}
+
+	// 非正值忽略，保留当前值。
+	service.SetWalkInterval(0)
+	service.SetWalkInterval(-time.Second)
+	if got := service.WalkInterval(); got != 3*time.Second {
+		t.Fatalf("非法值不应改写间隔，实际 %v", got)
 	}
 }
 
