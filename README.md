@@ -98,7 +98,10 @@ go test ./...               # 单元测试
 go test ./... -coverprofile=cover.out && go tool cover -func=cover.out | tail -1
 node --test internal/gui/frontend-js-tests/*.test.mjs   # 前端 JS 单测
 go vet ./... && gofmt -l .
+make bench                  # 性能基线（快照指纹、stat 快路径、零变化写库）
 ```
+
+性能基线、已落地的优化与「哪些量化后判定不值得做」见 [PERFORMANCE.md](PERFORMANCE.md)。
 
 目标保持 100% 语句覆盖率，当前全量约 98.6%：缺口集中在仅 Windows 生效的分支（安装器、WebView2、窗口 chrome）与少量平台桩。测试优先使用真实行为（真实 SQLite、真实 zstd 会话文件、真实子进程），不为覆盖率造 mock；确实不可达的分支直接删除而不是硬凑。
 
