@@ -3,6 +3,7 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"qka/internal/applog"
@@ -29,8 +30,13 @@ func TestTrayStateRoundTrip(t *testing.T) {
 		t.Fatalf("状态未正确落盘：%+v", got)
 	}
 	path := filepath.Join(dir, trayStateFile)
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("状态文件应存在且为 0600：info=%v err=%v", info, err)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("状态文件应存在：%v", err)
+	}
+	// Windows 不保留 POSIX 权限位，0600 断言只在类 Unix 平台生效。
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("状态文件应为 0600，实际 %v", info.Mode().Perm())
 	}
 	if err := os.WriteFile(path, []byte("{bad json"), 0o600); err != nil {
 		t.Fatal(err)
