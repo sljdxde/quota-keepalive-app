@@ -42,47 +42,43 @@
     display: block;
     border-radius: 50%;
   }
-  /* 数字：与原型一样居中在球心下方一点（readout 的 -43% 偏移由模块写入）。 */
-  /* 三层读数（数字 / tok/s / 称号）沿用原型 readout 的字体：
-     等宽数字栈 + tabular-nums，字号由渲染核按球径写入。 */
+  /* 数字：居中在球心（readout 的 -50% 偏移由模块写入）。
+     字体沿用 agent-speed 原型 readout 的无衬线栈（SF Pro Display →
+     Segoe UI Variable Display → Segoe UI）：早先的等宽栈在 Windows 上
+     落到 Consolas，0 带斜杠、字重偏黑，和原型不是一个观感。
+     字号由本页按「球径 + 文本长度」写入（长数字收字号，不出环）。 */
   .ball .core {
     position: absolute; left: 50%; top: 50%;
     display: grid; justify-items: center;
-    text-align: center; line-height: 1.1;
+    text-align: center; line-height: 1;
     pointer-events: none;
-    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+      "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
     /* transform 由渲染核每帧写（translate(-50%, readoutOffset)） */
   }
-  /* 字号由渲染核按球径写（0.25S / 0.086S / 0.076S，带 10/8/8px 可读下限），
-     CSS 只管字体栈与字重，避免两处各写一套互相打架。 */
-  /* 配色：球底是近黑的深蓝，读数必须离底色足够远才看得清——待机态的数值
-     也保持 94% 白（原来的 60% 在浅色桌面上像没写入），单位与称号同样提到
-     82% / 72%，并在渲染核里给数字加了一圈淡白光。 */
+  /* 配色：球底是近黑的深蓝，读数必须离底色足够远才看得清。数字固定纯白，
+     并在字形外再垫一圈暗光（filter 与内联 text-shadow 互不覆盖）；单位
+     92% 白 + 暗底，活性态球体变亮时也不会糊进紫色丝绸里。 */
   .ball .core b.roll {
     font-variant-numeric: tabular-nums;
-    font-weight: 800;
-    letter-spacing: -.04em;
-    color: #f6f8fb;
-    text-shadow: 0 0 6px rgba(255, 255, 255, .4);
+    font-weight: 700;
+    /* odometer 的列宽按 1ch 对齐，字距必须为 0，否则每列推进对不上。 */
+    letter-spacing: 0;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .85);
+    filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, .9));
     white-space: nowrap;
   }
   .ball .core .unit {
     font-weight: 600;
     letter-spacing: .04em;
-    color: rgba(255, 255, 255, .82);
+    color: rgba(255, 255, 255, .92) !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
     white-space: nowrap;
   }
-  .ball .core .title {
-    font-weight: 600;
-    letter-spacing: .1em;
-    color: rgba(255, 255, 255, .72);
-    white-space: nowrap;
-    transition: color .3s ease;
-  }
-  .ball.idle .core b.roll { color: rgba(255, 255, 255, .94); }
-  /* 贴边 36px 只放得下一个数：单位与称号收起。 */
-  .ball.docked .core .unit,
-  .ball.docked .core .title { display: none; }
+  .ball.idle .core b.roll { color: #fff; }
+  /* 贴边 36px 只放得下一个数：单位收起。 */
+  .ball.docked .core .unit { display: none; }
 </style>
 </head>
 <body>
@@ -98,7 +94,6 @@
     <div class="core">
       <b class="roll" id="speed-value">0</b>
       <span class="unit" id="speed-unit">tok/s</span>
-      <span class="title" id="speed-title">待機</span>
     </div>
   </div>
 
@@ -113,10 +108,9 @@
   import { createAgentSpeedOrb } from "./assets/orb-agent-speed.js";
   import {
     DEFAULT_REDLINE,
+    ballReadoutFontSize,
+    ballReadoutUnitSize,
     createSpeedThrottle,
-    formatSpeed,
-    heatColor,
-    heatForSpeed,
   } from "./assets/tokenspeed-viz.js";
   import { dockSideForWindow, dockContentShift } from "./assets/ball-dock.js";
   import { shouldStartDrag, dragTargetOrigin } from "./assets/bar-gesture.js";
@@ -127,7 +121,25 @@
 
   const ball = document.getElementById("ball");
   const valueNode = document.getElementById("speed-value");
+  const unitNode = document.getElementById("speed-unit");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // 球径 = 容器（= 窗口）/ 1.9。用元素尺寸而不是 innerWidth，页面有
+  // 内边距时也不会算错；贴边态窗口变窄时跟着缩。
+  function ballDiameter() {
+    return Math.round((ball.clientWidth || window.innerWidth || 122) / 1.9);
+  }
+
+  // 读数只排两行：数值 + tok/s（不放称号，长称号会顶出球外，而且称号色
+  // 走热谱后和球底对比不足）。字号按球径与文本长度写入并标 !important：
+  // 渲染核在 resize 时也会写一版固定字号，这里必须压过它，长数字才收得住。
+  let lastSpeedText = "0";
+  function layoutReadout(text) {
+    lastSpeedText = text == null ? lastSpeedText : String(text);
+    const size = ballDiameter();
+    valueNode.style.setProperty("font-size", ballReadoutFontSize(size, lastSpeedText) + "px", "important");
+    unitNode.style.setProperty("font-size", ballReadoutUnitSize(size) + "px", "important");
+  }
 
   // 速度数字的显示方式与采样频率跟随主应用设置（token_speed_display /
   // token_speed_poll）：主应用切「平滑缓动」或「直接替换」时球面同步。
@@ -138,6 +150,7 @@
   // 采样最密 200ms、实时速率本身还在窗口里连续变化；不节流的话数字每
   // 200ms 抖一下、连滚动画永远重启，人眼根本读不到变化。
   const speedThrottle = createSpeedThrottle(500, function (text) {
+    layoutReadout(text);
     if (speedDisplayMode === "roll") {
       setRoll(valueNode, text, { duration: rollDurationFor(speedPollMillis) });
       return;
@@ -170,13 +183,10 @@
     fxCanvas: document.getElementById("ball-fx"),
     readout: ball.querySelector(".core"),
     valueEl: valueNode,
-    unitEl: document.getElementById("speed-unit"),
-    titleEl: document.getElementById("speed-title"),
-    // 称号文字来自快照（跟随称号主题 + 红线），核只负责字号与排布。
-    hostTitle: true,
+    unitEl: unitNode,
     // 球径 = 容器（= 窗口）/ 1.9。用元素尺寸而不是 innerWidth，
     // 页面有内边距时也不会算错。
-    size: Math.round((ball.clientWidth || window.innerWidth || 122) / 1.9),
+    size: ballDiameter(),
     clip: false,
     redline: DEFAULT_REDLINE,
     readoutOffset: -50,
@@ -204,17 +214,6 @@
     ball.classList.toggle("live", active);
 
     orb.setState({ value: speed, redline: redline });
-
-    // 称号：文字来自快照（跟随称号主题 + 红线），配色走热谱——与原型里
-    // 「称号用 heat 色」一致；字号由渲染核按 0.076S 统一写。待机不是灰掉，
-    // 保留 72% 白：球底深，低透明度会把「待机」两个字直接吞掉。
-    const titleNode = document.getElementById("speed-title");
-    if (titleNode) {
-      titleNode.textContent = view.title || "待机";
-      titleNode.style.color = active
-        ? heatColor(heatForSpeed(speed, redline))
-        : "rgba(255,255,255,.72)";
-    }
 
     // 事件：响应完成 → 冲击波（强度按速度缩放）；破纪录 → 金色庆祝。
     // 快照里带单调序号，首次收到时不补播历史事件。
@@ -253,7 +252,10 @@
     ball.style.setProperty("--dock-x", shift.x + "px");
     ball.style.setProperty("--dock-y", shift.y + "px");
     ball.dataset.dock = side;
-    orb.setSize(Math.round((ball.clientWidth || window.innerWidth) / 1.9));
+    orb.setSize(ballDiameter());
+    // 渲染核 resize 会写一版固定字号；这里紧跟一次自适应字号（带
+    // !important），贴边缩到 76px 窗口时读数仍然收在球内。
+    layoutReadout(lastSpeedText);
     if (docked && !dockPoll) {
       dockPoll = setInterval(syncDocked, 500);
     } else if (!docked && dockPoll) {

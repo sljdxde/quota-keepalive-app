@@ -97,3 +97,35 @@ test("speed throttle caps commits to one per interval", async function () {
   assert.deepEqual(committed, ["10", "40"], "到点只提交最新值");
   throttle.reset();
 });
+
+// 悬浮球读数只排数值 + tok/s 两行；数值字号必须随文本长度收缩，否则
+// "1.23k" 这类 5 字符会顶出 36 段 LED 环（真机反馈）。
+test("ball readout font shrinks to fit inside the LED ring", async function () {
+  const { ballReadoutFontSize, ballReadoutUnitSize } =
+    await import("../frontend/assets/tokenspeed-viz.js");
+
+  // 64px 球、3 位以内用基准 0.25S = 16px。
+  assert.equal(ballReadoutFontSize(64, "0"), 16);
+  assert.equal(ballReadoutFontSize(64, "219"), 16);
+
+  const five = ballReadoutFontSize(64, "1.23k");
+  assert.ok(five < 16, "5 字符必须收字号");
+  const seven = ballReadoutFontSize(64, "100.00k");
+  assert.ok(seven <= five, "字符越多字号越小");
+  assert.ok(seven >= 9, "字号有 9px 可读下限");
+
+  // 估算宽度必须收在环内可用宽度（0.60×球径）里。
+  for (const text of ["219", "1.23k", "100.00k"]) {
+    const size = ballReadoutFontSize(64, text);
+    assert.ok(text.length * 0.58 * size <= 0.60 * 64 + 0.5,
+      text + " 的估算宽度不应超出球内可用宽度");
+  }
+
+  // 贴边 40px 球同样有下限；空文本按 1 字符处理。
+  assert.ok(ballReadoutFontSize(40, "999") >= 9);
+  assert.equal(ballReadoutFontSize(64, ""), 16);
+
+  // 单位行 64px 球落在 9px（0.086×64=5.5 太小），大球按比例放大。
+  assert.equal(ballReadoutUnitSize(64), 9);
+  assert.equal(ballReadoutUnitSize(148), 12.7);
+});

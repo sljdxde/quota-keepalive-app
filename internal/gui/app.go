@@ -307,9 +307,6 @@ func (a *App) ensureBar() *application.WebviewWindow {
 	bar := a.wails.Window.NewWithOptions(barWindowOptions(a.theme))
 	a.bar = bar
 	a.windowMu.Unlock()
-	// 去掉 DWM 延伸进客户区的系统边框/关闭按钮：悬浮球页面大部分是透明的，
-	// 那层标题栏会从透明区露出来（白底 + 右上角 ×）。
-	clearDwmFrame(bar)
 
 	// 以下都涉及主线程窗口操作（InvokeSync），必须在放锁之后执行：
 	// 持着 windowMu 等主线程，而主窗口可能正在等 windowMu，会互等死锁。
@@ -1561,6 +1558,9 @@ func ballPanelOptions(theme string) application.WebviewWindowOptions {
 		URL:            themedURL("/panel.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,
+			// 同悬浮球：不保留原生装饰，否则 Wails 会把 DWM 边框与标题栏
+			// 延伸进自绘浮层的客户区（一条系统标题栏 + ×）。
+			DisableFramelessWindowDecorations: true,
 		},
 	}
 }
@@ -1586,6 +1586,9 @@ func petMiniOptions(theme string) application.WebviewWindowOptions {
 		URL:            themedURL("/petmini.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,
+			// 同悬浮球：不保留原生装饰，否则 Wails 会把 DWM 边框与标题栏
+			// 延伸进自绘浮层的客户区（一条系统标题栏 + ×）。
+			DisableFramelessWindowDecorations: true,
 		},
 	}
 }
@@ -1610,6 +1613,9 @@ func ballMenuOptions(theme string) application.WebviewWindowOptions {
 		URL:            themedURL("/ballmenu.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,
+			// 同悬浮球：不保留原生装饰，否则 Wails 会把 DWM 边框与标题栏
+			// 延伸进自绘浮层的客户区（一条系统标题栏 + ×）。
+			DisableFramelessWindowDecorations: true,
 		},
 	}
 }

@@ -3,8 +3,6 @@
 package gui
 
 import (
-	"unsafe"
-
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sys/windows"
 )
@@ -59,38 +57,19 @@ func barWindowOptions(theme string) application.WebviewWindowOptions {
 		URL:            themedURL("/bar.html", theme),
 		Windows: application.WindowsWindow{
 			HiddenOnTaskbar: true,
+			// 必须关掉 Wails 的「无边框但保留原生装饰」模式。开启时 Wails 在
+			// 每次 WM_ACTIVATE 都会调用 DwmExtendFrameIntoClientArea(1) 把 DWM
+			// 边框延伸进客户区：透明页面上就是一层暗色圆角底板 + 右上角 ×，
+			// 而且它在页面之下，CSS 怎么改都盖不住。在窗口创建后调用一次
+			// DwmExtendFrameIntoClientArea(0) 清边距没用——下一次获得焦点时
+			// Wails 会重新延伸（0.1.95 的回归正是这么来的）。
+			//
+			// 这个开关在 wails v3.0.0 里只参与 framelessWithDecorations() 的
+			// 判断（webview_window_windows.go），不会改动透明合成或 DComp
+			// 预置，因此和 BackgroundTypeTransparent 可以共存。
+			DisableFramelessWindowDecorations: true,
 		},
 	}
-}
-
-// clearDwmFrame 把 DWM 的「延伸到客户区」边距清零，去掉无边框窗口上的
-// 系统边框与右上角关闭按钮。
-//
-// 为什么不用 Wails 的 DisableFramelessWindowDecorations：它同时改动透明
-// 窗口的预置（WS_EX_NOREDIRECTIONBITMAP + DirectComposition）。这里只把
-// DWM 边距清零，透明合成路径完全不动，风险最小。
-var (
-	dwmapiDLL                        = windows.NewLazySystemDLL("dwmapi.dll")
-	procDwmExtendFrameIntoClientArea = dwmapiDLL.NewProc("DwmExtendFrameIntoClientArea")
-)
-
-type dwmMargins struct {
-	Left, Right, Top, Bottom int32
-}
-
-func clearDwmFrame(window *application.WebviewWindow) {
-	if window == nil {
-		return
-	}
-	hwnd := window.NativeWindow()
-	if hwnd == nil {
-		return
-	}
-	margins := dwmMargins{}
-	_, _, _ = procDwmExtendFrameIntoClientArea.Call(
-		uintptr(unsafe.Pointer(hwnd)),
-		uintptr(unsafe.Pointer(&margins)),
-	)
 }
 
 // shapeBarWindow / shapeBarWindowSide 曾经把窗口裁成正圆。现在窗口 = 1.9×

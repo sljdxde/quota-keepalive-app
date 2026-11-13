@@ -129,6 +129,27 @@ export function formatSpeed(value) {
   return (scaled >= 100 ? String(Math.round(scaled)) : scaled.toFixed(1)) + "B";
 }
 
+// ballReadoutFontSize 返回悬浮球数值的字号（px）。基准 0.25×球径（64px 球
+// 上是 16px），但 36 段环内侧只有约 0.60×球径 的横向余量：比例字体按
+// 0.58em/字符 估算，超出就整体收字号，长数字（1.23k / 100.00k）不会顶出
+// 刻度环。下限 9px 保证贴边态仍能读。
+export function ballReadoutFontSize(ballSize, text) {
+  const size = Math.max(16, Number(ballSize) || 64);
+  const base = Math.max(10, 0.25 * size);
+  const chars = Math.max(1, String(text == null ? "" : text).length);
+  const maxWidth = 0.60 * size;
+  const estimated = chars * 0.58 * base;
+  const fitted = estimated <= maxWidth ? base : maxWidth / (chars * 0.58);
+  return Math.round(Math.max(9, fitted) * 10) / 10;
+}
+
+// ballReadoutUnitSize 返回 tok/s 单位行的字号（px）：0.086×球径，最低 9px
+// （64px 球只有 5.5px，8px 在 Windows 上会糊成一团灰点）。
+export function ballReadoutUnitSize(ballSize) {
+  const size = Math.max(16, Number(ballSize) || 64);
+  return Math.round(Math.max(9, 0.086 * size) * 10) / 10;
+}
+
 // createLevelTracker 实现称号/档位的迟滞：升档在当前阈值即进入，降档要跌破
 // 该档阈值的 90%，且候选档必须稳定 0.8s 才生效（DESIGN §1）。返回的 level
 // 是 0（怠速）到 13。

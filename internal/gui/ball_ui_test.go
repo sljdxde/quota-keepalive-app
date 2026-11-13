@@ -30,9 +30,8 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 		`<canvas class="orb-fx"`,
 		`id="speed-value"`,
 		`id="speed-unit"`,
-		`id="speed-title"`,
 		`>tok/s<`,
-		`ui-monospace, "SF Mono", "Cascadia Mono"`,
+		`"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif`,
 		`readoutOffset: -50`,
 		`createSpeedThrottle(500`,
 		`createSpeedThrottle`,
@@ -40,7 +39,8 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 		`assets/tokenspeed-viz.js`,
 		`createAgentSpeedOrb`,
 		`clip: false`,
-		`hostTitle: true`,
+		`ballReadoutFontSize`,
+		`layoutReadout`,
 		`orb.setSize`,
 		`onText: writeSpeedText`,
 		`orb.setState`,
@@ -66,6 +66,18 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 			t.Errorf("悬浮球页面缺少 %q", want)
 		}
 	}
+	// 球面只排两行：数值 + tok/s。称号长度不可控（「極音速飛機」五字）会顶
+	// 出球外，且热谱配色在球底上对比不足，整行退役。
+	for _, forbidden := range []string{
+		`id="speed-title"`,
+		`class="title"`,
+		`titleEl:`,
+		`hostTitle:`,
+	} {
+		if strings.Contains(page, forbidden) {
+			t.Errorf("悬浮球页面不应再包含称号读数 %q", forbidden)
+		}
+	}
 	// 球面不再承载宠物/精灵球：LED 仪表 + 数字是唯一内容（对齐 agent-speed）。
 	for _, forbidden := range []string{
 		`assets/pokemon/`,
@@ -82,9 +94,10 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 	}
 }
 
-// 64px 球上是「看得清」的硬指标：待机读数不能是灰的、字号要有可读下限、
-// 36 段环未点亮时也要看得见轮廓。这三件事都是真机反馈，别为了「更还原
-// 原型」把它们调回 6px / 7% 白——原型默认球径 148，QKA 这颗只有 64。
+// 64px 球上是「看得清」的硬指标：读数不能是灰的、字号要有可读下限、
+// 36 段环未点亮时也要看得见轮廓，且数值宽度必须收在环内。这些都是真机
+// 反馈，别为了「更还原原型」把它们调回 6px / 7% 白——原型默认球径 148，
+// QKA 这颗只有 64。
 func TestFloatingBallStaysLegibleAt64px(t *testing.T) {
 	data, err := frontendFS.ReadFile("frontend/assets/orb-agent-speed.js")
 	if err != nil {
@@ -113,13 +126,21 @@ func TestFloatingBallStaysLegibleAt64px(t *testing.T) {
 	}
 	html := string(page)
 	for _, want := range []string{
-		`rgba(255, 255, 255, .94)`,
-		`rgba(255, 255, 255, .82)`,
-		`rgba(255, 255, 255, .72)`,
+		// 数值纯白 + 暗晕；单位 92% 白，活性态球体变亮时也不会糊掉。
+		`color: #fff;`,
+		`rgba(255, 255, 255, .92) !important`,
+		`filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, .9))`,
+		// 字号按文本长度自适应，长数字不出 36 段环。
+		`ballReadoutFontSize`,
+		`ballReadoutUnitSize`,
+		`setProperty("font-size"`,
 	} {
 		if !strings.Contains(html, want) {
-			t.Errorf("bar.html 的读数配色兜底缺少 %q", want)
+			t.Errorf("bar.html 的读数可读性兜底缺少 %q", want)
 		}
+	}
+	if strings.Contains(html, `class="title"`) {
+		t.Error("球面不应再显示称号：长称号会顶出球外")
 	}
 }
 
@@ -140,6 +161,9 @@ func TestBallPanelOptionsLoadSharedPanelPage(t *testing.T) {
 	}
 	if opts.BackgroundType != application.BackgroundTypeSolid {
 		t.Errorf("Windows 面板应使用不透明背景（panel.html 按 platform-opaque 铺底），实际 %+v", opts.BackgroundType)
+	}
+	if !opts.Windows.DisableFramelessWindowDecorations {
+		t.Error("面板是无边框自绘窗口，不能保留原生装饰（会多一条系统标题栏）")
 	}
 	// 弹出层按 compact scale 折算：窗口尺寸必须等于逻辑版面 × 系数，
 	// 且 panel.html 的 CSS zoom 用的是同一个值，否则会溢出或被裁切。
@@ -323,6 +347,9 @@ func TestPetMiniAndMenuOptionsAreFixed(t *testing.T) {
 	if !mini.Frameless || !mini.AlwaysOnTop || !mini.DisableResize || !mini.HideOnEscape {
 		t.Errorf("迷你宠物缺少浮层行为: %+v", mini)
 	}
+	if !mini.Windows.DisableFramelessWindowDecorations {
+		t.Error("迷你宠物不能保留原生装饰（会多一条系统标题栏）")
+	}
 	if mini.URL != "/petmini.html?theme=light" {
 		t.Errorf("迷你宠物应带主题 URL，实际 %q", mini.URL)
 	}
@@ -335,6 +362,9 @@ func TestPetMiniAndMenuOptionsAreFixed(t *testing.T) {
 	}
 	if !menu.Frameless || !menu.AlwaysOnTop || !menu.DisableResize || !menu.HideOnEscape {
 		t.Errorf("右键菜单缺少浮层行为: %+v", menu)
+	}
+	if !menu.Windows.DisableFramelessWindowDecorations {
+		t.Error("右键菜单不能保留原生装饰（会多一条系统标题栏）")
 	}
 	if menu.URL != "/ballmenu.html" {
 		t.Errorf("system 主题不应在 URL 中强制主题，实际 %q", menu.URL)
@@ -367,11 +397,11 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	if opts.BackgroundType != application.BackgroundTypeTransparent {
 		t.Errorf("悬浮球窗口应使用全透明背景（Transparent），避免系统材质在球四周留下一圈背景框，实际 %v", opts.BackgroundType)
 	}
-	// 白色标题栏（白底 + ×）用 DwmExtendFrameIntoClientArea(0) 清边距去掉
-	// （见 clearDwmFrame），不开 DisableFramelessWindowDecorations——后者会
-	// 连带改动透明窗口的 DComp 预置。
-	if opts.Windows.DisableFramelessWindowDecorations {
-		t.Error("不该用 DisableFramelessWindowDecorations（会破坏透明合成）")
+	// 不能保留原生装饰：Wails 在每次 WM_ACTIVATE 都会把 DWM 边框重新延伸
+	// 进客户区（DwmExtendFrameIntoClientArea(1)），透明页面上就是一层暗色
+	// 圆角底板 + 右上角 ×。创建后清一次边距留不住，必须从这个开关上关掉。
+	if !opts.Windows.DisableFramelessWindowDecorations {
+		t.Error("悬浮球窗口必须关闭原生装饰（DisableFramelessWindowDecorations）")
 	}
 	if !opts.Windows.HiddenOnTaskbar {
 		t.Error("悬浮球窗口不应出现在任务栏")
@@ -563,7 +593,8 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
 		`ball.style.setProperty("--dock-y"`,
-		`orb.setSize(Math.round((ball.clientWidth || window.innerWidth) / 1.9))`,
+		`orb.setSize(ballDiameter())`,
+		`layoutReadout(lastSpeedText)`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("贴边态页面缺少 %q", want)
