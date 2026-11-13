@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -54,48 +56,86 @@ type guiState struct {
 // GUI 装配并返回菜单栏 GUI（托盘 + 吸附面板 + 五页签主窗口）。
 // 调用方负责通过 Run() 进入事件循环。
 func (a *App) GUI() *gui.App {
-	// 自动执行不再提供用户开关：启动时幂等地把系统计划任务收敛为
-	// 「每 2 小时签到 + 每日活跃一次」。异步执行，不拖慢窗口出现。
+	// 首次启动安装默认自动执行计划（每 2 小时签到 + 每日活跃）；已有配置的
+	// 用户设置优先，界面可改间隔/内容或关闭。异步执行，不拖慢窗口出现。
 	go a.ensureDefaultSchedule()
 	return gui.New(a.guiDeps())
 }
 
-// ensureDefaultSchedule 把内置自动执行收敛到产品默认：始终开启、每 2 小时
-// 跑一次签到 + 每日活跃。失败只记日志（下次启动再收敛），绝不阻塞启动。
+// ensureDefaultSchedule 首次启动时安装默认自动执行计划；已有配置的用户
+// 设置优先，启动只做「系统任务缺失时按现有计划修复」，不会把间隔/动作改回
+// 默认值，也不会把用户关掉的自动执行重新打开。失败只记日志，绝不阻塞启动。
 func (a *App) ensureDefaultSchedule() {
-	// GUI() 用 `go a.ensureDefaultSchedule()` 异步收敛计划；零值/测试里
-	// `a` 可能是 nil，这里显式兜住，避免 goroutine 把整个测试进程带崩。
-	if a == nil {
+	// GUI() 用 `go a.ensureDefaultSchedule()` 异步收敛计划；零值与测试里
+	// `a` 可能是 nil。测试二进制更不能碰真实系统调度器：此前 go test 用临时
+	// 配置目录启动 GUI，会在开发机 launchd 里留下大量 com.qka.agent.* 任务。
+	if a == nil || testing.Testing() {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	exe, err := appExecutable()
 	if err != nil {
-		applog.Warnf("app", "自动执行默认计划：定位可执行文件失败：%v", err)
+		applog.Warnf("app", "自动执行：定位可执行文件失败：%v", err)
 		return
 	}
 	mgr := schedule.NewManager(a.cfg.ConfigDir, exe, scheduler.New(), a.now)
-	view, err := mgr.Get(ctx)
-	if err != nil {
-		applog.Warnf("app", "自动执行默认计划：读取状态失败：%v", err)
-		return
+	if err := ensureSchedulePlan(ctx, mgr, a.cfg.ConfigDir); err != nil {
+		applog.Warnf("app", "自动执行：初始化计划失败：%v", err)
 	}
-	if view.Enabled && view.Installed &&
-		view.IntervalMinutes == 120 && view.Action == schedule.ActionAll {
-		return
+}
+
+// ensureSchedulePlan 是 ensureDefaultSchedule 的可测核心：
+//   - 没有 schedule.json（首次启动）：安装默认计划（启用、120 分钟、all）；
+//   - 已有 schedule.json：保留用户选择，只在「启用但系统任务缺失」时重装；
+//   - 最后清理指向已删除程序/配置目录的陈旧系统任务。
+func ensureSchedulePlan(ctx context.Context, mgr *schedule.Manager, configDir string) error {
+	if mgr == nil {
+		return fmt.Errorf("自动执行：缺少计划管理器")
 	}
-	if _, err := mgr.SetConfig(ctx, 120, schedule.ActionAll); err != nil {
-		applog.Warnf("app", "自动执行默认计划：写入间隔失败：%v", err)
-		return
-	}
-	if !view.Enabled {
-		if _, err := mgr.SetEnabled(ctx, true); err != nil {
-			applog.Warnf("app", "自动执行默认计划：安装系统任务失败：%v", err)
-			return
+	if schedule.Exists(configDir) {
+		view, err := mgr.Get(ctx)
+		if err != nil {
+			return err
 		}
+		if view.Enabled && !view.Installed {
+			if _, err := mgr.SetEnabled(ctx, true); err != nil {
+				return err
+			}
+			applog.Infof("app", "自动执行：系统任务缺失，已按现有计划重新安装")
+		}
+	} else {
+		if _, err := mgr.SetConfig(ctx, schedule.DefaultIntervalMinutes, schedule.ActionAll); err != nil {
+			return err
+		}
+		if _, err := mgr.SetEnabled(ctx, true); err != nil {
+			return err
+		}
+		applog.Infof("app", "首次启动：已启用默认自动执行（每 2 小时签到 + 每日活跃）")
 	}
-	applog.Infof("app", "自动执行已按默认计划运行：每 2 小时签到并执行每日活跃")
+	pruneStaleSchedules(ctx, mgr)
+	return nil
+}
+
+// pruneStaleSchedules 清理系统调度器里已经没有对应程序/配置目录的旧任务。
+// 调度器未实现 Pruner（例如测试桩）时静默跳过。
+func pruneStaleSchedules(ctx context.Context, mgr *schedule.Manager) {
+	pruner, ok := mgr.Scheduler.(scheduler.Pruner)
+	if !ok {
+		return
+	}
+	removed, err := pruner.PruneOrphans(ctx, scheduler.Spec{
+		Executable:      mgr.Executable,
+		ConfigDir:       mgr.ConfigDir,
+		IntervalMinutes: schedule.DefaultIntervalMinutes,
+	})
+	if err != nil {
+		applog.Warnf("app", "自动执行：清理陈旧任务失败：%v", err)
+		return
+	}
+	if removed > 0 {
+		applog.Infof("app", "自动执行：已清理 %d 个陈旧的系统任务", removed)
+	}
 }
 
 func (a *App) guiDeps() gui.Deps {

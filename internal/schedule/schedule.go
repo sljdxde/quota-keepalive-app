@@ -21,8 +21,8 @@ const (
 	// FileName is the auto-run state file under the QKA config directory.
 	FileName = "schedule.json"
 	lockName = "schedule.lock"
-	// DefaultIntervalMinutes is the product default: 自动执行固定每 2 小时
-	// 跑一次签到与每日活跃，不再提供用户可选间隔。
+	// DefaultIntervalMinutes 是首次启动时的默认间隔（每 2 小时）；之后用户
+	// 可以在界面上改间隔/动作或关闭自动执行，启动逻辑不再覆盖用户选择。
 	DefaultIntervalMinutes = 120
 	// TimezoneLocal means the system task follows the current machine timezone.
 	TimezoneLocal = "local"
@@ -70,8 +70,8 @@ type Config struct {
 	LastRun         *LastRun `json:"last_run,omitempty"`
 }
 
-// Default returns a disabled schedule using local time. Installing a system
-// task remains an explicit user action.
+// Default returns a disabled schedule using local time. The GUI installs this
+// plan once on first launch; afterwards the user's saved choice wins.
 func Default() Config {
 	return Config{
 		Enabled:         false,
@@ -135,6 +135,13 @@ func NextRunAt(now time.Time, intervalMinutes int) (time.Time, error) {
 		return time.Time{}, ErrInvalidInterval
 	}
 	return now.Add(time.Duration(intervalMinutes) * time.Minute), nil
+}
+
+// Exists reports whether schedule.json has been written (i.e. the user or a
+// previous run has already chosen a plan). A missing file means first run.
+func Exists(configDir string) bool {
+	_, err := os.Stat(filepath.Join(configDir, FileName))
+	return err == nil
 }
 
 // Load reads schedule.json. A missing file returns the disabled default.

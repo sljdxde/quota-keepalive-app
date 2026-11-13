@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"qka/internal/atomicfile"
@@ -198,4 +199,42 @@ func (s *darwinScheduler) Status(ctx context.Context, spec Spec) (Status, error)
 		return Status{}, err
 	}
 	return Status{Installed: loaded, PowerPolicy: "当前用户登录后运行"}, nil
+}
+
+// pruneLabelPattern 只匹配「自动执行」任务（com.qka.agent.<8 位 hash>），
+// 不碰登录自启的 com.qka.agent。
+var pruneLabelPattern = regexp.MustCompile(`^com\.qka\.agent\.[0-9a-f]{8}$`)
+
+// PruneOrphans 清理 launchctl 里已经没有 plist 的 QKA 自动执行任务。
+// 这类条目通常来自测试二进制（go test 用临时配置目录启动 GUI）或已删除的
+// 配置目录；它们每次都会按 StartInterval 尝试启动已经不存在的程序。
+// plist 仍存在的条目可能属于另一个仍在使用的配置目录，保留不动。
+func (s *darwinScheduler) PruneOrphans(ctx context.Context, current Spec) (int, error) {
+	out, err := s.run(ctx, "launchctl", "list")
+	if err != nil {
+		return 0, fmt.Errorf("scheduler: launchctl list: %w", err)
+	}
+	keep := LaunchdLabel(current.ConfigDir)
+	removed := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		label := fields[len(fields)-1]
+		if label == keep || !pruneLabelPattern.MatchString(label) {
+			continue
+		}
+		plist := filepath.Join(s.home, "Library", "LaunchAgents", label+".plist")
+		if _, statErr := os.Stat(plist); statErr == nil {
+			// 还有 plist：可能是另一个仍在用的配置目录，交给用户/其目录清理。
+			continue
+		}
+		if _, bootErr := s.run(ctx, "launchctl", "bootout", "gui/"+s.uid+"/"+label); bootErr != nil {
+			// 可能已被别的进程移除；继续清理其它条目。
+			continue
+		}
+		removed++
+	}
+	return removed, nil
 }

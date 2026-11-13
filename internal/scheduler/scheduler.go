@@ -41,6 +41,14 @@ type Scheduler interface {
 	Status(ctx context.Context, spec Spec) (Status, error)
 }
 
+// Pruner is an optional capability: remove auto-run entries left behind by
+// test binaries or config directories that no longer exist. Implementations
+// must never touch the entry for the current config directory or the login
+// item (com.qka.agent / HKCU Run).
+type Pruner interface {
+	PruneOrphans(ctx context.Context, current Spec) (int, error)
+}
+
 // TaskHash derives a stable short identifier from the canonical config path.
 func TaskHash(configDir string) string {
 	canonical := filepath.Clean(configDir)

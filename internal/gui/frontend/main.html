@@ -1757,6 +1757,15 @@
     width: 28px; height: 28px; flex: none;
     color: var(--accent); background: var(--accent-soft);
   }
+  .schedule-strip .select-shell { flex: none; }
+  .schedule-interval-shell { width: 118px; }
+  .schedule-action-shell { width: 148px; }
+  .schedule-strip .select-shell select { height: 29px; }
+  .schedule-strip #schedule-toggle { flex: none; padding: 0 6px; }
+  @media (max-width: 760px) {
+    .schedule-strip { flex-wrap: wrap; }
+    .schedule-strip .copy { flex: 1 0 100%; }
+  }
   .speed-hero {
     position: relative; overflow: hidden;
     display: grid; grid-template-columns: 213px minmax(0, 1fr) 176px;
@@ -2778,9 +2787,31 @@
           <span class="sep"></span>
           <span id="apps-last">—</span>
         </div>
-        <p class="muted" style="margin:-6px 0 10px;font-size:var(--fs-xs);line-height:1.5;">
-          <b id="schedule-title">自动执行：读取中</b> · <span id="schedule-detail">正在读取 Quota Keepalive 内置周期计划</span>
-        </p>
+        <div class="schedule-strip" aria-live="polite">
+          <div class="copy">
+            <b id="schedule-title">自动执行：读取中</b>
+            <small id="schedule-detail">正在读取 Quota Keepalive 内置周期计划</small>
+          </div>
+          <span class="select-shell schedule-interval-shell">
+            <select id="schedule-interval" aria-label="自动执行间隔">
+              <option value="30">每 30 分钟</option>
+              <option value="60">每 1 小时</option>
+              <option value="120">每 2 小时</option>
+              <option value="180">每 3 小时</option>
+              <option value="360">每 6 小时</option>
+              <option value="720">每 12 小时</option>
+              <option value="1440">每天</option>
+            </select>
+          </span>
+          <span class="select-shell schedule-action-shell">
+            <select id="schedule-action" aria-label="自动执行内容">
+              <option value="all">签到 + 每日活跃</option>
+              <option value="checkin">仅签到</option>
+              <option value="activity">仅每日活跃</option>
+            </select>
+          </span>
+          <button type="button" class="text" id="schedule-toggle">关闭</button>
+        </div>
         <div class="list-head">
           <input class="input" id="apps-search" type="search" placeholder="搜索应用" aria-label="搜索应用">
         </div>
@@ -3925,19 +3956,42 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return pill;
   }
 
+  // 自动执行的控件与状态（Apps 页）：用户在这里改间隔/内容或开关；
+  // 启动逻辑只负责首次安装与「任务缺失时修复」，不再覆盖用户选择。
+  function syncScheduleInterval(select, minutes) {
+    const value = String(Number(minutes) || 120);
+    if (!Array.from(select.options).some(function (option) { return option.value === value; })) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = scheduleIntervalText(Number(value));
+      select.appendChild(option);
+    }
+    select.value = value;
+  }
+
   async function renderSchedule() {
     const title = document.getElementById("schedule-title");
     const detail = document.getElementById("schedule-detail");
+    const interval = document.getElementById("schedule-interval");
+    const action = document.getElementById("schedule-action");
+    const toggle = document.getElementById("schedule-toggle");
+    if (!title || !detail || !interval || !action || !toggle) return;
+    toggle.disabled = true;
     try {
       const view = asJSON(await Bound.ScheduleGet());
+      syncScheduleInterval(interval, view.interval_minutes);
+      action.value = view.action || "all";
+      toggle.disabled = false;
       if (!view.enabled) {
         title.textContent = "自动执行：已关闭";
-        detail.textContent = "请重启 Quota Keepalive，启动时会自动恢复默认计划";
+        detail.textContent = "不会自动签到；点「启用」按当前间隔与内容恢复";
+        toggle.textContent = "启用";
         return;
       }
       if (!view.installed) {
         title.textContent = "自动执行：需要修复";
-        detail.textContent = "请重启 Quota Keepalive，启动时会自动重新安装系统任务";
+        detail.textContent = "系统任务缺失，点「修复」按当前计划重新安装";
+        toggle.textContent = "修复";
         return;
       }
       const last = view.last_run
@@ -3947,10 +4001,38 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         " · " + scheduleIntervalText(view.interval_minutes);
       detail.textContent = "由系统调度按 " + scheduleIntervalText(view.interval_minutes) +
         "锚定执行（本机时间） · " + last;
+      toggle.textContent = "关闭";
     } catch (_) {
       title.textContent = "自动执行：读取失败";
       detail.textContent = "请刷新后重试";
+      toggle.textContent = "关闭";
     }
+  }
+
+  async function saveScheduleConfig() {
+    const detail = document.getElementById("schedule-detail");
+    const interval = Number(document.getElementById("schedule-interval").value) || 120;
+    const action = document.getElementById("schedule-action").value || "all";
+    try {
+      await Bound.ScheduleSetConfig(interval, action);
+    } catch (err) {
+      detail.textContent = "保存失败：" + (err && err.message ? err.message : err);
+      return;
+    }
+    renderSchedule();
+  }
+
+  async function toggleScheduleEnabled() {
+    const detail = document.getElementById("schedule-detail");
+    try {
+      const view = asJSON(await Bound.ScheduleGet());
+      // 已启用但系统任务缺失时，「修复」同样是重新启用（按当前计划重装）。
+      await Bound.ScheduleSetEnabled(!view.enabled || !view.installed);
+    } catch (err) {
+      detail.textContent = "操作失败：" + (err && err.message ? err.message : err);
+      return;
+    }
+    renderSchedule();
   }
 
   function scheduleIntervalText(minutes) {
@@ -3961,7 +4043,9 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   function scheduleActionText(action) {
-    return "签到";
+    if (action === "checkin") return "仅签到";
+    if (action === "activity") return "仅每日活跃";
+    return "签到 + 每日活跃";
   }
 
   function settingsMessage(text, isError) {
@@ -8202,7 +8286,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   });
   renderFreeTokenTiers();
 
+  document.getElementById("schedule-interval").addEventListener("change", saveScheduleConfig);
+  document.getElementById("schedule-action").addEventListener("change", saveScheduleConfig);
+  document.getElementById("schedule-toggle").addEventListener("click", toggleScheduleEnabled);
+
   renderApps();
+  renderSchedule();
   renderAccounts();
   renderSettings();
   refreshTokenSpeed();
