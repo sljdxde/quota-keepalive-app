@@ -9,6 +9,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // Windows 平台标记：字体栈、字重与最小字号在 qka-ui.css 里按它分平台。
+    // 用 navigator.platform（而非 UA 字符串）与 main.html 既有判断保持同源。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-win32");
+    }
   })();
 </script>
 <link rel="stylesheet" href="assets/qka-ui.css">
@@ -20,10 +25,11 @@
     margin: 0; padding: 0; width: 100%; height: 100%;
     background: var(--card); overflow: hidden;
     -webkit-user-select: none; user-select: none;
-    font: 400 12.5px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI",
-      "PingFang SC", "Microsoft YaHei", sans-serif;
+    font: 400 12.5px/1.45 "QKA Sans SC", -apple-system, BlinkMacSystemFont,
+      "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+      "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     color: var(--ink);
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; /* 仅 macOS 生效；Windows/WebView2 忽略 */
   }
   .menu {
     width: 100%; height: 100%;

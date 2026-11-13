@@ -9,6 +9,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // Windows 平台标记：字体栈、字重与最小字号在 qka-ui.css 里按它分平台。
+    // 用 navigator.platform（而非 UA 字符串）与 main.html 既有判断保持同源。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-win32");
+    }
   })();
 </script>
 <link rel="stylesheet" href="assets/qka-ui.css">

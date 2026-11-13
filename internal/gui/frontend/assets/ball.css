@@ -27,7 +27,7 @@ html, body {
     system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
     "Noto Sans CJK SC", sans-serif;
   color: var(--ink);
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: antialiased; /* 仅 macOS 生效；Windows 忽略 */
 }
 
 /* ============================================================ 悬浮球
@@ -439,7 +439,7 @@ html, body {
 .ball-panel .h .live {
   display: inline-flex; align-items: center; gap: 5px;
   max-width: 100%;
-  font-size: var(--fs-xs); color: var(--ink2); font-weight: 560;
+  font-size: var(--fs-xs); color: var(--ink2); font-weight: 500;
 }
 .ball-panel .h .live .dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -467,7 +467,7 @@ html, body {
 }
 .ball-panel.idle .h .rank .lvl { background: var(--bg2); color: var(--ink3); }
 .ball-panel .h .rank .nm {
-  font-weight: 560; min-width: 0;
+  font-weight: 500; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ball-panel .h .rank .nx {

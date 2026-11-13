@@ -9,6 +9,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // Windows 平台标记：字体栈、字重与最小字号在 qka-ui.css 里按它分平台。
+    // 用 navigator.platform（而非 UA 字符串）与 main.html 既有判断保持同源。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-win32");
+    }
     // Windows/Linux 主窗口保留系统原生标题栏：顶栏不需要为 macOS 红绿灯
     // 留左侧安全区，直接贴边。
     if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
@@ -96,7 +101,10 @@
        随半径近似平方增长；Windows 虚拟机（软件渲染）下 50px 会明显卡顿。 */
     --glass-blur: 14px;
     --glass-sat: 1.3;
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+    --font: "QKA Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+            "Segoe UI Variable Text", "Segoe UI", system-ui,
+            "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+            "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     /* 主窗口统一字号阶梯（与菜单栏面板同源）。禁止再用 10.8/11.2/11.8 这类
        半像素级的手工微调值：窗口里字号的种类一多，层级就看不出差别了。 */
     --fs-3xs: 8.5px;   /* 辅助小字 */
@@ -220,7 +228,7 @@
     color: var(--fg);
     background: var(--bg);
     font: 400 var(--fs-md)/1.45 var(--font);
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; /* 仅 macOS 生效；Windows/WebView2 忽略 */
     overflow: hidden;
   }
   body.has-custom-bg {
@@ -339,13 +347,13 @@
   }
   .update-banner[hidden] { display: none; }
   .update-banner .spacer { flex: 1; }
-  .update-banner b { font-weight: 650; }
+  .update-banner b { font-weight: 600; }
   .brand {
     grid-column: 1;
     justify-self: start;
     min-width: 0; overflow: hidden;
     display: flex; align-items: center; gap: 9px;
-    font-size: var(--fs-md); font-weight: 690; letter-spacing: .012em;
+    font-size: var(--fs-md); font-weight: 600; letter-spacing: .012em;
   }
   .brand-name {
     overflow: hidden;
@@ -376,7 +384,7 @@
   }
   .nav button {
     position: relative; height: 28px; padding: 0 11px; border: 0; border-radius: 7px;
-    color: var(--muted); background: transparent; font-size: var(--fs-md); font-weight: 550;
+    color: var(--muted); background: transparent; font-size: var(--fs-md); font-weight: 500;
     white-space: nowrap; display: inline-flex; align-items: center; gap: 5px;
     transition: color .14s ease, background .14s ease;
   }
@@ -410,7 +418,7 @@
   }
   .page-head { display: flex; align-items: flex-start; gap: 12px; margin: 0 2px 14px; }
   .page-head .copy { min-width: 0; }
-  .page-head h1 { margin: 0; font-size: var(--fs-2xl); line-height: 1.25; font-weight: 650; letter-spacing: -.02em; }
+  .page-head h1 { margin: 0; font-size: var(--fs-2xl); line-height: 1.25; font-weight: 600; letter-spacing: -.02em; }
   .page-head p { margin: 5px 0 0; color: var(--fg-2); font-size: var(--fs-md); line-height: 1.5; }
   .page-head .end { margin-left: auto; display: flex; align-items: center; gap: 7px; flex: none; }
   .summary {
@@ -428,7 +436,7 @@
   .summary .seal svg { width: 20px; height: 20px; }
   .summary .copy { min-width: 0; }
   .summary .kicker { color: var(--fg-2); font-size: var(--fs-sm); }
-  .summary b { display: block; margin-top: 1px; font-size: var(--fs-xl); font-weight: 620; letter-spacing: -.015em; }
+  .summary b { display: block; margin-top: 1px; font-size: var(--fs-xl); font-weight: 600; letter-spacing: -.015em; }
   .summary .stats { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .summary .meta { color: var(--fg-2); font-size: var(--fs-sm); text-align: right; line-height: 1.55; }
   .summary .meta b { display: inline; color: var(--fg); font-size: var(--fs-sm); font-weight: 600; }
@@ -490,7 +498,7 @@
     color: var(--fg-2); background: transparent;
   }
   .apps-group-head b,
-  .apps-disabled > summary b { color: var(--fg); font-size: var(--fs-sm); font-weight: 620; }
+  .apps-disabled > summary b { color: var(--fg); font-size: var(--fs-sm); font-weight: 600; }
   .apps-group-head small,
   .apps-disabled > summary small {
     display: inline-grid; min-width: 18px; height: 18px; padding: 0 5px;
@@ -515,7 +523,7 @@
   .app-main .app-icon img,
   .app-main .app-icon .provider-glyph { width: 18px; height: 18px; }
   .app-copy { min-width: 0; }
-  .app-copy .title { display: flex; align-items: center; gap: 7px; font-size: var(--fs-md); font-weight: 620; white-space: nowrap; }
+  .app-copy .title { display: flex; align-items: center; gap: 7px; font-size: var(--fs-md); font-weight: 600; white-space: nowrap; }
   .app-copy .sub {
     margin-top: 2px; color: var(--fg-2); font-size: var(--fs-sm);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -527,7 +535,7 @@
   .app-status-line i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
   .app-status-line i.good { background: var(--green); }
   .app-status-line i.warn { background: var(--amber); }
-  .app-state b { font-size: var(--fs-sm); font-weight: 620; white-space: nowrap; }
+  .app-state b { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; }
   .app-state small { display: block; margin-top: 2px; color: var(--fg-2); font-size: var(--fs-sm); white-space: nowrap; }
   .app-state.good b { color: var(--green); }
   .app-state.warn b { color: var(--amber); }
@@ -669,7 +677,7 @@
     border: 0; border-radius: 7px;
     color: var(--fg-2); background: var(--bg2);
     box-shadow: inset 0 0 0 .5px var(--line);
-    font: inherit; font-size: var(--fs-sm); font-weight: 560; cursor: pointer;
+    font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
   }
   .mini-action:hover { background: var(--card-2); color: var(--fg); }
   .mini-action:disabled { opacity: .55; cursor: default; }
@@ -724,7 +732,7 @@
     box-shadow: inset 0 0 0 .5px var(--line-2);
   }
   .provider-model-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
-  .provider-model-head b { color: var(--fg); font-size: var(--fs-sm); font-weight: 620; }
+  .provider-model-head b { color: var(--fg); font-size: var(--fs-sm); font-weight: 600; }
   .provider-model-head small { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); }
   .provider-model-list { display: flex; flex-wrap: wrap; gap: 5px; }
   .provider-model-chip {
@@ -743,7 +751,7 @@
   .provider-model-chip em {
     flex: none; padding: 1px 4px; border-radius: 4px;
     color: var(--green); background: var(--green-soft);
-    font-size: var(--fs-2xs); font-style: normal; font-weight: 620;
+    font-size: var(--fs-2xs); font-style: normal; font-weight: 600;
   }
   .provider-model-chip i { flex: none; color: var(--muted); font-size: var(--fs-2xs); font-style: normal; }
   .provider-model-foot {
@@ -776,7 +784,7 @@
     padding: 1px 6px;
     border-radius: 999px;
     font-size: var(--fs-2xs);
-    font-weight: 620;
+    font-weight: 600;
     white-space: nowrap;
   }
   .provider-model-summary.good { color: var(--green); background: var(--green-soft); }
@@ -786,7 +794,7 @@
     height: 22px; padding: 0 8px; border: 0; border-radius: 6px;
     color: var(--fg-2); background: color-mix(in srgb, var(--card-2) 80%, transparent);
     box-shadow: inset 0 0 0 .5px var(--line);
-    font-size: var(--fs-xs); font-weight: 560; cursor: pointer;
+    font-size: var(--fs-xs); font-weight: 500; cursor: pointer;
   }
   .provider-model-batch:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); }
   .provider-model-batch:disabled { opacity: .45; cursor: default; }
@@ -962,7 +970,7 @@
   }
   .log-categories button {
     height: 27px; padding: 0 11px; border: 0; border-radius: 6px;
-    color: var(--muted); background: transparent; font-size: var(--fs-sm); font-weight: 560;
+    color: var(--muted); background: transparent; font-size: var(--fs-sm); font-weight: 500;
   }
   .log-categories button:hover { color: var(--fg); }
   .log-categories button.active {
@@ -1023,7 +1031,7 @@
     border-radius: 999px;
     background: var(--bg2);
     box-shadow: inset 0 0 0 .5px var(--line);
-    color: var(--fg-2); font-size: var(--fs-sm); font-weight: 560;
+    color: var(--fg-2); font-size: var(--fs-sm); font-weight: 500;
     cursor: pointer;
   }
   .settings-inline-toggle:hover { color: var(--fg); }
@@ -1075,7 +1083,7 @@
     background: var(--card);
     color: var(--fg-2);
     font-size: var(--fs-sm);
-    font-weight: 560;
+    font-weight: 500;
   }
   .settings-choice.settings-actions button:hover:not(:disabled) {
     border-color: var(--accent);
@@ -1199,7 +1207,7 @@
     background: color-mix(in srgb, var(--pet-accent, var(--accent)) 10%, var(--card));
     box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--pet-accent, var(--accent)) 20%, transparent);
     font-size: var(--fs-sm);
-    font-weight: 720;
+    font-weight: 700;
     text-align: center;
   }
   .pet-console-level small {
@@ -1207,7 +1215,7 @@
     margin-top: 2px;
     color: var(--muted);
     font-size: var(--fs-3xs);
-    font-weight: 550;
+    font-weight: 500;
   }
   .main-pet-stage {
     position: relative;
@@ -1339,7 +1347,7 @@
     background: var(--card);
     box-shadow: 3px 3px 0 var(--fg), 0 10px 20px rgba(0,0,0,.16);
     font-size: var(--fs-md);
-    font-weight: 760;
+    font-weight: 700;
     line-height: 1.35;
     transform: rotate(-1.4deg);
     transform-origin: 0 100%;
@@ -1393,7 +1401,7 @@
   .main-pet-popup span {
     display: inline-block;
     font-size: var(--fs-lg);
-    font-weight: 800;
+    font-weight: 700;
     font-style: italic;
     letter-spacing: .1em;
     color: #17191e;
@@ -1546,7 +1554,7 @@
   .main-pet-charge-label {
     color: var(--muted);
     font-size: var(--fs-3xs);
-    font-weight: 650;
+    font-weight: 600;
     letter-spacing: .12em;
     text-transform: uppercase;
   }
@@ -1587,7 +1595,7 @@
   .main-pet-metric b small {
     color: var(--fg-2);
     font-size: var(--fs-2xs);
-    font-weight: 550;
+    font-weight: 500;
   }
   .pet-roster-card {
     display: flex;
@@ -1881,7 +1889,7 @@
   .speed-title-picker {
     margin-left: auto; height: 31px; padding: 0 10px; border: 0;
     border-radius: 8px; color: var(--fg-2); background: transparent;
-    box-shadow: inset 0 0 0 .5px var(--line); font-size: var(--fs-sm); font-weight: 560;
+    box-shadow: inset 0 0 0 .5px var(--line); font-size: var(--fs-sm); font-weight: 500;
     display: inline-flex; align-items: center; gap: 5px;
   }
   .speed-title-picker:hover { color: var(--fg); background: var(--pill-hover); }
@@ -1898,12 +1906,12 @@
   }
   .speed-setting { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
   .speed-setting[hidden] { display: none; }
-  .speed-setting-label { color: var(--muted); font-size: var(--fs-2xs); font-weight: 650; letter-spacing: .04em; white-space: nowrap; }
+  .speed-setting-label { color: var(--muted); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
   .speed-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--pill); }
   .speed-seg button {
     height: 22px; padding: 0 8px; border: 0; border-radius: 5px;
     color: var(--fg-2); background: transparent;
-    font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
+    font-size: var(--fs-xs); font-weight: 500; white-space: nowrap;
     transition: background .14s ease, color .14s ease, box-shadow .14s ease;
   }
   .speed-seg button:hover { color: var(--fg); }
@@ -1935,7 +1943,7 @@
   }
   .speed-rank-head {
     display: flex; align-items: center; justify-content: space-between;
-    color: var(--muted); font-size: var(--fs-2xs); font-weight: 650;
+    color: var(--muted); font-size: var(--fs-2xs); font-weight: 600;
     letter-spacing: .08em; text-transform: uppercase;
   }
   .speed-rank-head b {
@@ -2057,7 +2065,7 @@
   .provider-login-pokemon-overline {
     position: absolute; z-index: 4; left: 22px; top: 20px;
     color: color-mix(in srgb, #705d24 72%, transparent);
-    font-size: var(--fs-2xs); font-weight: 760; letter-spacing: .17em;
+    font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .17em;
     text-transform: uppercase;
   }
   .provider-login-pokemon-bubble {
@@ -2069,7 +2077,7 @@
     box-shadow:
       0 10px 24px rgba(82, 55, 30, .10),
       inset 0 .5px 0 rgba(255,255,255,.9);
-    font-size: var(--fs-sm); font-weight: 650; line-height: 1.35;
+    font-size: var(--fs-sm); font-weight: 600; line-height: 1.35;
     backdrop-filter: blur(10px);
     transition: transform .22s ease, opacity .22s ease;
   }
@@ -2154,7 +2162,7 @@
     position: absolute; z-index: 5; left: 22px; bottom: 17px;
     display: flex; align-items: center; gap: 7px;
     color: color-mix(in srgb, #625122 68%, transparent);
-    font-size: var(--fs-xs); font-weight: 610; letter-spacing: .01em;
+    font-size: var(--fs-xs); font-weight: 600; letter-spacing: .01em;
   }
   .provider-login-pokemon-note::before {
     content: "";
@@ -2211,7 +2219,7 @@
     flex: none;
   }
   .provider-login-head > div { flex: 1; min-width: 0; }
-  .provider-login-head h2 { margin: 0; font-size: var(--fs-xl); font-weight: 680; }
+  .provider-login-head h2 { margin: 0; font-size: var(--fs-xl); font-weight: 600; }
   .provider-login-head p { margin: 5px 0 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
   .provider-login-head button {
     width: 28px; height: 28px; border: 0; border-radius: 8px;
@@ -2314,7 +2322,7 @@
   }
   .title-dialog-mark svg { width: 16px; height: 16px; }
   .title-dialog-copy { flex: 1; min-width: 0; }
-  .title-dialog-copy h2 { margin: 0; font-size: var(--fs-lg); line-height: 1.25; font-weight: 650; }
+  .title-dialog-copy h2 { margin: 0; font-size: var(--fs-lg); line-height: 1.25; font-weight: 600; }
   .title-dialog-copy p { margin: 4px 0 0; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.45; }
   .title-dialog-close {
     width: 28px; height: 28px; border: 0; border-radius: 7px; color: var(--muted); background: transparent;
@@ -2330,7 +2338,7 @@
     padding: 10px 16px 12px; display: flex; justify-content: flex-end; gap: 7px;
     border-top: .5px solid var(--line-2); flex: none;
   }
-  .title-dialog-foot button { height: 29px; padding: 0 12px; border: 0; border-radius: 7px; font-size: var(--fs-sm); font-weight: 610; }
+  .title-dialog-foot button { height: 29px; padding: 0 12px; border: 0; border-radius: 7px; font-size: var(--fs-sm); font-weight: 600; }
   .title-dialog-cancel { color: var(--fg-2); background: var(--pill); box-shadow: inset 0 0 0 .5px var(--line); }
   .title-dialog-save {
     color: var(--title-accent);
@@ -2345,7 +2353,7 @@
   .title-picker-rail-label {
     display: flex; align-items: baseline; gap: 7px;
     min-height: 27px; padding: 0 6px 5px;
-    color: var(--fg-2); font-size: var(--fs-xs); font-weight: 620;
+    color: var(--fg-2); font-size: var(--fs-xs); font-weight: 600;
   }
   .title-picker-rail-label small { color: var(--muted); font-size: var(--fs-2xs); font-weight: 500; }
   .title-theme-grid { display: grid; grid-template-columns: minmax(0,1fr); gap: 2px; }
@@ -2374,7 +2382,7 @@
   .title-theme-glyph .title-rank-mark { --title-rank-size: 27px; padding: 1px; }
   .title-theme-glyph .title-rank-count { display: none; }
   .title-theme-copy { min-width: 0; flex: 1; }
-  .title-theme-copy b { display: block; font-size: var(--fs-lg); font-weight: 630; }
+  .title-theme-copy b { display: block; font-size: var(--fs-lg); font-weight: 600; }
   .title-theme-copy small {
     display: block; margin-top: 1px; color: var(--muted); font-size: var(--fs-xs);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2406,7 +2414,7 @@
   }
   .title-ladder-preview .title-rank-count { display: none; }
   .title-ladder-title { min-width: 0; display: grid; gap: 2px; }
-  .title-ladder-head b { font-size: var(--fs-lg); font-weight: 650; }
+  .title-ladder-head b { font-size: var(--fs-lg); font-weight: 600; }
   .title-ladder-head small { color: var(--muted); font-size: var(--fs-xs); }
   .title-ladder-head .spacer { flex: 1; }
   .title-ladder-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -2431,7 +2439,7 @@
   }
   .title-level-icon .title-rank-mark { --title-rank-size: 20px; padding: 1px; }
   .title-level-icon .title-rank-count { display: none; }
-  .title-level-name { min-width: 0; font-size: var(--fs-lg); font-weight: 610; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title-level-name { min-width: 0; font-size: var(--fs-lg); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .title-level-speed { color: var(--muted); font: 10px/1.2 var(--code); font-variant-numeric: tabular-nums; white-space: nowrap; }
   html[data-theme="dark"] .title-picker-rail {
     background: color-mix(in srgb, var(--card-2) 82%, transparent);
@@ -2450,7 +2458,7 @@
   .speed-rank-caption {
     display: grid; gap: 3px; text-align: center;
   }
-  .speed-rank-caption b { color: var(--fg); font-size: var(--fs-xl); line-height: 1.2; font-weight: 680; }
+  .speed-rank-caption b { color: var(--fg); font-size: var(--fs-xl); line-height: 1.2; font-weight: 600; }
   .speed-rank-caption span { color: var(--muted); font-size: var(--fs-2xs); }
   .speed-rank-caption #speed-rank-theme { color: var(--title-accent); font-size: var(--fs-xs); font-weight: 600; }
   @media (prefers-reduced-motion: reduce) {
@@ -2482,7 +2490,7 @@
     grid-column: 2; grid-row: 1 / span 2; align-self: center; justify-self: end;
     /* 数值绝不截断/换行：它是这一格的信息本体（38.1k、1.00k、3 之类），
        截成 "3…" 比溢出更糟。空间不够时由左边的标签/提示让位。 */
-    margin-top: 0; font-size: var(--fs-2xl); line-height: 1.05; font-weight: 680;
+    margin-top: 0; font-size: var(--fs-2xl); line-height: 1.05; font-weight: 600;
     letter-spacing: -.03em; font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -2628,7 +2636,7 @@
   .ft-hero {
     margin: 0 2px 12px; padding: 14px 16px; border-radius: 12px;
     background: var(--card); box-shadow: inset 0 0 0 .5px var(--line);
-    color: var(--fg); font-size: var(--fs-lg); font-weight: 620; letter-spacing: -.01em;
+    color: var(--fg); font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.01em;
   }
   .ft-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 2px 12px; }
   .ft-tiers { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -2674,7 +2682,7 @@
   .ft-title .ft-open:hover { color: var(--accent); }
   .ft-kind {
     flex: none; padding: 1px 6px; border-radius: 5px; font-size: var(--fs-2xs);
-    font-weight: 650; color: var(--accent); background: var(--accent-soft);
+    font-weight: 600; color: var(--accent); background: var(--accent-soft);
   }
   .ft-meta {
     margin-top: 3px; display: flex; flex-wrap: wrap; gap: 3px 8px;

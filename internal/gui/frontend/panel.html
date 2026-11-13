@@ -11,6 +11,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // Windows 平台标记：字体栈、字重与最小字号在 qka-ui.css 里按它分平台。
+    // 用 navigator.platform（而非 UA 字符串）与 main.html 既有判断保持同源。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-win32");
+    }
     // 非 macOS：面板窗口是不透明背景（Win10 没有 DWM 半透明），body 必须铺上
     // 面板底色，否则窗口四角会露出默认白/黑底。
     if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
@@ -65,9 +70,10 @@
     --title-accent-soft: #eeedfd;
     --title-icon-muted: #707079;
     --shadow: inset 0 .5px 0 rgba(255,255,255,.78), inset 0 0 0 .5px rgba(0,0,0,.12);
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
-            system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
-            "Noto Sans CJK SC", sans-serif;
+    --font: "QKA Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+            "Segoe UI Variable Text", "Segoe UI", system-ui,
+            "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+            "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     /* 面板统一字号阶梯：所有文字只允许用这几档，避免同一窗口里出现 9/9.5/10/10.5/11/11.5
        混排导致「签到页比速度页明显更大」。档位按速度页（信息密度最高的一页）定。 */
     --fs-3xs: 8.5px;   /* 辅助小字 */
@@ -136,7 +142,7 @@
     color: var(--fg);
     background: transparent;
     font: 400 13px/1.4 var(--font);
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; /* 仅 macOS 生效；Windows/WebView2 忽略 */
     -webkit-user-select: none;
     overflow: hidden;
   }
@@ -217,7 +223,7 @@
   }
   .speed-caption {
     display: flex; align-items: center; gap: 7px;
-    color: var(--fg-2); font-size: var(--fs-sm); font-weight: 560;
+    color: var(--fg-2); font-size: var(--fs-sm); font-weight: 500;
   }
   .speed-live {
     width: 7px; height: 7px; border-radius: 50%;
@@ -234,7 +240,7 @@
   .speed-line { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; }
   .speed-line strong {
     min-width: 1.6ch; color: var(--fg);
-    font-size: var(--fs-display); line-height: .94; font-weight: 730;
+    font-size: var(--fs-display); line-height: .94; font-weight: 700;
     letter-spacing: -.055em; font-variant-numeric: tabular-nums;
   }
   /* 滚轮状态：位移单位是 em，行高必须为 1、字距必须为 0，
@@ -313,7 +319,7 @@
     overflow: hidden;
     color: var(--fg);
     font-size: var(--fs-sm);
-    font-weight: 620;
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -326,7 +332,7 @@
     white-space: nowrap;
   }
   .summary { text-align: right; }
-  .summary b { display: block; color: var(--fg-2); font-size: var(--fs-md); font-weight: 560; white-space: nowrap; }
+  .summary b { display: block; color: var(--fg-2); font-size: var(--fs-md); font-weight: 500; white-space: nowrap; }
   .summary small { display: block; margin-top: 2px; color: var(--fg-2); font-size: var(--fs-3xs); white-space: nowrap; }
   .summary.good b { color: var(--green); }
   .summary.warn b { color: var(--amber); }
@@ -348,7 +354,7 @@
   }
   .account + .account { margin-top: 5px; }
   .account.bad { border-color: transparent; background: var(--red-soft); }
-  .acct-title { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); font-weight: 560; }
+  .acct-title { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); font-weight: 500; }
   .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .dot.good { color: var(--green); }
   .dot.warn { color: var(--amber); }
@@ -434,7 +440,7 @@
     font-size: var(--fs-md);
   }
   .foot .count { color: var(--fg-2); white-space: nowrap; }
-  .foot .count b { color: var(--fg); font-weight: 650; }
+  .foot .count b { color: var(--fg); font-weight: 600; }
   .foot .spacer { flex: 1; }
   .run {
     min-height: 28px;
@@ -444,7 +450,7 @@
     color: var(--accent-fg);
     background: var(--accent);
     font-size: var(--fs-md);
-    font-weight: 620;
+    font-weight: 600;
   }
   .run[hidden] { display: none; }
   .run:disabled { opacity: .55; }
@@ -509,7 +515,7 @@
     color: var(--muted);
     background: transparent;
     font-size: var(--fs-sm);
-    font-weight: 620;
+    font-weight: 600;
     transition: background .16s ease, color .16s ease, box-shadow .16s ease;
   }
   .tab:hover { color: var(--fg-2); background: color-mix(in srgb, var(--pill) 70%, transparent); }
@@ -583,7 +589,7 @@
   .summary-tile .label {
     color: var(--muted);
     font-size: var(--fs-xs);
-    font-weight: 560;
+    font-weight: 500;
   }
   .summary-tile b {
     display: block;
@@ -598,7 +604,7 @@
     margin-left: 2px;
     color: var(--muted);
     font-size: var(--fs-xs);
-    font-weight: 550;
+    font-weight: 500;
   }
   .summary-tile.attention b { color: var(--red); }
   .section-label {
@@ -608,7 +614,7 @@
     min-height: 18px;
     color: var(--fg-2);
     font-size: var(--fs-sm);
-    font-weight: 620;
+    font-weight: 600;
   }
   .section-label .muted { color: var(--muted); font-size: var(--fs-xs); font-weight: 500; }
   .section-label .spacer { flex: 1; }
@@ -626,7 +632,7 @@
     color: var(--muted);
     background: transparent;
     font: inherit;
-    font-weight: 560;
+    font-weight: 500;
   }
   .section-label .privacy-toggle:hover { color: var(--fg); background: var(--pill-hover); }
   .section-label .privacy-toggle svg { width: 12px; height: 12px; display: block; }
@@ -655,7 +661,7 @@
     color: var(--muted);
     background: transparent;
     font: inherit;
-    font-weight: 560;
+    font-weight: 500;
   }
   .section-label .collapse-all:hover {
     color: var(--fg);
@@ -803,7 +809,7 @@
     font-size: var(--fs-xs);
     white-space: nowrap;
   }
-  .speed-hero-meta b { color: var(--fg-2); font-weight: 650; }
+  .speed-hero-meta b { color: var(--fg-2); font-weight: 600; }
   .agent-directory {
     min-height: 0;
     display: flex;
@@ -820,13 +826,13 @@
     margin-top: 1px;
     color: var(--fg-2);
     font-size: var(--fs-xs);
-    font-weight: 650;
+    font-weight: 600;
   }
   .speed-section-title span { color: var(--muted); font-size: var(--fs-2xs); font-weight: 500; }
   .speed-section-title > span:first-child {
     color: var(--fg-2);
     font-size: var(--fs-xs);
-    font-weight: 650;
+    font-weight: 600;
   }
   .speed-section-title .spacer { flex: 1; }
   .speed-section-title #panel-session-count {
@@ -883,7 +889,7 @@
     gap: 5px;
     color: var(--fg);
     font-size: var(--fs-sm);
-    font-weight: 650;
+    font-weight: 600;
   }
   .agent-name span {
     overflow: hidden;
@@ -909,7 +915,7 @@
   .agent-rate b {
     color: var(--fg);
     font-size: var(--fs-md);
-    font-weight: 680;
+    font-weight: 600;
   }
   .agent-rate small {
     display: block;
@@ -1048,7 +1054,7 @@
     animation: panel-live 1.2s ease-in-out infinite;
   }
   .source-rate { color: var(--fg-2); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
-  .source-rate b { color: var(--fg); font-weight: 680; }
+  .source-rate b { color: var(--fg); font-weight: 600; }
   .source-state { color: var(--muted); font-size: var(--fs-2xs); white-space: nowrap; }
   .session-row {
     display: grid;
@@ -1066,7 +1072,7 @@
   .session-rate {
     color: var(--fg);
     font-size: var(--fs-md);
-    font-weight: 680;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
     text-align: right;
   }
@@ -1131,10 +1137,10 @@
     color: var(--accent);
     background: var(--accent-soft);
     font-size: var(--fs-xs);
-    font-weight: 680;
+    font-weight: 600;
     text-align: center;
   }
-  .pet-level-pill small { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-3xs); font-weight: 550; }
+  .pet-level-pill small { display: block; margin-top: 2px; color: var(--muted); font-size: var(--fs-3xs); font-weight: 500; }
   .pet-stage {
     position: relative;
     min-height: 0;
@@ -1393,7 +1399,7 @@
   }
   .pet-bubble.is-ultimate {
     color: var(--accent);
-    font-weight: 650;
+    font-weight: 600;
     box-shadow:
       0 8px 22px rgba(0,0,0,.12),
       inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
@@ -1433,7 +1439,7 @@
     background: #fffdf3;
     box-shadow: 3px 3px 0 #17191e, 0 8px 18px rgba(0,0,0,.16);
     font-size: var(--fs-md);
-    font-weight: 760;
+    font-weight: 700;
     line-height: 1.35;
     letter-spacing: .01em;
     transform: rotate(-1.6deg);
@@ -1491,7 +1497,7 @@
   .pet-popup span {
     display: inline-block;
     font-size: var(--fs-sm);
-    font-weight: 800;
+    font-weight: 700;
     font-style: italic;
     letter-spacing: .1em;
     color: #17191e;
@@ -1807,7 +1813,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .pet-stat b small { color: var(--fg-2); font-size: var(--fs-3xs); font-weight: 550; }
+  .pet-stat b small { color: var(--fg-2); font-size: var(--fs-3xs); font-weight: 500; }
   .pet-unlocks {
     display: flex;
     gap: 4px;

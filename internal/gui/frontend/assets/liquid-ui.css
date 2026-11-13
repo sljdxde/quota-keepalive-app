@@ -397,7 +397,7 @@ html[data-theme="dark"] .command-liquid-highlight {
   color: var(--accent);
   background: var(--accent-soft);
   font-size: 10px;
-  font-weight: 720;
+  font-weight: 700;
   letter-spacing: .02em;
 }
 
@@ -411,7 +411,7 @@ html[data-theme="dark"] .command-liquid-highlight {
   overflow: hidden;
   color: var(--fg);
   font-size: 12.8px;
-  font-weight: 610;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -440,7 +440,7 @@ html[data-theme="dark"] .command-liquid-highlight {
   color: var(--muted);
   background: var(--pill);
   font-size: 9.5px;
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .command-empty {

@@ -10,6 +10,11 @@
     if (theme === "light" || theme === "dark") {
       document.documentElement.dataset.theme = theme;
     }
+    // Windows 平台标记：字体栈、字重与最小字号在 qka-ui.css 里按它分平台。
+    // 用 navigator.platform（而非 UA 字符串）与 main.html 既有判断保持同源。
+    if (!/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) {
+      document.documentElement.classList.add("platform-win32");
+    }
   })();
 </script>
 <link rel="stylesheet" href="assets/qka-ui.css">
@@ -27,9 +32,10 @@
     --fs-xl: 16px;
     --fs-2xl: 18px;
     --fs-3xl: 20px;
-    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI",
-            system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
-            "Noto Sans CJK SC", sans-serif;
+    --font: "QKA Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+            "Segoe UI Variable Text", "Segoe UI", system-ui,
+            "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+            "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
     --shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px -12px rgba(0,0,0,.18);
     --shadow-pop: 0 1px 2px rgba(0,0,0,.06), 0 16px 44px -14px rgba(0,0,0,.28);
@@ -59,7 +65,7 @@
     background: var(--bg);
     color: var(--ink);
     font: 400 var(--fs-base)/1.45 var(--font);
-    -webkit-font-smoothing: antialiased;
+    -webkit-font-smoothing: antialiased; /* 仅 macOS 生效；Windows/WebView2 忽略 */
     padding: 20px;
   }
   /* 顶部标题（保留 Wails 拖拽区域；左侧留白避开窗口按钮） */
@@ -80,7 +86,7 @@
       inset 0 0 0 .5px rgba(236,202,139,.14);
   }
   .brand-tile svg { width: 19px; height: 19px; display: block; }
-  h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 650; letter-spacing: -.02em; }
+  h1 { margin: 0; font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -.02em; }
   .subtitle { margin: 4px 0 0; color: var(--ink3); font-size: var(--fs-sm); }
 
   .settings-page { display: grid; gap: 14px; }
@@ -126,7 +132,7 @@
   }
   .row:first-child { border-top: 0; }
   .copy { min-width: 0; flex: 1; }
-  .copy b { display: block; font-size: var(--fs-base); font-weight: 560; }
+  .copy b { display: block; font-size: var(--fs-base); font-weight: 500; }
   .desc { display: block; margin-top: 2px; color: var(--ink2); font-size: var(--fs-sm); line-height: 1.55; }
 
   /* 选择胶囊：JS 以 .choice 生成，对齐原型 .choices */
@@ -141,7 +147,7 @@
   }
   .choice button:hover { color: var(--ink); }
   .choice button.active {
-    color: var(--ink); background: var(--card); font-weight: 560;
+    color: var(--ink); background: var(--card); font-weight: 500;
     box-shadow: 0 0 0 1px var(--line);
   }
   .choice button:disabled { opacity: .55; }
@@ -184,7 +190,7 @@
   .sched-state {
     display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
     padding: 2px 8px; border-radius: 999px; background: var(--bg2); color: var(--ink2);
-    font-size: var(--fs-xs); font-weight: 560; white-space: nowrap;
+    font-size: var(--fs-xs); font-weight: 500; white-space: nowrap;
   }
   .sched-state.on { color: var(--ok); background: var(--ok-soft); }
   .sched-state.warn { color: var(--warn); background: var(--warn-soft); }
