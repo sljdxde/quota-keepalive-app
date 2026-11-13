@@ -266,8 +266,9 @@ func writeZstd(dest string, fill func(io.Writer) error) error {
 			_ = removePath(name)
 		}
 	}()
-	// 默认选项下 NewWriter 不返回错误。
-	enc, _ := zstd.NewWriter(tmp, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	// 最高档压缩换发行物体积：构建多花约 5-6s，首启解压解码多约 0.03s。
+	// 选项合法，NewWriter 不返回错误。
+	enc, _ := zstd.NewWriter(tmp, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
 	if err := fill(enc); err != nil {
 		_ = enc.Close()
 		_ = tmp.Close()

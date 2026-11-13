@@ -12,7 +12,6 @@ DIST    ?= dist
 PKG     := ./cmd/qka
 BUN     := $(shell which bun)
 LDFLAGS := -X qka/internal/cli.Version=$(VERSION)
-GUI_LDFLAGS := $(LDFLAGS) -X qka/internal/cli.BuildFlavor=gui
 # Windows GUI 产物只能在带 embeddedruntime 标签、且先跑过 build/embedassets
 # 的构建里使用：否则双击会进安装向导，却在「解压运行时」一步失败
 # （runtimebundle: 本次构建未内嵌运行时）。这里不再自己拼这两步，统一交给
@@ -25,19 +24,19 @@ endif
 
 .PHONY: build-darwin-arm64 build-darwin-amd64 build-linux build-windows \
 	build-windows-cli release-windows release-macos-arm64 release-macos-amd64 \
-	release-macos release-feed release-all release test vet fmt
+	release-macos release-feed release-all release test vet fmt bench
 
 build-darwin-arm64:
 	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -trimpath \
-		-ldflags "$(LDFLAGS)" -o $(DIST)/build/qka-darwin-arm64 $(PKG)
+		-ldflags "$(LDFLAGS) -s -w" -o $(DIST)/build/qka-darwin-arm64 $(PKG)
 
 build-darwin-amd64:
 	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -trimpath \
-		-ldflags "$(LDFLAGS)" -o $(DIST)/build/qka-darwin-amd64 $(PKG)
+		-ldflags "$(LDFLAGS) -s -w" -o $(DIST)/build/qka-darwin-amd64 $(PKG)
 
 build-linux:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-		-ldflags "$(LDFLAGS)" -o $(DIST)/build/qka-linux-amd64 $(PKG)
+		-ldflags "$(LDFLAGS) -s -w" -o $(DIST)/build/qka-linux-amd64 $(PKG)
 
 # Windows GUI 产物：必须是自包含 exe（内嵌 Bun/adapters/provider-plugins）。
 # 统一走发行脚本，避免再出现「GUI 版但没嵌运行时」的 exe——那种包能弹安装
@@ -93,6 +92,11 @@ test:
 
 vet:
 	go vet ./...
+
+# 本地性能基线：只跑 Benchmark，不进入 CI（CI 机器噪声大，阈值会抖）。
+# 覆盖三点：空闲轮询的 stat 快路径、零变化写库、速度快照指纹。
+bench:
+	go test -run '^$$' -bench . -benchmem ./internal/tokenspeed ./internal/providers ./internal/accounts ./internal/gui
 
 fmt:
 	gofmt -w .

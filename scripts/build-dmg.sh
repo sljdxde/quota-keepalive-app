@@ -192,7 +192,7 @@ build_arch() {
   echo "    -> $goarch"
   CGO_ENABLED=1 GOOS=darwin GOARCH="$goarch" \
     go build -trimpath \
-    -ldflags "-X qka/internal/cli.Version=$VERSION -X qka/internal/cli.BuildFlavor=gui" \
+    -ldflags "-s -w -X qka/internal/cli.Version=$VERSION -X qka/internal/cli.BuildFlavor=gui" \
     -o "$out" ./cmd/qka
 }
 
