@@ -70,5 +70,8 @@ jobs:
       # 这条校验只比对「必需字符是否都被子集覆盖」，不改任何文件。
       - name: Font subset is up to date
         run: |
-          python3 -m pip install --quiet fonttools brotli
-          python3 scripts/subset-font.py --check
+          # runner 的 Homebrew Python 受 PEP 668 保护，直接 pip install 会以
+          # "externally-managed-environment" 失败；必须走 venv（与本地开发一致）。
+          python3 -m venv "$RUNNER_TEMP/fontenv"
+          "$RUNNER_TEMP/fontenv/bin/pip" install --quiet fonttools brotli
+          "$RUNNER_TEMP/fontenv/bin/python" scripts/subset-font.py --check
