@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"qka/internal/applog"
 	"qka/internal/atomicfile"
 )
 
@@ -142,7 +143,7 @@ type Service struct {
 // New constructs a production update service.
 func New(currentVersion, configDir string) *Service {
 	stateDir := filepath.Join(configDir, "updates")
-	return &Service{
+	service := &Service{
 		CurrentVersion: currentVersion,
 		FeedURL:        strings.TrimSpace(os.Getenv("QKA_UPDATE_FEED_URL")),
 		Mirror:         strings.TrimSpace(os.Getenv("QKA_UPDATE_MIRROR")),
@@ -152,6 +153,11 @@ func New(currentVersion, configDir string) *Service {
 		Executable:     os.Executable,
 		StartInstaller: startInstaller,
 	}
+	// 启动即回收上次更新留下的安装包：安装成功后安装脚本只删除自身，
+	// staged.json 与 60MB+ 的 dmg/exe 会一直留在 updates/ 里。清理是
+	// best-effort，失败只记日志，绝不影响启动。
+	service.CleanupStale()
+	return service
 }
 
 func (s *Service) feedURL() string {
@@ -593,6 +599,115 @@ func pathWithin(root, candidate string) bool {
 		return false
 	}
 	return true
+}
+
+// CleanupStale 回收 updates/ 目录里不再需要的更新残留，best-effort：
+//   - staged.json 指向的版本不高于当前版本（更新已安装成功，或回滚/降级后
+//     失效）：删除该安装包与 staged.json；
+//   - 下载中断留下的 *.part：一律删除；
+//   - 目录里本服务下载的旧安装包（QKA-*.dmg/.pkg/.zip/.exe）：除当前仍待
+//     安装的那一份外全部删除；
+//   - 其它文件（安装脚本、错误日志、非本服务命名的文件）一律不动。
+//
+// 正在等待安装的更新（staged 版本 > 当前版本）必须保留。任何失败只记日志，
+// 不向调用方返回错误：清理只是启动辅助动作，不能因为目录只读、文件被占用
+// 而影响应用启动。
+func (s *Service) CleanupStale() {
+	stateDir := strings.TrimSpace(s.StateDir)
+	if stateDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			applog.Debugf("selfupdate", "读取更新目录失败，跳过清理 dir=%s: %v", stateDir, err)
+		}
+		return
+	}
+
+	keepPath := ""
+	staged, ok := s.stagedRelease()
+	current := strings.TrimSpace(s.CurrentVersion)
+	if current == "" {
+		current = "dev"
+	}
+	if ok && newer(staged.Version, current) {
+		keepPath = staged.Path
+	} else {
+		// staged 已失效或元数据损坏：先删安装包再删元数据，避免留下无人
+		// 引用的孤儿包。staged.Path 已经过 pathWithin 校验，不会删到
+		// StateDir 之外。
+		if ok {
+			s.removeUpdateFile(staged.Path)
+		}
+		s.removeUpdateFile(filepath.Join(stateDir, "staged.json"))
+	}
+
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	for _, path := range staleUpdateFiles(stateDir, names, keepPath) {
+		s.removeUpdateFile(path)
+	}
+}
+
+// removeUpdateFile 删除一个更新残留文件；文件已不存在视为清理完成，
+// 其它失败只记 warn，留给下次启动重试。
+func (s *Service) removeUpdateFile(path string) {
+	if err := os.Remove(path); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			applog.Warnf("selfupdate", "清理更新残留失败 path=%s: %v", path, err)
+		}
+		return
+	}
+	applog.Infof("selfupdate", "已清理更新残留 file=%s", filepath.Base(path))
+}
+
+// staleUpdateFiles 是清理规则里的纯函数部分：根据 StateDir 下的普通文件名
+// 计算应删除的文件路径。keepPath 是仍待安装的安装包路径（没有则为空）。
+//
+// 只处理两类文件：*.part（下载中断残留）与 isUpdateArtifactName 认可的
+// 安装包；staged.json、安装脚本、日志及其它文件都不在此列。
+func staleUpdateFiles(stateDir string, names []string, keepPath string) []string {
+	keep := filepath.Clean(keepPath)
+	stale := make([]string, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(stateDir, name)
+		if strings.HasSuffix(strings.ToLower(name), ".part") {
+			stale = append(stale, path)
+			continue
+		}
+		if !isUpdateArtifactName(name) {
+			continue
+		}
+		if keepPath != "" && filepath.Clean(path) == keep {
+			continue
+		}
+		stale = append(stale, path)
+	}
+	return stale
+}
+
+// isUpdateArtifactName 判断文件名是否本服务下载的安装包：QKA 前缀加发行
+// 流水线使用的安装包扩展名（QKA-<version>-<platform>.dmg/.exe/.zip）。
+// 收紧到固定命名模式，避免误删 updates/ 下其它文件（如 qka-install.sh、
+// qka-install-error.log 或用户自己的 QKA.backup.zip）。
+func isUpdateArtifactName(name string) bool {
+	ext := filepath.Ext(name)
+	switch strings.ToLower(ext) {
+	case ".dmg", ".pkg", ".zip", ".exe":
+	default:
+		return false
+	}
+	stem := strings.TrimSuffix(name, ext)
+	if strings.EqualFold(stem, "QKA") {
+		return true
+	}
+	return len(stem) > 4 && strings.EqualFold(stem[:4], "QKA-")
 }
 
 func selectRelease(data []byte, platform, current, mirror string) (Release, error) {

@@ -17,9 +17,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"qka/internal/applog"
 )
+
+// stagingMaxAge 是 .staging-* 临时目录的最短保留时间：更年轻的目录可能正
+// 被并发进程写入（解压 100MB 级资源需要几秒到几分钟），删掉会破坏对方的
+// 原子发布。只有超过该阈值仍存在的目录才视为崩溃残留。
+const stagingMaxAge = time.Hour
 
 // compareVersions 按点分段比较两个版本号：数字段比数值大小（0.1.9 < 0.1.10），
 // 非数字段比字典序，且数字段视为大于非数字段（对齐语义化版本里
@@ -62,13 +68,15 @@ func compareVersions(a, b string) int {
 
 // cleanupOldVersions 删除 runtimeRoot 下除 keepVersion 以外的历史版本目录，
 // 按版本号从新到旧最多保留两份：keepVersion 本身 + 最近的一个旧版本。
+// 同时回收 mtime 超过 stagingMaxAge 的 .staging-* 解压临时目录（崩溃残留）。
 //
 // 容错约定（issue #4）：该函数没有返回值，任何失败都不影响调用方——
 //   - runtimeRoot 不存在（首次安装）或读不出来：静默返回；
 //   - 单个目录删除失败：Windows 上旧 bun.exe 可能仍被残留子进程占用，
 //     记一条 warn 后继续处理其余目录，下次启动再试；
-//   - .staging- 前缀的临时目录可能正被并发进程写入，一律跳过；散落的
-//     普通文件不占体积，也不动。
+//   - .staging- 前缀的临时目录只有 mtime 超过 1 小时才删：新目录可能正被
+//     并发进程写入，一律跳过；读取状态或删除失败同样只记 warn；
+//   - 散落的普通文件不占体积，也不动。
 func cleanupOldVersions(runtimeRoot, keepVersion string) {
 	entries, err := os.ReadDir(runtimeRoot)
 	if err != nil {
@@ -78,6 +86,7 @@ func cleanupOldVersions(runtimeRoot, keepVersion string) {
 		}
 		return
 	}
+	cleanupStaleStaging(runtimeRoot, entries)
 	var dirs []string
 	for _, entry := range entries {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), stagingPrefix) {
@@ -115,5 +124,34 @@ func cleanupOldVersions(runtimeRoot, keepVersion string) {
 			continue
 		}
 		applog.Infof("runtimebundle", "已删除旧版本运行时目录 dir=%s", name)
+	}
+}
+
+// cleanupStaleStaging 删除崩溃/被强杀后残留的 .staging-* 解压临时目录。
+// 只清理 mtime 早于 stagingMaxAge 的目录：更年轻的目录可能正被并发进程
+// 写入，误删会破坏对方的原子发布（见 publish）。任何读取或删除失败都只
+// 记 warn 并跳过，交给下次启动重试。
+func cleanupStaleStaging(runtimeRoot string, entries []os.DirEntry) {
+	now := time.Now()
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), stagingPrefix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			applog.Warnf("runtimebundle", "读取运行时临时目录状态失败，跳过清理 dir=%s: %v", entry.Name(), err)
+			continue
+		}
+		age := now.Sub(info.ModTime())
+		if age < stagingMaxAge {
+			continue
+		}
+		path := filepath.Join(runtimeRoot, entry.Name())
+		if err := removePath(path); err != nil {
+			applog.Warnf("runtimebundle", "删除过期运行时临时目录失败（下次启动重试）dir=%s: %v", entry.Name(), err)
+			continue
+		}
+		applog.Infof("runtimebundle", "已删除过期运行时临时目录 dir=%s age=%s",
+			entry.Name(), age.Round(time.Minute))
 	}
 }

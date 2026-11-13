@@ -65,14 +65,15 @@ func digest(data []byte) string {
 func TestNewUsesEnvironmentAndDefaults(t *testing.T) {
 	t.Setenv("QKA_UPDATE_FEED_URL", " https://updates.example/feed.json ")
 	t.Setenv("QKA_UPDATE_MIRROR", " https://mirror.example ")
-	svc := New("1.0.0", "/tmp/qka-config")
+	configDir := t.TempDir()
+	svc := New("1.0.0", configDir)
 	if svc.FeedURL != "https://updates.example/feed.json" {
 		t.Fatalf("FeedURL = %q", svc.FeedURL)
 	}
 	if svc.Mirror != "https://mirror.example" {
 		t.Fatalf("Mirror = %q", svc.Mirror)
 	}
-	if svc.StateDir != filepath.Join("/tmp/qka-config", "updates") {
+	if svc.StateDir != filepath.Join(configDir, "updates") {
 		t.Fatalf("StateDir = %q", svc.StateDir)
 	}
 	if svc.feedURL() != svc.FeedURL || svc.platform() == "" || svc.client() == nil {

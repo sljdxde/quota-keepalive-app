@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"qka/internal/applog"
 )
@@ -119,9 +120,9 @@ func TestCleanupOldVersionsKeepsCurrentAndPrevious(t *testing.T) {
 	}
 }
 
-// TestCleanupOldVersionsSkipsStagingAndFiles 验证清理不碰 .staging- 临时目录
-// （可能正被并发进程写入）与散落的普通文件。
-func TestCleanupOldVersionsSkipsStagingAndFiles(t *testing.T) {
+// TestCleanupOldVersionsKeepsFreshStagingAndFiles 验证清理不碰新鲜的
+// .staging- 临时目录（可能正被并发进程写入）与散落的普通文件。
+func TestCleanupOldVersionsKeepsFreshStagingAndFiles(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	makeVersionDir(t, runtimeRoot, "0.1.16")
 	makeVersionDir(t, runtimeRoot, "0.1.20")
@@ -143,6 +144,59 @@ func TestCleanupOldVersionsSkipsStagingAndFiles(t *testing.T) {
 	}
 	assertDirExists(t, filepath.Join(runtimeRoot, "0.1.20"), true)
 	assertDirExists(t, filepath.Join(runtimeRoot, "0.1.16"), false)
+}
+
+// TestCleanupOldVersionsRemovesStaleStaging 验证崩溃残留的 .staging-* 目录：
+// mtime 早于 1 小时的删除，新鲜的（可能正被并发进程写入）保留。
+func TestCleanupOldVersionsRemovesStaleStaging(t *testing.T) {
+	runtimeRoot := t.TempDir()
+	makeVersionDir(t, runtimeRoot, "0.1.23")
+	oldStaging := filepath.Join(runtimeRoot, stagingPrefix+"0.1.22-100")
+	freshStaging := filepath.Join(runtimeRoot, stagingPrefix+"0.1.24-200")
+	for _, dir := range []string{oldStaging, freshStaging} {
+		if err := os.MkdirAll(filepath.Join(dir, AdaptersDirName), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 用 os.Chtimes 造两小时前的旧目录；新鲜目录保持当前 mtime。
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(oldStaging, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanupOldVersions(runtimeRoot, "0.1.23")
+
+	assertDirExists(t, oldStaging, false)
+	assertDirExists(t, freshStaging, true)
+	assertDirExists(t, filepath.Join(runtimeRoot, "0.1.23"), true)
+}
+
+// TestCleanupOldVersionsToleratesStagingRemoveFailures 验证过期 staging 目录
+// 删除失败（如 Windows 上文件被占用）时只跳过，不影响主流程。
+func TestCleanupOldVersionsToleratesStagingRemoveFailures(t *testing.T) {
+	oldRemove := removePath
+	t.Cleanup(func() { removePath = oldRemove })
+
+	runtimeRoot := t.TempDir()
+	makeVersionDir(t, runtimeRoot, "0.1.23")
+	stale := filepath.Join(runtimeRoot, stagingPrefix+"0.1.22-100")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	removePath = func(path string) error {
+		if path == stale {
+			return errors.New("被占用")
+		}
+		return oldRemove(path)
+	}
+
+	cleanupOldVersions(runtimeRoot, "0.1.23")
+
+	assertDirExists(t, stale, true) // 删不掉的留着下次再试
 }
 
 // TestCleanupOldVersionsToleratesRemoveFailures 模拟 Windows 上旧 bun.exe 被
