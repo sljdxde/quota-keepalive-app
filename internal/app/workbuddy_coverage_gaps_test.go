@@ -501,8 +501,10 @@ END;`); err != nil {
 				"credentials.resolve": true,
 			}, nil,
 		)
+		// 旧资料必须与 verified 不同：条件 upsert 在字段无变化时不发 UPDATE，
+		// 否则下面的触发器不会触发，就测不到「恢复旧凭据失败」这条分支。
 		if err := acct.Discover(ctx, verified.Target, []accounts.DiscoveredAccount{{
-			ID: verified.AccountID, DisplayName: "WB", MaskedIdentity: "****",
+			ID: verified.AccountID, DisplayName: "WB-old", MaskedIdentity: "****0000",
 			SourceID: verified.SourceID, SourceKind: accounts.KindManaged,
 		}}); err != nil {
 			t.Fatal(err)

@@ -204,9 +204,11 @@ func TestWorkBuddyVerificationSinkRestoresExistingCredentialWhenAccountWriteFail
 		DisplayName: "****1234", MaskedIdentity: "****1234",
 	}
 	ctx := context.Background()
+	// 先落一份与 verified 不同的旧资料：条件 upsert 只在字段真正变化时才写库，
+	// 这样下面的 BEFORE UPDATE 触发器才会被触发（测试目标是写库失败路径）。
 	if err := acct.Discover(ctx, verified.Target, []accounts.DiscoveredAccount{{
-		ID: verified.AccountID, DisplayName: verified.DisplayName,
-		MaskedIdentity: verified.MaskedIdentity, SourceID: verified.SourceID,
+		ID: verified.AccountID, DisplayName: "****0000",
+		MaskedIdentity: "****0000", SourceID: verified.SourceID,
 		SourceKind: accounts.KindManaged,
 	}}); err != nil {
 		t.Fatal(err)
