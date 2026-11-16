@@ -29,13 +29,16 @@ func TestCheckinManagementUsesGenericProviderLifecycle(t *testing.T) {
 		"Bound.ProvidersDeleteAccount",
 		"account.masked_identity",
 		"account.enabled",
-		"taskEnabledFor(account, operation)",
-		"账号已启用",
-		"账号已停用",
+		`taskEnabledFor(account, "checkin")`,
 		"账号已从 Quota Keepalive 删除，供应商数据未被修改",
-		"账号设置保存失败，请重试。",
+		"账号备注保存失败，请重试。",
 		"任务偏好保存失败，请重试。",
 		"删除失败，请稍后重试。",
+		"再点一次「确认删除？」才会删除该账号",
+		"flashAccountResult(",
+		"openAccountRemarkModal(",
+		"openAccountLog(",
+		"acctOdometer(",
 		"throw err",
 		"let accountsRenderGeneration = 0;",
 		"providerModelPanel(provider)",
@@ -59,12 +62,10 @@ func TestCheckinManagementUsesGenericProviderLifecycle(t *testing.T) {
 		`applyModelStatus(model.id, "fail", detail)`,
 		`function renderTestSummary(rows)`,
 		`悬停模型名查看原因`,
-		`copy.className = "account-body"`,
 		`title.className = "acct-title"`,
 		`meta.className = "acct-meta"`,
+		`status.className = "acct-status"`,
 		`links.className = "acct-links"`,
-		`trigger.className = "mini-action"`,
-		`resultText.textContent = "今日尚未执行"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("签到管理页缺少通用供应商行为 %q", want)
@@ -72,15 +73,16 @@ func TestCheckinManagementUsesGenericProviderLifecycle(t *testing.T) {
 	}
 }
 
-// TestAccountCardLeadsWithCheckinAndQuota 锁定账号卡的 mac 行式结构：
-// 标题（acct-title）→ 签到结果+额度摘要（acct-meta）→ 状态 chips（acct-ops）
-// → 轻量文字操作（acct-links）；旧的「点账号头部展开」实现已移除。
+// TestAccountCardLeadsWithCheckinAndQuota 锁定账号卡 v2 的行式结构：
+// 名称行（acct-title，含自动开关）→ 额度行（acct-meta，含小圆圈刷新）→
+// 状态行（acct-status：今日签到/今日活跃/执行日志）→ 文字链操作（acct-links）；
+// 旧的「点账号头部展开」实现已移除。
 func TestAccountCardLeadsWithCheckinAndQuota(t *testing.T) {
 	page := accountPage(t)
 	order := []string{
 		`title.className = "acct-title"`,
 		`meta.className = "acct-meta"`,
-		`ops.className = "acct-ops"`,
+		`status.className = "acct-status"`,
 		`links.className = "acct-links"`,
 	}
 	last := -1
@@ -94,17 +96,19 @@ func TestAccountCardLeadsWithCheckinAndQuota(t *testing.T) {
 		}
 		last = at
 	}
-	// mac 的轻量语言：额度内联在摘要行、操作是文字链接、按钮是 mini-action。
+	// mac 的轻量语言：额度内联在额度行、操作是文字链；名称行右侧一枚自动
+	// 开关，额度行尾一枚小圆圈刷新，不再有 chip 与 mini-action。
 	for _, want := range []string{
 		`.account-card .acct-meta .account-quota {`,
 		`.acct-link {`,
-		`.mini-action {`,
-		`.op-chip {`,
-		// 控件尺度参照 magpie：标题 13px、chip/文字操作/按钮 11.5px，
-		// 不再用 8.5-9.5px 的灰字（夜间看不清）。
-		`font-size: var(--fs-base); font-weight: 600;`,
-		`font-size: var(--fs-sm); line-height: 1;`,
-		`font-size: var(--fs-sm); font-weight: 500; cursor: pointer;`,
+		`.acct-status {`,
+		`.acct-auto {`,
+		`.acct-quota-refresh {`,
+		// 控件尺度对齐主窗口字号阶梯：名称与额度数字 12.5px（--fs-md），
+		// 状态行与文字链 11.5px（--fs-sm），不再有半像素手工值。
+		`font-size: var(--fs-md); font-weight: 600;`,
+		`font-size: var(--fs-sm); font-weight: 600;`,
+		`line-height: 1.45; cursor: pointer;`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("账号卡缺少 mac 风格样式 %q", want)
@@ -164,34 +168,38 @@ func TestCheckinManagementDoesNotExposeUnsafeCredentialInputs(t *testing.T) {
 func TestCheckinManagementHasPerTaskActionsAndQuotaHistory(t *testing.T) {
 	page := accountPage(t)
 	for _, want := range []string{
-		`const checkinOps = provider.checkin ? ["checkin"] : []`,
-		"立即签到",
-		"今日已完成",
+		`checkinBtn.textContent = "手动签到"`,
+		"手动签到",
+		"手动活跃",
+		"改备注",
+		"确认删除？",
 		"今日无需签到",
+		`label: "今日签到"`,
+		"今日签到 未完成",
+		"已启用 自动",
 		"empty-add-account",
 		`class="btn accent"`,
 		"account-quota",
 		"ProvidersHistory(",
 		"quota-bar",
 		"供应商今天没有可领取的签到活动",
-		"刷新额度",
-		"历史 / 额度",
 		// 额度口径统一走 account-quota.js（与面板同一套纯函数）：主窗口按
 		// 窗口取视图，没有窗口时才带 reading 兜底。
 		`from "./assets/account-quota.js"`,
 		"quotaViewForWindow(w, null)",
 		"quotaViewForWindow(null, reading)",
 		"function claimGrowth(op)",
-		`"今日已领取 +" + formatQuota(growth)`,
+		`"✓ 签到成功，额度 +" + formatQuota(gain)`,
 		"Math.abs(value - Number(op.balance)) > 0.000001",
-		"provider-history",
-		"terminal",
-		"trigger.disabled = !account.enabled || terminal",
-		"账号已停用",
-		"已启用 · 按签到开关执行",
-		"今日尚未执行",
-		"自动执行",
-		"仅手动",
+		// 执行日志：原「历史 / 额度」面板升级为居中弹层，只记签到与活跃；
+		// 额度改为 30 分钟自动刷新 + 卡片小圆圈手动刷新，观测不进日志。
+		"执行日志",
+		"function openAccountLog(",
+		"acctlog-day",
+		"仅记录签到与每日活跃",
+		"scheduleQuotaAutoRefresh",
+		"30 * 60 * 1000",
+		"自动刷新 · 上次 ",
 		"overflow-x: hidden",
 		"background: var(--bg)",
 		`document.documentElement.dataset.theme = theme`,

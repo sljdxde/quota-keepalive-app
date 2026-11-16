@@ -12,11 +12,12 @@ func TestAccountLabelUIWired(t *testing.T) {
 	page := accountPage(t)
 	for _, want := range []string{
 		`rename.textContent = "改备注"`,
-		"function startAccountRename(title, provider, account)",
+		"function openAccountRemarkModal(provider, account)",
 		"Bound.ProvidersSetAccountLabel(",
 		`input.maxLength = 40`,
-		`const label = account && typeof account.label === "string"`,
+		"accountRemarkText(account)",
 		"account.label || account.identity || account.masked_identity",
+		"备注已保存（账号名保持不变）",
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("主窗口缺少账号备注逻辑: %q", want)

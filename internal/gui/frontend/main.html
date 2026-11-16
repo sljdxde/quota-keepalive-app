@@ -588,16 +588,16 @@
   .account-group-body { min-width: 0; }
   .account-group.collapsed .account-group-body { display: none; }
   .account-card { padding: 11px 13px; }
-  /* 账号行照 mac 版（panel.html 的 .account / .acct-* / .op-chip / .mini-action）：
-     左列三行小字（标题 / 签到结果+额度 / chips + 轻量文字操作），
-     右列迷你按钮 + 启用开关。不放带边框的额度盒、不放一排大按钮。 */
-  .account-card {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center; gap: 10px;
-  }
+  /* 账号卡 v2（design/win-ui/account-card-v2.html 定稿）：
+     名称行（状态点 + 账号名 + 备注胶囊 + 右侧自动开关）
+     → 额度行（剩余 X / 总量 Y + 细条 + 自动刷新说明 + 小圆圈手动刷新）
+     → 状态行（今日签到 / 今日活跃 / 执行日志）
+     → 文字链操作行（手动签到 / 手动活跃 / 改备注 / 重新登录 / 删除）。
+     账号名永远保留；备注只是旁边的小胶囊；手动按钮永不置灰。 */
+  .account-card { display: block; }
   .acct-title {
     display: flex; align-items: center; gap: 7px;
-    font-size: var(--fs-base); font-weight: 600;
+    font-size: var(--fs-md); font-weight: 600; min-width: 0;
   }
   .acct-title .dot {
     width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--faint);
@@ -605,20 +605,38 @@
   .acct-title .dot.good { background: var(--green); }
   .acct-title .dot.warn { background: var(--amber); }
   .acct-title .dot.bad { background: var(--red); }
-  /* 账号备注的行内编辑：直接在标题位置改，不弹二级对话框。 */
-  .acct-rename-input {
-    height: 24px; min-width: 148px; max-width: 240px; padding: 0 8px;
-    border: 1px solid var(--line); border-radius: 6px;
-    background: var(--card); color: var(--fg);
-    font: inherit; font-size: var(--fs-sm);
+  .acct-title .who {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .acct-rename-input:focus { outline: none; border-color: var(--accent); }
+  /* 备注：账号名旁边的小胶囊，可随时改/清空，不影响账号名。 */
+  .acct-remark {
+    flex: none; max-width: 40%;
+    padding: 1px 8px; border: .5px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: var(--fs-2xs); font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default;
+  }
+  .acct-remark:empty { display: none; }
+  /* 名称行右侧：一枚开关 + 「已启用/已停用 自动」。自动 = 签到 + 每日活跃。 */
+  .acct-auto {
+    margin-left: auto; flex: none;
+    display: inline-flex; align-items: center; gap: 7px;
+  }
+  .acct-auto .auto-lbl {
+    border: 0; padding: 2px 4px; border-radius: 6px; background: transparent;
+    color: var(--fg-2); font: inherit; font-size: var(--fs-sm); font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  .acct-auto .auto-lbl:hover { color: var(--fg); background: var(--pill); }
+  .acct-auto .auto-lbl.off { color: var(--muted); }
+  /* 额度行：额度口径只有一套（剩余 X / 总量 Y 单位），行尾标自动刷新说明，
+     小圆圈 = 手动刷新状态与额度（结果不进执行日志）。 */
   .acct-meta {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px;
-    margin-top: 4px; color: var(--fg-2); font-size: var(--fs-sm);
+    margin-top: 5px; min-height: 18px;
+    color: var(--fg-2); font-size: var(--fs-sm);
   }
   .acct-meta b { font-weight: 600; color: var(--fg); }
-  /* 额度在摘要行内联（mac 的小字语言），去掉共享样式的盒子、边框与缩进。
+  /* 额度在额度行内联（mac 的小字语言），去掉共享样式的盒子、边框与缩进。
      qka-ui.css 在本页内联样式之后加载，所以用更高优先级覆盖。 */
   .account-card .acct-meta .account-quota {
     display: inline-flex; align-items: center; gap: 6px;
@@ -626,23 +644,55 @@
     color: var(--fg-2); font-size: var(--fs-sm);
   }
   .account-card .acct-meta .quota-track { width: 58px; height: 3px; }
-  .acct-ops { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-  /* chip 与按钮参照 magpie 的控件尺度：22px 高、11.5px 字，字号和点击区
-     都够用；夜间模式用更亮的控件文字，不再靠 8.5px 灰字。 */
-  .op-chip {
-    display: inline-flex; align-items: center;
-    height: 22px; padding: 0 8px; border-radius: 6px; border: 0;
-    color: var(--fg-2); background: var(--card-2);
-    font-size: var(--fs-sm); line-height: 1;
+  .acct-quota-last { color: var(--muted); font-size: var(--fs-2xs); }
+  .acct-quota-refresh {
+    margin-left: auto;
+    width: 18px; height: 18px; padding: 0;
+    border: 1px solid var(--line); border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted); background: var(--card); cursor: pointer; flex: none;
   }
-  .op-chip.good { color: var(--green); background: var(--green-soft); }
-  .op-chip.warn { color: var(--amber); background: var(--amber-soft); }
-  .op-chip.bad { color: var(--red); background: var(--red-soft); }
-  .op-chip.mode { cursor: pointer; }
-  .op-chip.mode:hover { color: var(--fg); }
-  .op-chip.quota { font-variant-numeric: tabular-nums; }
-  .acct-hint { margin-top: 5px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
-  .acct-links { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 14px; margin-top: 8px; }
+  .acct-quota-refresh:hover:not(:disabled) {
+    color: var(--fg); border-color: var(--faint); background: var(--card-2);
+  }
+  .acct-quota-refresh:disabled { opacity: .5; cursor: default; }
+  .acct-quota-refresh svg { display: block; transition: transform .55s cubic-bezier(.3, .6, .3, 1); }
+  .acct-quota-refresh.spin svg { transform: rotate(360deg); }
+  /* 额度数字 odometer：逐位滚动，等宽不推挤（刷新/签到到账时肉眼可见变化）。 */
+  .acct-od {
+    display: inline-flex; align-items: baseline;
+    font-family: var(--code); font-weight: 600; color: var(--fg);
+    font-size: var(--fs-md); height: 16px; line-height: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .acct-od .d { display: inline-block; height: 16px; overflow: hidden; }
+  .acct-od .col { display: block; transition: transform .55s cubic-bezier(.2, .7, .2, 1); }
+  .acct-od .col i { display: block; height: 16px; font-style: normal; }
+  /* 状态行：完成=绿、未完成=前景色（白）、失败=红、无需=灰；
+     执行日志是普通文字（不加粗、无箭头），hover 下划线。 */
+  .acct-status {
+    display: grid;
+    grid-template-columns: 132px 132px auto;
+    align-items: center; gap: 6px 14px;
+    margin-top: 8px;
+  }
+  .acct-status .st {
+    display: inline-flex; align-items: center; gap: 5px;
+    color: var(--fg); font-size: var(--fs-sm); white-space: nowrap; min-width: 0;
+  }
+  .acct-status .st i { font-style: normal; flex: none; width: 12px; text-align: center; }
+  .acct-status .st.good { color: var(--green); }
+  .acct-status .st.bad { color: var(--red); }
+  .acct-status .st.warn { color: var(--amber); }
+  .acct-status .st.none { color: var(--muted); }
+  .acct-status .st b { font-weight: 700; }
+  .acct-status .st b.num { font-family: var(--code); font-variant-numeric: tabular-nums; }
+  .acct-status .log-link {
+    border: 0; padding: 2px 2px; background: transparent; cursor: pointer;
+    color: var(--fg-2); font: inherit; font-size: var(--fs-sm);
+    display: inline-flex; align-items: center; justify-self: start;
+  }
+  .acct-status .log-link:hover { color: var(--fg); text-decoration: underline; }
   /* 账号马赛克：和菜单栏面板同一套视觉；按标识哈希生成固定色块。 */
   .acct-mosaic {
     display: inline-flex;
@@ -658,34 +708,138 @@
     background: var(--fg-2);
   }
   .am-privacy { margin-left: 8px; }
-  /* 文字操作：彻底重置按钮外观（全局 .danger/.secondary 会带高度、内边距、
-     圆角与 inset 描边，不重置的话「删除」会显示成一个红框按钮）。 */
+  /* 操作行文字链：彻底重置按钮外观（全局 .danger/.secondary 会带高度、内
+     边距、圆角与 inset 描边，不重置的话「删除」会显示成一个红框按钮）。 */
+  .acct-links { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 12px; margin-top: 8px; }
   .acct-link {
     border: 0; background: transparent; padding: 0; margin: 0;
     height: auto; min-height: 0; border-radius: 0; box-shadow: none;
     color: var(--fg-2); font: inherit; font-size: var(--fs-sm);
     line-height: 1.45; cursor: pointer;
   }
-  .acct-link:hover { color: var(--fg); text-decoration: underline; }
-  .acct-link.danger { color: var(--red); }
-  .acct-link:disabled { opacity: .5; cursor: default; }
-  /* 右侧操作与标题行对齐，不跟着左列变高而沉到中间。 */
-  .acct-right { display: flex; align-items: center; gap: 8px; flex: none; align-self: start; }
-  /* mac 的 mini-action：小、无边框、pill 底。 */
-  .mini-action {
-    min-height: 26px; padding: 0 11px;
-    border: 0; border-radius: 7px;
-    color: var(--fg-2); background: var(--bg2);
-    box-shadow: inset 0 0 0 .5px var(--line);
-    font: inherit; font-size: var(--fs-sm); font-weight: 500; cursor: pointer;
+  .acct-link:hover:not(:disabled) { color: var(--fg); text-decoration: underline; }
+  .acct-link.danger { color: var(--red); margin-left: 4px; }
+  .acct-link.arming { text-decoration: underline; }
+  .acct-link:disabled { opacity: .5; cursor: default; text-decoration: none; }
+  /* 手动执行的就地结果：追加在操作行尾部，几秒后淡出移除（配合底部提示条）。 */
+  .inline-result {
+    color: var(--muted); font-size: var(--fs-sm); white-space: nowrap;
+    transition: opacity .5s ease;
   }
-  .mini-action:hover { background: var(--card-2); color: var(--fg); }
-  .mini-action:disabled { opacity: .55; cursor: default; }
-  /* 窄弹层：右列操作换到下一行，左列保持整宽。 */
-  @media (max-width: 720px) {
-    .account-card { grid-template-columns: minmax(0, 1fr); }
-    .acct-right { flex-wrap: wrap; }
+  .inline-result.fade { opacity: 0; }
+  .inline-result.good { color: var(--green); }
+  .inline-result.bad { color: var(--red); }
+  /* 执行日志弹层：按日期分组的小标题 + 细实线 + 结果右对齐彩色。
+     壳沿用活跃记录弹层（.abody 无内边距），这里补上左右留白与滚动条。
+     每行 = 时间 · 来源徽标（自动灰/手动蓝）· 动作 + 数字详情 · 结果徽章；
+     失败行可展开看原因与建议。 */
+  .activity-dialog .abody {
+    padding: 2px 20px 14px;
+    scrollbar-gutter: stable;
   }
+  .acctlog-day {
+    margin: 14px 0 4px; color: var(--muted);
+    font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .03em;
+  }
+  .acctlog-day:first-child { margin-top: 10px; }
+  .acctlog-row { border-bottom: .5px solid var(--line-2); }
+  .acctlog-row:last-child { border-bottom: 0; }
+  .acctlog-line {
+    display: grid;
+    grid-template-columns: 38px auto minmax(0, 1fr) auto;
+    align-items: center; gap: 8px;
+    padding: 8px 0;
+    color: var(--fg-2); font-size: var(--fs-sm);
+  }
+  .acctlog-line time {
+    font-family: var(--code); font-size: var(--fs-xs); color: var(--muted);
+  }
+  .acctlog-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    height: 16px; padding: 0 7px; border-radius: 999px;
+    font-size: var(--fs-3xs); font-weight: 700; letter-spacing: .02em;
+    flex: none; white-space: nowrap;
+  }
+  .acctlog-badge.auto { color: var(--muted); background: var(--pill); }
+  .acctlog-badge.manual { color: var(--accent-strong); background: var(--accent-soft); }
+  :root:not([data-theme="light"]) .acctlog-badge.manual { color: var(--accent); }
+  .acctlog-line .what { min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+  .acctlog-line .action { font-weight: 600; color: var(--fg); flex: none; }
+  .acctlog-line .detail {
+    color: var(--muted); font-size: var(--fs-xs);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .acctlog-line .detail .gain {
+    font-family: var(--code); color: var(--green); font-weight: 700;
+  }
+  .acctlog-line .detail .after { font-family: var(--code); }
+  .acctlog-line .detail .more {
+    cursor: pointer; text-decoration: underline;
+  }
+  .acctlog-line .state {
+    flex: none; display: inline-flex; align-items: center;
+    height: 19px; padding: 0 8px; border-radius: 999px;
+    font-size: var(--fs-xs); font-weight: 700;
+  }
+  .acctlog-line .state.good { color: var(--green); background: var(--green-soft); }
+  .acctlog-line .state.none { color: var(--muted); background: var(--pill); }
+  .acctlog-line .state.bad { color: var(--red); background: var(--red-soft); }
+  .acctlog-line .state.warn { color: var(--amber); background: var(--amber-soft); }
+  .acctlog-more { display: none; padding: 0 0 8px 46px; }
+  .acctlog-row.open .acctlog-more { display: block; }
+  .acctlog-more .box {
+    border-left: 2px solid var(--red); background: var(--red-soft);
+    border-radius: 0 8px 8px 0; padding: 7px 10px;
+    font-size: var(--fs-xs); color: var(--fg-2); line-height: 1.5;
+  }
+  .acctlog-more .box b { color: var(--red); font-weight: 700; }
+  .acctlog-more .box .hint { display: block; margin-top: 3px; color: var(--muted); }
+  /* 顶部摘要条：今天自动/手动各几次、成功几次 */
+  .acctlog-summary {
+    display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
+    padding: 9px 20px; border-bottom: 1px solid var(--line-2);
+    background: var(--card-2);
+    color: var(--fg-2); font-size: var(--fs-sm);
+  }
+  .acctlog-summary b { font-weight: 700; color: var(--fg); }
+  .acctlog-summary .sep { width: 1px; height: 12px; background: var(--line); }
+  .acctlog-summary .k { color: var(--muted); }
+  .acctlog-line {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 7px 0; border-bottom: .5px solid var(--line-2);
+    color: var(--fg-2); font-size: var(--fs-sm);
+  }
+  .acctlog-line:last-child { border-bottom: 0; }
+  .acctlog-line time {
+    flex: none; color: var(--muted);
+    font-family: var(--code); font-size: var(--fs-xs);
+  }
+  .acctlog-line .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acctlog-line .state { margin-left: auto; flex: none; font-size: var(--fs-xs); }
+  .acctlog-line .state.good { color: var(--green); }
+  .acctlog-line .state.bad { color: var(--red); }
+  .acctlog-line .state.none { color: var(--muted); }
+  .acctlog-empty { color: var(--muted); font-size: var(--fs-sm); }
+  /* 改备注弹层：账号名只读展示（永远保留）+ 备注输入。 */
+  .acct-remark-name {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 11px; margin-bottom: 10px;
+    border: .5px solid var(--line); border-radius: 8px; background: var(--card-2);
+  }
+  .acct-remark-name .k { flex: none; color: var(--muted); font-size: var(--fs-xs); }
+  .acct-remark-name .v {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--fs-md); font-weight: 600;
+  }
+  .acct-remark-name .lock { margin-left: auto; flex: none; color: var(--faint); font-size: var(--fs-3xs); }
+  .acct-remark-modal-input {
+    width: 100%; height: 30px; padding: 0 10px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--card); color: var(--fg);
+    font: inherit; font-size: var(--fs-md);
+  }
+  .acct-remark-modal-input:focus { outline: none; border-color: var(--accent); }
+  .acct-remark-hint { margin: 8px 0 0; color: var(--muted); font-size: var(--fs-xs); line-height: 1.5; }
   .account-card + .account-card { border-top: .5px solid var(--line-2); }
   .account-card.bad { background: var(--red-soft); }
   .status-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint); }
@@ -3203,12 +3357,45 @@
       <div class="dialog adialog activity-dialog">
         <header>
           <div class="am-who">
-            <h2 id="activity-modal-title">每日活跃记录</h2>
+            <h2 id="activity-modal-title">执行日志</h2>
             <p id="activity-modal-sub"></p>
           </div>
           <button class="text am-x" id="activity-modal-close" type="button" data-close aria-label="关闭">关闭</button>
         </header>
+        <div class="acctlog-summary" id="activity-modal-summary" hidden></div>
         <div class="abody" id="activity-modal-body"></div>
+        <footer>
+          <p class="acctlog-note">仅记录签到与每日活跃；额度自动刷新不进日志</p>
+          <span class="sp"></span>
+          <button class="text action" id="activity-modal-close-footer" type="button" data-close>关闭</button>
+        </footer>
+      </div>
+    </div>
+
+    <div class="modal hidden" id="acct-remark-modal" role="dialog" aria-modal="true" aria-labelledby="acct-remark-modal-title">
+      <div class="dialog adialog">
+        <header>
+          <div class="am-who">
+            <h2 id="acct-remark-modal-title">改备注</h2>
+            <p id="acct-remark-modal-sub"></p>
+          </div>
+          <button class="text am-x" id="acct-remark-modal-close" type="button" data-close aria-label="关闭">关闭</button>
+        </header>
+        <div class="abody">
+          <div class="acct-remark-name">
+            <span class="k">账号名</span>
+            <span class="v" id="acct-remark-name"></span>
+            <span class="lock">不可修改</span>
+          </div>
+          <input class="acct-remark-modal-input" id="acct-remark-input"
+                 placeholder="给这个账号加个备注（可留空）">
+          <p class="acct-remark-hint">备注只显示在 QKA 界面上，显示在账号名旁边；不影响账号本身，账号名始终保留。</p>
+        </div>
+        <footer>
+          <span class="sp"></span>
+          <button class="text action" id="acct-remark-cancel" type="button">取消</button>
+          <button class="btn accent" id="acct-remark-save" type="button">保存</button>
+        </footer>
       </div>
     </div>
 
@@ -3359,7 +3546,6 @@
   import { formatQuotaNumber as formatQuota, quotaViewForWindow } from "./assets/account-quota.js";
   import {
     activityAccountsFor,
-    activityChipText,
     activityDetailText,
     activityStateKind,
     activityStateText,
@@ -6108,7 +6294,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         '<button type="button" class="btn accent" id="empty-add-account">＋ 添加账号</button>';
       accountNodes.push(empty);
     }
-    body.appendChild(agentModalSection("账号", accounts.length + " 个", "含签到开关与额度", accountNodes, true));
+    body.appendChild(agentModalSection("账号", accounts.length + " 个", "自动开关 · 状态 · 额度", accountNodes, true));
 
     const info = document.createElement("div");
     info.className = "info-row";
@@ -6188,169 +6374,260 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     document.getElementById("activity-modal").classList.add("hidden");
   }
 
-  // 历史记录用中性状态标签；activityStateText 面向「今天」会输出「今日已活跃」，
-  // 放进历史行里语义不对。
-  const ACTIVITY_RECORD_STATE = {
-    completed: "已完成",
-    failed_retryable: "失败（可重试）",
-    failed_final: "失败",
-    unauthorized: "需重新登录",
-    rate_limited: "被限流",
-    no_free_model: "无可用模型",
-    needs_stream: "需要流式请求",
-    no_reply: "无回复",
-    none: "未执行",
+  // ---- 执行日志弹层（原「历史 / 额度」面板升级为居中弹层）：
+  // 只记录签到与每日活跃；额度自动刷新的观测不进日志；
+  // 每行 = 时间 · 来源徽标（自动灰/手动蓝，旧数据不标）· 动作 + 数字详情
+  // · 结果徽章；失败行可展开原因与建议；顶部有今日摘要条。
+  const ACCTLOG_BAD_STATE = ["failed_retryable", "failed_final", "manual_required",
+    "unauthorized", "rate_limited", "no_free_model", "needs_stream", "no_reply"];
+  const ACCTLOG_BAD_HINT = {
+    unauthorized: "请点「重新登录」恢复；恢复后账号会自动继续签到。",
+    rate_limited: "上游限流，稍后会自动重试；也可稍后手动重试。",
+    no_free_model: "该账号没有可用模型；订阅账号请到供应商客户端处理。",
+    manual_required: "需要人工处理；请按供应商客户端的提示操作。",
   };
 
-  function activityRecordStateText(state) {
-    const key = String(state || "none");
-    return ACTIVITY_RECORD_STATE[key] || key;
-  }
-
-  function activityStateClass(state) {
-    const kind = activityStateKind(state);
-    return kind === "good" || kind === "bad" || kind === "warn" ? " " + kind : "";
-  }
-
-  function renderActivityHistory(provider, account, records, logs, travelLogs) {
-    const body = document.getElementById("activity-modal-body");
-    body.innerHTML = "";
-    const key = account.key || account.id || "";
-    const current = activityForAccount(provider.id, key) || {};
-
-    const summary = document.createElement("div");
-    summary.className = "activity-summary";
-    const today = document.createElement("span");
-    today.textContent = "今日：" + activityStateText(current.today_state || "none");
-    summary.appendChild(today);
-    const streak = document.createElement("span");
-    streak.textContent = "连续 " + (Number(current.streak) || 0) + " 天";
-    summary.appendChild(streak);
-    if (current.last_at) {
-      const last = document.createElement("span");
-      last.textContent = "最近：" + activityTimeText(current.last_at, true);
-      summary.appendChild(last);
+  function acctlogStateInfo(action, item) {
+    const state = String((item && item.state) || "");
+    if (ACCTLOG_BAD_STATE.indexOf(state) !== -1) {
+      return { kind: "bad", text: "失败" };
     }
-    body.appendChild(summary);
-
-    const recordTitle = document.createElement("div");
-    recordTitle.className = "activity-section-title";
-    recordTitle.textContent = "执行记录（" + records.length + "）";
-    body.appendChild(recordTitle);
-    if (!records.length) {
-      const empty = document.createElement("div");
-      empty.className = "activity-empty";
-      empty.textContent = "还没有执行记录；执行一次每日活跃后这里会出现明细。";
-      body.appendChild(empty);
-    } else {
-      records.forEach(function (record) {
-        const row = document.createElement("div");
-        row.className = "activity-row";
-        const when = document.createElement("span");
-        when.className = "when";
-        when.textContent = record.day || activityTimeText(record.ts, true);
-        row.appendChild(when);
-        const state = document.createElement("span");
-        state.className = "state" + activityStateClass(record.state);
-        state.textContent = activityRecordStateText(record.state);
-        row.appendChild(state);
-        const msg = document.createElement("span");
-        msg.className = "msg";
-        const parts = [];
-        if (record.message) parts.push(record.message);
-        const meta = [];
-        if (record.latency_ms > 0) meta.push(record.latency_ms + " ms");
-        if (record.http_status > 0) meta.push("HTTP " + record.http_status);
-        if (meta.length) parts.push("（" + meta.join(" · ") + "）");
-        msg.textContent = parts.join(" ") || "—";
-        row.appendChild(msg);
-        body.appendChild(row);
-      });
+    if (state === "inactive" || state === "ineligible") {
+      return { kind: "none", text: action === "checkin" ? "无需签到" : "无需活跃" };
     }
-
-    const logTitle = document.createElement("div");
-    logTitle.className = "activity-section-title";
-    logTitle.textContent = "相关日志（" + logs.length + "）";
-    body.appendChild(logTitle);
-    if (!logs.length) {
-      const empty = document.createElement("div");
-      empty.className = "activity-empty";
-      empty.textContent = "暂无每日活跃相关日志。";
-      body.appendChild(empty);
-    } else {
-      logs.forEach(function (entry) {
-        const row = document.createElement("div");
-        row.className = "activity-log-row";
-        const when = document.createElement("span");
-        when.className = "when";
-        when.textContent = activityTimeText(entry.ts, true);
-        row.appendChild(when);
-        const msg = document.createElement("span");
-        msg.textContent = entry.message || entry.state || "";
-        row.appendChild(msg);
-        body.appendChild(row);
-      });
-    }
-
-    if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {
-      const travelTitle = document.createElement("div");
-      travelTitle.className = "activity-section-title";
-      travelTitle.textContent = "猫猫旅行（" + travelLogs.length + "）";
-      body.appendChild(travelTitle);
-      if (!travelLogs.length) {
-        const empty = document.createElement("div");
-        empty.className = "activity-empty";
-        empty.textContent = "还没有猫猫旅行记录；下次巡检会自动查看状态、派出猫猫或领取归来奖励。";
-        body.appendChild(empty);
-      } else {
-        travelLogs.forEach(function (entry) {
-          const row = document.createElement("div");
-          row.className = "activity-log-row";
-          const when = document.createElement("span");
-          when.className = "when";
-          when.textContent = activityTimeText(entry.ts, true);
-          row.appendChild(when);
-          const msg = document.createElement("span");
-          msg.textContent = entry.message || entry.state || "";
-          row.appendChild(msg);
-          body.appendChild(row);
-        });
+    const gain = claimGrowth(item);
+    if (gain != null) return { kind: "good", text: "+" + formatQuota(gain) };
+    if (action === "checkin") {
+      if (quotaStates.indexOf(state) !== -1) {
+        return { kind: "good", text: state === "already" ? "已领取" : "完成" };
       }
-      const note = document.createElement("div");
-      note.className = "activity-note";
-      note.textContent = "猫猫旅行由 QKA 自动推进：在家会派出、归来会领奖、旅行中会等待；同一账号 30 分钟内最多推进一次。";
-      body.appendChild(note);
+    } else if (state === "completed") {
+      return { kind: "good", text: "完成" };
     }
+    return { kind: "", text: opStateLabel[state] || state || "—" };
   }
 
-  async function openActivityHistory(provider, account) {
+  // 失败详情：真实原因（opStateLabel + message）+ 用户可执行的建议。
+  function acctlogFailureDetail(item) {
+    const state = String((item && item.state) || "");
+    const reason = firstNonEmptyText(
+      item && item.message,
+      opStateLabel[state],
+      state);
+    const hint = ACCTLOG_BAD_HINT[state] ||
+      (state.indexOf("failed_retryable") >= 0
+        ? "稍后会自动重试；也可点「手动签到」立即补救。"
+        : "排除问题后可点「手动签到」立即补救；明天也会自动再试。");
+    return { reason: reason || "执行失败", hint: hint };
+  }
+
+  function firstNonEmptyText() {
+    for (let i = 0; i < arguments.length; i++) {
+      const text = String(arguments[i] || "").trim();
+      if (text) return text;
+    }
+    return "";
+  }
+
+  function acctlogBadge(source) {
+    const text = String(source || "");
+    if (text !== "auto" && text !== "manual") return null;
+    const b = document.createElement("span");
+    b.className = "acctlog-badge " + text;
+    b.textContent = text === "auto" ? "自动" : "手动";
+    return b;
+  }
+
+  function acctlogStateChip(kind, text) {
+    const s = document.createElement("span");
+    s.className = "state" + (kind ? " " + kind : "");
+    s.textContent = text;
+    return s;
+  }
+
+  function renderAccountLog(items) {
+    const body = document.getElementById("activity-modal-body");
+    body.textContent = "";
+    const rows = (items || []).filter(function (item) {
+      const action = String((item && item.action) || "");
+      return action === "checkin" || action === "activity" || action === "keepalive";
+    });
+    renderAccountLogSummary(rows);
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "acctlog-empty";
+      empty.textContent = "暂无执行记录；签到与每日活跃执行后这里会出现明细。";
+      body.appendChild(empty);
+      return;
+    }
+    // 旧数据（0.2.7 之前）没有来源，且调度器每轮都写一条「已领取/完成」：
+    // 按「日期+动作」保留最新一条，一天一个动作只显示最终结果。
+    const seen = new Map();
+    const deduped = [];
+    rows.forEach(function (item) {
+      const when = String(item.observed_at || "");
+      const key = when.slice(0, 10) + "|" + String(item.action || "");
+      if (seen.has(key)) return;
+      seen.set(key, true);
+      deduped.push(item);
+    });
+    let lastDay = "";
+    deduped.forEach(function (item) {
+      const when = String(item.observed_at || "");
+      const day = when.slice(0, 10);
+      if (day && day !== lastDay) {
+        lastDay = day;
+        const head = document.createElement("div");
+        head.className = "acctlog-day";
+        head.textContent = day.length >= 10 ? day.slice(5) : day;
+        body.appendChild(head);
+      }
+      const action = String((item && item.action) || "");
+      const info = acctlogStateInfo(action, item);
+      const row = document.createElement("div");
+      row.className = "acctlog-row";
+      const line = document.createElement("div");
+      line.className = "acctlog-line";
+      const time = document.createElement("time");
+      time.textContent = when.length >= 16 ? when.slice(11, 16) : when;
+      line.appendChild(time);
+      const badge = acctlogBadge(item.source);
+      if (badge) line.appendChild(badge);
+      const what = document.createElement("span");
+      what.className = "what";
+      const actionEl = document.createElement("span");
+      actionEl.className = "action";
+      actionEl.textContent = opLabel[action] || action;
+      what.appendChild(actionEl);
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      const gain = claimGrowth(item);
+      if (gain != null) {
+        const g = document.createElement("b");
+        g.className = "gain";
+        g.textContent = "+" + formatQuota(gain);
+        detail.appendChild(g);
+        if (item.balance != null) {
+          const after = document.createElement("span");
+          after.className = "after";
+          after.textContent = " · 剩余 " + formatQuota(item.balance);
+          detail.appendChild(after);
+        }
+      } else if (info.kind === "bad") {
+        const more = document.createElement("span");
+        more.className = "more";
+        more.textContent = "详情";
+        more.onclick = function () { row.classList.toggle("open"); };
+        detail.appendChild(more);
+      } else if (info.text !== item.message) {
+        // 右侧徽章已经说了结果（已领取/完成）时不再重复；不同才显示原因，
+        // 如「无需签到」行的供应商原话。
+        detail.textContent = item.message || "";
+      }
+      what.appendChild(detail);
+      line.appendChild(what);
+      line.appendChild(acctlogStateChip(info.kind, info.text));
+      row.appendChild(line);
+      if (info.kind === "bad") {
+        const more = document.createElement("div");
+        more.className = "acctlog-more";
+        const box = document.createElement("div");
+        box.className = "box";
+        const fail = acctlogFailureDetail(item);
+        const b = document.createElement("b");
+        b.textContent = fail.reason;
+        box.appendChild(b);
+        if (fail.hint) {
+          const hint = document.createElement("span");
+          hint.className = "hint";
+          hint.textContent = fail.hint;
+          box.appendChild(hint);
+        }
+        more.appendChild(box);
+        row.appendChild(more);
+      }
+      body.appendChild(row);
+    });
+  }
+
+  // 摘要条：今天（本机时区）自动/手动各几次、成功几次、签到共得多少积分。
+  function renderAccountLogSummary(rows) {
+    const el = document.getElementById("activity-modal-summary");
+    if (!el) return;
+    const todayKey = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD（本机时区）
+    const today = rows.filter(function (item) {
+      return String(item.observed_at || "").slice(0, 10) === todayKey;
+    });
+    if (!today.length) { el.hidden = true; return; }
+    const good = today.filter(function (item) {
+      return acctlogStateInfo(String(item.action || ""), item).kind === "good";
+    }).length;
+    const auto = today.filter(function (item) { return item.source === "auto"; });
+    const manual = today.filter(function (item) { return item.source === "manual"; });
+    const legacy = today.length - auto.length - manual.length;
+    const autoGood = auto.filter(function (item) {
+      return acctlogStateInfo(String(item.action || ""), item).kind === "good";
+    }).length;
+    const manGood = manual.filter(function (item) {
+      return acctlogStateInfo(String(item.action || ""), item).kind === "good";
+    }).length;
+    const gain = today.reduce(function (sum, item) {
+      const g = claimGrowth(item);
+      return sum + (g != null ? g : 0);
+    }, 0);
+    el.textContent = "";
+    const add = function (parts, className) {
+      const span = document.createElement("span");
+      if (className) span.className = className;
+      parts.forEach(function (node) {
+        if (typeof node === "string") span.appendChild(document.createTextNode(node));
+        else span.appendChild(node);
+      });
+      el.appendChild(span);
+    };
+    const bold = function (text) {
+      const b = document.createElement("b");
+      b.textContent = text;
+      return b;
+    };
+    add(["今天 执行 ", bold(String(today.length)), " 次 · 成功 ", bold(String(good)), " 次"]);
+    if (auto.length + manual.length > 0) {
+      el.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
+      add(["自动 ", bold(autoGood + "/" + auto.length)]);
+      el.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
+      add(["手动 ", bold(manGood + "/" + manual.length)]);
+    }
+    if (legacy > 0) {
+      el.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
+      add(["旧记录 ", bold(String(legacy)), " 条（未区分来源）"]);
+    }
+    el.appendChild(Object.assign(document.createElement("span"), { className: "sep" }));
+    if (gain > 0) add(["获得 ", bold("+" + formatQuota(gain)), " 积分"]);
+    el.hidden = false;
+  }
+
+  async function openAccountLog(provider, account) {
     const key = account.key || account.id || "";
-    document.getElementById("activity-modal-title").textContent = "每日活跃记录";
+    document.getElementById("activity-modal-title").textContent = "执行日志";
     document.getElementById("activity-modal-sub").textContent =
       (provider.name || provider.id) + " · " + accountIdentityText(account);
     document.getElementById("activity-modal-body").innerHTML =
-      '<div class="activity-empty">正在读取活跃记录…</div>';
+      '<div class="acctlog-empty">正在读取执行记录…</div>';
     document.getElementById("activity-modal").classList.remove("hidden");
-    let records = [];
-    let logs = [];
-    let travelLogs = [];
+    let items = [];
     try {
-      records = asJSON(await Bound.ActivityHistory(provider.id, key, 30)) || [];
-    } catch (_) {}
-    try {
-      const page = asJSON(await Bound.LogsTail(provider.id, key, "keepalive", "", 20, 0));
-      logs = (page && page.entries) || [];
-    } catch (_) {}
-    if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {
-      try {
-        const page = asJSON(await Bound.LogsTail(provider.id, key, "travel", "", 20, 0));
-        travelLogs = (page && page.entries) || [];
-      } catch (_) {}
+      const page = asJSON(await Bound.ProvidersHistory(provider.id, key, 60));
+      items = (page && page.items) || [];
+    } catch (_) {
+      document.getElementById("activity-modal-body").innerHTML =
+        '<div class="acctlog-empty">执行记录读取失败，请关闭后重试。</div>';
+      return;
     }
-    renderActivityHistory(provider, account, records, logs, travelLogs);
+    renderAccountLog(items);
   }
 
   document.getElementById("activity-modal-close").onclick = closeActivityModal;
+  document.getElementById("activity-modal-close-footer").onclick = closeActivityModal;
   document.getElementById("activity-modal").addEventListener("click", function (event) {
     if (event.target.id === "activity-modal") closeActivityModal();
   });
@@ -6545,7 +6822,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     provider: "供应商设置", automation: "自动执行",
   };
   const quotaStates = ["signed_confirmed", "signed_provisional", "already"];
-  const checkinTerminalStates = quotaStates.concat(["ineligible", "inactive", "manual_required"]);
   let providersSnapshot = null;
   let activitySnapshot = null;
   let activityRefreshPromise = null;
@@ -6686,11 +6962,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return (account.operations || []).find(function (op) {
       return op.operation === operation;
     }) || null;
-  }
-
-  function taskTerminal(operation, op) {
-    if (!op) return false;
-    return operation === "checkin" && checkinTerminalStates.indexOf(op.state) !== -1;
   }
 
   function showAccountsMessage(message, kind) {
@@ -7077,84 +7348,253 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     return panel;
   }
 
-  // startAccountRename 把账号卡标题临时换成输入框：保存后写入本地备注，
-  // 标题随 renderAccounts 重绘。备注只影响 QKA 的显示名，空值表示清除。
-  function startAccountRename(title, provider, account) {
-    if (!title || title.dataset.editing === "1") return;
-    title.dataset.editing = "1";
-    const previous = Array.prototype.slice.call(title.childNodes);
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "acct-rename-input";
-    input.maxLength = 40;
-    input.value = String((account && account.label) || "");
-    input.placeholder = "例如 18907197198";
-    input.setAttribute("aria-label", "账号备注");
-    const save = document.createElement("button");
-    save.type = "button";
-    save.className = "acct-link";
-    save.textContent = "保存";
-    const cancel = document.createElement("button");
-    cancel.type = "button";
-    cancel.className = "acct-link";
-    cancel.textContent = "取消";
-    function restore() {
-      delete title.dataset.editing;
-      title.innerHTML = "";
-      previous.forEach(function (node) { title.appendChild(node); });
+  // ---- 账号卡 v2 的共用小件（design/win-ui/account-card-v2.html 定稿）----
+  // 账号名永远保留：名称取上游标识（脱敏兜底）；备注只是旁边的小胶囊。
+  function accountIdentityName(account) {
+    const identity = account && account.identity
+      ? displayAccountIdentity(account.identity)
+      : "";
+    return identity || displayAccountIdentity(account && account.masked_identity);
+  }
+
+  function accountRemarkText(account) {
+    return account && typeof account.label === "string" ? account.label.trim() : "";
+  }
+
+  // 额度数字 odometer：逐位滚动、等宽不推挤。卡片每次 renderAccounts 都会
+  // 重建，所以把上一次显示的文本记在 acctQuotaShown 里；重建时数字有变就从
+  // 旧值滚到新值（自动刷新 / 签到到账时肉眼可见变化）。
+  const acctQuotaShown = new Map();
+  function acctOdometer(el, key, text) {
+    const prev = acctQuotaShown.get(key) || "";
+    acctQuotaShown.set(key, text);
+    if (prev && prev.length === text.length) {
+      buildOdometer(el, prev);
+      window.requestAnimationFrame(function () { setOdometerDigits(el, text); });
+      return;
     }
-    async function commit() {
-      if (save.disabled) return; // 回车连按时只保存一次
-      save.disabled = true;
-      cancel.disabled = true;
-      try {
-        await Bound.ProvidersSetAccountLabel(
-          provider.id, (account && (account.key || account.id)) || "", input.value);
-        // renderAccounts 读取的是重绘后的投影，成功后先重绘再报结果，否则
-        // 重绘里的 showAccountsMessage("") 会把提示立刻清掉。
-        await renderAccounts();
-        await renderApps();
-        showAccountsMessage("账号备注已保存", "success");
-      } catch (err) {
-        save.disabled = false;
-        cancel.disabled = false;
-        showAccountsMessage(accountErrorMessage(err, "账号备注保存失败，请重试。"));
+    buildOdometer(el, text);
+  }
+
+  function buildOdometer(el, text) {
+    el.textContent = "";
+    for (const ch of String(text)) {
+      if (/\d/.test(ch)) {
+        const d = document.createElement("span");
+        d.className = "d";
+        const col = document.createElement("span");
+        col.className = "col";
+        for (let i = 0; i <= 9; i++) {
+          const r = document.createElement("i");
+          r.textContent = i;
+          col.appendChild(r);
+        }
+        col.style.transform = "translateY(-" + Number(ch) * 16 + "px)";
+        d.appendChild(col);
+        el.appendChild(d);
+      } else {
+        const s = document.createElement("span");
+        s.textContent = ch;
+        el.appendChild(s);
       }
     }
-    save.onclick = commit;
-    cancel.onclick = restore;
-    input.onkeydown = function (event) {
-      if (event.key === "Enter") { event.preventDefault(); commit(); }
-      if (event.key === "Escape") { event.preventDefault(); restore(); }
-    };
-    title.innerHTML = "";
-    title.appendChild(input);
-    title.appendChild(save);
-    title.appendChild(cancel);
-    input.focus();
-    input.select();
   }
+
+  function setOdometerDigits(el, text) {
+    const digits = el.querySelectorAll(".col");
+    let di = 0;
+    for (const ch of String(text)) {
+      if (/\d/.test(ch)) {
+        if (digits[di]) digits[di].style.transform = "translateY(-" + Number(ch) * 16 + "px)";
+        di += 1;
+      }
+    }
+  }
+
+  // 手动执行的就地结果：追加在操作行尾部，几秒后淡出移除（配合底部提示条）。
+  // renderAccounts 会整卡重建，所以必须按账号标识重新定位「活着」的卡片，
+  // 不能复用点击时捕获的旧节点（那是个游离节点，写进去用户看不见）。
+  function flashAccountResult(box, text, kind) {
+    const key = box.dataset && box.dataset.accountId;
+    const live = key
+      ? document.querySelector('.account-card[data-account-id="' + key + '"]') || box
+      : box;
+    const links = live.querySelector(".acct-links");
+    if (!links) return;
+    const old = links.querySelector(".inline-result");
+    if (old) old.remove();
+    const el = document.createElement("span");
+    el.className = "inline-result" + (kind ? " " + kind : "");
+    el.textContent = text;
+    links.appendChild(el);
+    window.setTimeout(function () { el.classList.add("fade"); }, 3600);
+    window.setTimeout(function () { el.remove(); }, 4300);
+  }
+
+  // 后端对「今天已做过」的幂等跳过会直接报错（providers: operation not
+  // executed / 今日已活跃，无需重复发送）；这不是失败，按远端确认处理。
+  function isAlreadyDoneError(err) {
+    const msg = String((err && err.message) || "");
+    return msg.indexOf("operation not executed") >= 0 ||
+      msg.indexOf("无需重复") >= 0 ||
+      msg.indexOf("已活跃") >= 0;
+  }
+
+  // 状态行口径（用户拍板）：完成=绿✓（签到带 +收益）、未完成=白○、
+  // 失败=红✕、无需=灰–、执行中=琥珀◐。
+  const ACCOUNT_STATUS_ICON = { good: "✓", idle: "○", none: "–", bad: "✕", warn: "◐" };
+  function accountStatusItem(kind, label, gain, tip) {
+    const el = document.createElement("span");
+    el.className = "st" + (kind ? " " + kind : "");
+    const icon = document.createElement("i");
+    icon.textContent = ACCOUNT_STATUS_ICON[kind] || "○";
+    el.appendChild(icon);
+    el.appendChild(document.createTextNode(label));
+    if (gain != null) {
+      const b = document.createElement("b");
+      b.className = "num";
+      b.textContent = "+" + formatQuota(gain);
+      el.appendChild(b);
+    }
+    if (tip) el.title = tip;
+    return el;
+  }
+
+  function checkinStatusInfo(account) {
+    const op = operationFor(account, "checkin");
+    const state = op ? String(op.state || "") : "";
+    // 「none / 空」= 今天还没执行（运行时刚启动未对账时的常见态），不是失败。
+    if (!state || state === "none") {
+      return {
+        kind: "idle", label: "今日签到 未完成", gain: null,
+        tip: "今天还没执行；可点下方「手动签到」立即执行",
+      };
+    }
+    if (quotaStates.indexOf(state) !== -1) {
+      const tips = [];
+      if (op.message && !/今天?已领取/.test(String(op.message).trim())) tips.push(op.message);
+      return { kind: "good", label: "今日签到", gain: claimGrowth(op), tip: tips.join(" · ") };
+    }
+    if (state === "inactive" || state === "ineligible") {
+      return {
+        kind: "none", label: "今日无需签到", gain: null,
+        tip: "供应商今天没有可领取的签到活动，明天会自动再试；" +
+          "若其官方客户端显示今日额度，请在那里领取。",
+      };
+    }
+    if (state === "running" || state === "pending") {
+      return { kind: "warn", label: "今日签到 执行中", gain: null, tip: "正在执行签到，稍后自动刷新" };
+    }
+    return {
+      kind: "bad", label: "今日签到 失败", gain: null,
+      tip: opStateLabel[state] || (op.message || state),
+    };
+  }
+
+  function activityStatusInfo(provider, accountKey) {
+    const activity = activityForAccount(provider.id, accountKey);
+    const state = activity ? String(activity.today_state || "none") : "none";
+    const detail = activityDetailText(activity);
+    if (state === "completed") {
+      return { kind: "good", label: "今日活跃", tip: detail };
+    }
+    if (state === "running" || state === "pending") {
+      return { kind: "warn", label: "今日活跃 执行中", tip: detail };
+    }
+    if (activityStateKind(state) === "bad") {
+      return { kind: "bad", label: "今日活跃 失败", tip: detail };
+    }
+    return {
+      kind: "idle", label: "今日活跃 未完成", tip: detail ||
+        "每天执行一次：WorkBuddy 上报连登，其他供应商发一条最小 hi（免费模型优先）",
+    };
+  }
+
+  // ---- 改备注弹层：账号名只读展示（永远保留），备注可随时改/清空。 ----
+  let remarkModalTarget = null;
+  function openAccountRemarkModal(provider, account) {
+    remarkModalTarget = { provider: provider, account: account };
+    document.getElementById("acct-remark-modal-title").textContent = "改备注";
+    document.getElementById("acct-remark-modal-sub").textContent =
+      (provider.name || provider.id) + " · " + accountIdentityText(account);
+    document.getElementById("acct-remark-name").textContent = accountIdentityName(account);
+    const input = document.getElementById("acct-remark-input");
+    input.maxLength = 40;
+    input.value = accountRemarkText(account);
+    document.getElementById("acct-remark-modal").classList.remove("hidden");
+    window.setTimeout(function () { input.focus(); input.select(); }, 60);
+  }
+
+  function closeAccountRemarkModal() {
+    document.getElementById("acct-remark-modal").classList.add("hidden");
+    remarkModalTarget = null;
+  }
+
+  async function commitAccountRemark() {
+    const target = remarkModalTarget;
+    if (!target) return;
+    const input = document.getElementById("acct-remark-input");
+    const save = document.getElementById("acct-remark-save");
+    save.disabled = true;
+    try {
+      await Bound.ProvidersSetAccountLabel(
+        target.provider.id, (target.account && (target.account.key || target.account.id)) || "",
+        input.value.trim());
+      closeAccountRemarkModal();
+      // renderAccounts 读取的是重绘后的投影，成功后先重绘再报结果，否则
+      // 重绘里的 showAccountsMessage("") 会把提示立刻清掉。
+      await renderAccounts();
+      await renderApps();
+      showAccountsMessage("备注已保存（账号名保持不变）", "success");
+    } catch (err) {
+      save.disabled = false;
+      showAccountsMessage(accountErrorMessage(err, "账号备注保存失败，请重试。"));
+    }
+  }
+
+  document.getElementById("acct-remark-save").onclick = commitAccountRemark;
+  document.getElementById("acct-remark-cancel").onclick = closeAccountRemarkModal;
+  document.getElementById("acct-remark-modal-close").onclick = closeAccountRemarkModal;
+  document.getElementById("acct-remark-modal").addEventListener("click", function (event) {
+    if (event.target.id === "acct-remark-modal") closeAccountRemarkModal();
+  });
+  document.getElementById("acct-remark-input").addEventListener("keydown", function (event) {
+    if (event.key === "Enter") { event.preventDefault(); commitAccountRemark(); }
+  });
+
+  // 额度自动刷新：每 30 分钟对当前打开的 Agent 弹层里的账号走一次 refresh，
+  // 与卡片上的小圆圈同一条链路；刷新的观测不进执行日志。
+  // 用 setTimeout 自续链而不是 setInterval（主窗口禁止常驻采样定时器）。
+  let quotaAutoRefreshTimer = 0;
+  function scheduleQuotaAutoRefresh() {
+    if (quotaAutoRefreshTimer) window.clearTimeout(quotaAutoRefreshTimer);
+    quotaAutoRefreshTimer = window.setTimeout(async function () {
+      quotaAutoRefreshTimer = 0;
+      if (agentModalProvider &&
+          !document.getElementById("agent-modal").classList.contains("hidden")) {
+        const provider = agentModalProvider;
+        const accounts = provider.accounts || [];
+        for (let index = 0; index < accounts.length; index += 1) {
+          const key = accounts[index].key || accounts[index].id || "";
+          if (!key) continue;
+          try {
+            await Bound.ProvidersRun(provider.id, key, "refresh");
+          } catch (_) {}
+        }
+        await renderAccounts();
+      }
+      scheduleQuotaAutoRefresh();
+    }, 30 * 60 * 1000);
+  }
+  scheduleQuotaAutoRefresh();
 
   function providerAccountCard(provider, account) {
     const accountKey = account.key || account.id || "";
     const failed = accountHealth(account);
-    const identity = accountIdentityText(account);
-    // 账号状态一句话：停用 > 异常 > 正常。
-    const accountStateText = !account.enabled
-      ? "账号已停用"
-      : (failed ? (opStateLabel[failed.state] || failed.state) : "已启用 · 按签到开关执行");
+    const identity = accountIdentityName(account);
+    const remark = accountRemarkText(account);
 
-    const box = document.createElement("div");
-    box.className = "account-card" + (failed ? " bad" : "");
-    box.dataset.provider = provider.id;
-    box.dataset.accountKey = accountKey;
-    box.dataset.attention = failed ? "true" : "false";
-    box.dataset.done = accountHasCompleted(account) ? "true" : "false";
-
-    // ---- 左列（mac 版行式）：标题 / 签到结果+额度摘要 / 额度窗口 / 轻量操作 ----
-    const copy = document.createElement("div");
-    copy.className = "account-body";
-
+    // ---- 名称行：状态点 + 账号名（永远保留）+ 备注胶囊 + 右侧自动开关 ----
     const title = document.createElement("div");
     title.className = "acct-title";
     const dot = document.createElement("i");
@@ -7163,257 +7603,258 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (hideAccountIdentities) {
       title.appendChild(mosaicIdentityNode(identity));
     } else {
-      title.appendChild(document.createTextNode(identity));
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = identity;
+      title.appendChild(who);
     }
-    copy.appendChild(title);
+    const remarkEl = document.createElement("span");
+    remarkEl.className = "acct-remark";
+    remarkEl.textContent = remark;
+    remarkEl.title = "备注（只显示在 QKA，不影响账号本身）";
+    title.appendChild(remarkEl);
 
-    // 一行摘要：签到结果（首要）+ 主额度。只报一套口径（剩余/总量）。
+    // 右侧一枚开关 = 该账号的自动（签到 + 每日活跃一起开/关）；关闭后手动
+    // 按钮仍可用。仅额度的供应商没有可自动的任务，不显示开关。
+    const activity = activityForAccount(provider.id, accountKey);
+    const hasAuto = !!provider.checkin || !!provider.activity;
+    const autoWrap = document.createElement("span");
+    autoWrap.className = "acct-auto";
+    if (hasAuto) {
+      const checkinAuto = !provider.checkin || taskEnabledFor(account, "checkin");
+      const activityAuto = !provider.activity || (activity && activity.task_enabled !== false);
+      const autoOn = checkinAuto && activityAuto && account.enabled !== false;
+      const sw = document.createElement("button");
+      sw.type = "button";
+      sw.className = "switch";
+      sw.setAttribute("role", "switch");
+      sw.setAttribute("aria-checked", autoOn ? "true" : "false");
+      sw.setAttribute("aria-label", (hideAccountIdentities ? "该账号" : "账号 " + identity) + " 自动开关");
+      const lbl = document.createElement("button");
+      lbl.type = "button";
+      lbl.className = "auto-lbl" + (autoOn ? "" : " off");
+      lbl.textContent = autoOn ? "已启用 自动" : "已停用 自动";
+      const autoTip = "自动 = 签到 + 每日活跃一起开/关；关闭后仍可在下方手动执行";
+      sw.title = autoTip;
+      lbl.title = autoTip;
+      const toggleAuto = async function () {
+        const enable = sw.getAttribute("aria-checked") !== "true";
+        sw.disabled = true;
+        lbl.disabled = true;
+        showAccountsMessage(enable ? "正在启用自动…" : "正在停用自动…", "pending");
+        try {
+          if (enable && account.enabled === false) {
+            // 停用的账号打开自动 = 连账号一起启用，否则开关形同虚设。
+            await Bound.ProvidersSetAccountEnabled(provider.id, account.key, true);
+          }
+          if (provider.checkin) {
+            await Bound.ProvidersSetTaskEnabled(provider.id, account.key, "checkin", enable);
+          }
+          if (provider.activity) {
+            await Bound.ActivitySetEnabled(provider.id, accountKey, enable);
+          }
+          await renderAccounts();
+          await renderApps();
+          showAccountsMessage(
+            (hideAccountIdentities ? "该账号" : "账号 " + identity) +
+            (enable ? " 已启用自动（签到与活跃）" : " 已停用自动（手动仍可用）"), "success");
+        } catch (err) {
+          sw.disabled = false;
+          lbl.disabled = false;
+          showAccountsMessage(accountErrorMessage(err, "任务偏好保存失败，请重试。"));
+        }
+      };
+      sw.onclick = toggleAuto;
+      lbl.onclick = toggleAuto;
+      autoWrap.appendChild(sw);
+      autoWrap.appendChild(lbl);
+    }
+    title.appendChild(autoWrap);
+
+    const box = document.createElement("div");
+    box.className = "account-card" + (failed ? " bad" : "");
+    box.dataset.accountId = provider.id + "/" + accountKey;
+    box.appendChild(title);
+
+    // ---- 额度行：剩余 X / 总量 Y（一套口径）+ 细条 + 自动刷新说明 + 小圆圈 ----
     const meta = document.createElement("div");
     meta.className = "acct-meta";
-    const resultText = document.createElement("b");
-    resultText.textContent = "今日尚未执行";
-    // 不签到的供应商（provider.checkin=false）没有签到结果，显示「仅额度」。
-    if (!provider.checkin) resultText.textContent = "仅额度";
-    meta.appendChild(resultText);
     const quotaLine = document.createElement("span");
     quotaLine.className = "account-quota";
     quotaLine.textContent = "额度 读取中…";
     meta.appendChild(quotaLine);
-    copy.appendChild(meta);
+    const quotaLast = document.createElement("span");
+    quotaLast.className = "acct-quota-last";
+    meta.appendChild(quotaLast);
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.className = "acct-quota-refresh";
+    refreshBtn.setAttribute("aria-label", "刷新状态与额度");
+    refreshBtn.title = "刷新状态与额度（每 30 分钟也会自动刷新；结果不进执行日志）";
+    refreshBtn.innerHTML =
+      '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">' +
+      '<path d="M13.2 8a5.2 5.2 0 1 1-1.52-3.68" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>' +
+      '<path d="M13.4 1.6v3.1h-3.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    refreshBtn.onclick = async function () {
+      refreshBtn.disabled = true;
+      refreshBtn.classList.remove("spin");
+      void refreshBtn.offsetWidth; // 重置一次性旋转动画
+      refreshBtn.classList.add("spin");
+      showAccountsMessage("正在刷新状态与额度…", "pending");
+      try {
+        await Bound.ProvidersRun(provider.id, account.key, "refresh");
+        await renderAccounts();
+        showAccountsMessage("额度已刷新", "success");
+      } catch (err) {
+        refreshBtn.disabled = false;
+        showAccountsMessage(accountErrorMessage(err, "额度读取失败，请稍后重试。"));
+      }
+    };
+    meta.appendChild(refreshBtn);
+    box.appendChild(meta);
 
-    // 状态 + 模式：mac 的 op-chip 语言（小而轻）。
-    const ops = document.createElement("div");
-    ops.className = "acct-ops";
-    const stateChip = document.createElement("span");
-    stateChip.className = "op-chip " + stateClass(failed ? failed.state : "");
-    stateChip.textContent = accountStateText;
-    ops.appendChild(stateChip);
+    // ---- 状态行：今日签到 / 今日活跃 / 执行日志 ----
+    const status = document.createElement("div");
+    status.className = "acct-status";
+    if (provider.checkin) {
+      const info = checkinStatusInfo(account);
+      status.appendChild(accountStatusItem(info.kind, info.label, info.gain, info.tip));
+    }
     if (provider.activity) {
-      const activity = activityForAccount(provider.id, accountKey);
-      // 每日活跃直接并进账号卡：状态 chip + 自动/手动开关，不再单独占一大块。
-      const activityChip = document.createElement("span");
-      activityChip.className = "op-chip " + activityStateKind(
-        activity ? activity.today_state : "");
-      activityChip.textContent = activity
-        ? activityChipText(activity)
-        : "活跃读取中";
-      activityChip.title = activity
-        ? activityDetailText(activity)
-        : "每天执行一次：WorkBuddy 上报连登，其他供应商发一条最小 hi（免费模型优先）";
-      ops.appendChild(activityChip);
+      const info = activityStatusInfo(provider, accountKey);
+      status.appendChild(accountStatusItem(info.kind, info.label, null, info.tip));
+    }
+    const logLink = document.createElement("button");
+    logLink.type = "button";
+    logLink.className = "log-link";
+    logLink.textContent = "执行日志";
+    logLink.title = "查看签到与每日活跃的执行记录（额度刷新不进日志）";
+    logLink.onclick = function () { openAccountLog(provider, account); };
+    status.appendChild(logLink);
+    box.appendChild(status);
 
-      const activityTaskOn = !activity || activity.task_enabled !== false;
-      const activityMode = document.createElement("button");
-      activityMode.type = "button";
-      activityMode.className = "op-chip mode";
-      activityMode.textContent = activityTaskOn ? "活跃自动" : "活跃手动";
-      activityMode.title = activityTaskOn
-        ? "点击改为仅手动执行每日活跃"
-        : "点击改为自动执行每日活跃";
-      activityMode.onclick = async function () {
-        activityMode.disabled = true;
+    // ---- 操作行：手动签到 / 手动活跃 / 改备注 / 重新登录 / 删除（两步确认）----
+    // 手动按钮永不置灰：任何时候可点，点击走远端判定——今天没做过就执行，
+    // 已做过会提示确认，不会重复领取；只有请求进行中短暂禁用防连点。
+    const links = document.createElement("div");
+    links.className = "acct-links";
+    box.appendChild(links);
+
+    if (provider.checkin) {
+      const checkinBtn = document.createElement("button");
+      checkinBtn.type = "button";
+      checkinBtn.className = "acct-link";
+      checkinBtn.textContent = "手动签到";
+      checkinBtn.title = "点击执行一次；若今天已完成会向远端确认，不会重复领取";
+      checkinBtn.onclick = async function () {
+        checkinBtn.disabled = true;
+        // 先看点击前的状态：已完成就直接给「远端确认」，不打到后端——后端对
+        // 幂等跳过是报错语义，也避免在执行日志里留下 no-op 行。
+        const preOp = operationFor(account, "checkin");
+        if (preOp && quotaStates.indexOf(preOp.state) !== -1) {
+          flashAccountResult(box, "今日已签到（远端确认，未重复领取）", "");
+          showAccountsMessage("远端确认：今日已签到，无需重复", "success");
+          checkinBtn.disabled = false;
+          return;
+        }
+        showAccountsMessage("正在签到（远端确认中）…", "pending");
         try {
-          await Bound.ActivitySetEnabled(provider.id, accountKey, !activityTaskOn);
+          await Bound.ProvidersRun(provider.id, account.key, "checkin");
+          await renderAccounts();
+          await renderApps();
+          // 重新拉一份投影，按执行后的真实状态给出就地结果。
+          const view = await loadProviders();
+          const freshAccounts = (((view || {}).providers || []).find(function (p) {
+            return p.id === provider.id;
+          }) || {}).accounts || [];
+          const freshAccount = freshAccounts.find(function (a) {
+            return (a.key || a.id || "") === accountKey;
+          }) || account;
+          const op = operationFor(freshAccount, "checkin");
+          const state = op ? String(op.state || "") : "";
+          if (state === "already") {
+            flashAccountResult(box, "今日已签到（远端确认，未重复领取）", "");
+            showAccountsMessage("远端确认：今日已签到，无需重复", "success");
+          } else if (quotaStates.indexOf(state) !== -1) {
+            const gain = claimGrowth(op);
+            flashAccountResult(box,
+              gain != null ? "✓ 签到成功，额度 +" + formatQuota(gain) : "✓ 签到完成", "good");
+            showAccountsMessage("签到执行完成", "success");
+          } else if (state === "inactive" || state === "ineligible") {
+            flashAccountResult(box, "今日无需签到（供应商今天没有可领取的活动）", "");
+            showAccountsMessage("今日无需签到；明天会自动再试", "success");
+          } else if (state === "running" || state === "pending" ||
+                     state === "none" || state === "") {
+            flashAccountResult(box, "签到已在后台执行，稍后刷新查看结果", "");
+          } else {
+            flashAccountResult(box,
+              "✕ 签到失败：" + (opStateLabel[state] || state || "未知原因"), "bad");
+            showAccountsMessage("签到失败；本次未宣称成功。", "error");
+          }
+        } catch (err) {
+          if (isAlreadyDoneError(err)) {
+            // 渲染后的状态副本陈旧（点击前刚被别的途径签掉）：按远端确认处理。
+            flashAccountResult(box, "今日已签到（远端确认，未重复领取）", "");
+            showAccountsMessage("远端确认：今日已签到，无需重复", "success");
+          } else {
+            flashAccountResult(box, "✕ 签到失败：请重试", "bad");
+            showAccountsMessage(accountErrorMessage(err, "签到执行失败；本次未宣称成功。"), "error");
+          }
+        } finally {
+          checkinBtn.disabled = false;
+        }
+      };
+      links.appendChild(checkinBtn);
+    }
+
+    if (provider.activity) {
+      const activityBtn = document.createElement("button");
+      activityBtn.type = "button";
+      activityBtn.className = "acct-link";
+      activityBtn.textContent = "手动活跃";
+      activityBtn.title = "点击执行一次；若今天已完成会向远端确认";
+      activityBtn.onclick = async function () {
+        activityBtn.disabled = true;
+        // 先看点击前的状态：今天已发过就直接给「远端确认」，不打到后端。
+        const preActivity = activityForAccount(provider.id, accountKey);
+        if (preActivity && (preActivity.sent_today ||
+            preActivity.today_state === "completed")) {
+          flashAccountResult(box, "今日活跃已完成（远端确认）", "");
+          showAccountsMessage("远端确认：今日活跃已完成", "success");
+          activityBtn.disabled = false;
+          return;
+        }
+        showAccountsMessage("正在执行每日活跃（远端确认中）…", "pending");
+        try {
+          await Bound.ActivityRun(provider.id, accountKey);
           await refreshActivityView();
           await renderAccounts();
           await renderApps();
-          showAccountsMessage("每日活跃" + (activityTaskOn ? "自动执行已关闭" : "自动执行已开启"), "success");
-        } catch (err) {
-          activityMode.disabled = false;
-          showAccountsMessage(accountErrorMessage(err, "每日活跃任务偏好保存失败，请重试。"));
-        }
-      };
-      ops.appendChild(activityMode);
-    }
-    copy.appendChild(ops);
-
-    // 轻量操作：mac 里是文字/迷你按钮，不再用一排大按钮。
-    const links = document.createElement("div");
-    links.className = "acct-links";
-    copy.appendChild(links);
-
-    // ---- 右列：立即签到（mini-action）+ 启用开关 ----
-    const right = document.createElement("div");
-    right.className = "acct-right";
-
-    const sw = document.createElement("button");
-    sw.type = "button";
-    sw.className = "switch";
-    sw.setAttribute("role", "switch");
-    sw.setAttribute("aria-checked", account.enabled ? "true" : "false");
-    sw.setAttribute("aria-label", (account.enabled ? "停用" : "启用") +
-      (hideAccountIdentities ? "该账号" : "账号 " + identity));
-    sw.onclick = async function () {
-      sw.disabled = true;
-      showAccountsMessage(account.enabled ? "正在停用账号…" : "正在启用账号…", "pending");
-      try {
-        await Bound.ProvidersSetAccountEnabled(provider.id, account.key, !account.enabled);
-        await renderAccounts();
-        await renderApps();
-        showAccountsMessage(account.enabled ? "账号已停用" : "账号已启用", "success");
-      } catch (err) {
-        sw.setAttribute("aria-checked", account.enabled ? "true" : "false");
-        sw.disabled = false;
-        showAccountsMessage(accountErrorMessage(err, "账号设置保存失败，请重试。"));
-      }
-    };
-    right.appendChild(sw);
-
-    // 签到任务：结果进摘要行，开关与「立即签到」进右列。
-    const checkinOps = provider.checkin ? ["checkin"] : [];
-    checkinOps.forEach(function (operation) {
-      const op = operationFor(account, operation);
-      const taskOn = taskEnabledFor(account, operation);
-      const terminal = taskTerminal(operation, op);
-      const growth = op ? claimGrowth(op) : null;
-      // 只报签到结果本身（额度在额度行），避免同屏两套口径。
-      resultText.textContent = !op || !op.state
-        ? "今日尚未执行"
-        : (growth == null
-          ? (opStateLabel[op.state] || op.state)
-          : "今日已领取 +" + formatQuota(growth));
-      // 自动/手动模式：mac 的 chip 语言，点击切换。
-      const modeChip = document.createElement("button");
-      modeChip.type = "button";
-      modeChip.className = "op-chip mode";
-      // 每日活跃也有一枚「活跃自动」chip；这里写「签到自动」避免两枚
-      // 意思相近的 chip 让人分不清各自属于哪个任务。
-      modeChip.textContent = taskOn ? "签到自动" : "签到手动";
-      modeChip.title = taskOn ? "点击改为仅手动" : "点击改为自动执行";
-      modeChip.onclick = async function () {
-        modeChip.disabled = true;
-        try {
-          await Bound.ProvidersSetTaskEnabled(provider.id, account.key, operation, !taskOn);
-          await renderAccounts();
-          showAccountsMessage(opLabel[operation] + (taskOn ? "自动执行已关闭" : "自动执行已开启"), "success");
-        } catch (err) {
-          modeChip.disabled = false;
-          showAccountsMessage(accountErrorMessage(err, "任务偏好保存失败，请重试。"));
-        }
-      };
-      ops.appendChild(modeChip);
-      if (op && op.message &&
-          !(growth != null && /^今天?已领取/.test(op.message.trim()))) {
-        const hint = document.createElement("div");
-        hint.className = "acct-hint";
-        if (op.state === "inactive") {
-          // 插件原文是英文实现细节；用户只需要「今天没有可领的活动」这一个事实。
-          hint.textContent = "供应商今天没有可领取的签到活动，明天会自动再试；" +
-            "若其官方客户端显示今日额度，请在那里领取。";
-          hint.title = op.message;
-        } else {
-          hint.textContent = op.message;
-        }
-        copy.insertBefore(hint, links);
-      }
-      const trigger = document.createElement("button");
-      trigger.className = "mini-action";
-      // 没有可领活动（inactive/ineligible）不是"完成"：文案照实说。
-      trigger.textContent = terminal
-        ? (op && (op.state === "inactive" || op.state === "ineligible")
-          ? "今日无需签到"
-          : "今日已完成")
-        : "立即签到";
-      trigger.disabled = !account.enabled || terminal;
-      trigger.onclick = async function () {
-        trigger.disabled = true;
-        showAccountsMessage("正在执行" + opLabel[operation] + "…", "pending");
-        try {
-          await Bound.ProvidersRun(provider.id, account.key, operation);
-          await renderAccounts();
-          await renderApps();
-          showAccountsMessage(opLabel[operation] + "执行完成", "success");
-        } catch (err) {
-          trigger.disabled = false;
-          showAccountsMessage(accountErrorMessage(err,
-            opLabel[operation] + "执行失败；本次未宣称成功。"));
-        }
-      };
-      right.appendChild(trigger);
-    });
-
-    // 额度读取：账号卡不只看 op.balance（不少供应商只在用量窗口里给额度）。
-    // 口径统一走 account-quota.js（与面板同一套纯函数）；主窗口只负责版式：
-    // 第一个窗口进摘要行 + 已用比例细条，其余窗口按 chip 语言排到 acct-ops 下面。
-    if (accountKey) {
-      (async function () {
-        try {
-          const page = asJSON(await Bound.ProvidersHistory(provider.id, accountKey, 1));
-          const reading = (page.quota || [])[0];
-          const windows = ((reading && reading.windows) || []).filter(function (w) { return !w.aside; });
-          quotaLine.textContent = "";
-          if (windows.length) {
-            windows.forEach(function (w, index) {
-              // 第二个参数传 null：单个窗口没有可用字段就整行跳过，不带
-              // reading.balance 兜底——那个兜底只在完全没有窗口时走。
-              const view = quotaViewForWindow(w, null);
-              if (!view) return;
-              if (index === 0) {
-                quotaLine.textContent = " · " + view.text;
-                if (view.pct != null) {
-                  const track = document.createElement("span");
-                  track.className = "quota-track";
-                  const bar = document.createElement("i");
-                  bar.className = "quota-bar" + (view.pct >= 100 ? " full" : "");
-                  bar.style.width = view.pct.toFixed(1) + "%";
-                  track.appendChild(bar);
-                  quotaLine.appendChild(track);
-                }
-              } else {
-                const chip = document.createElement("span");
-                chip.className = "op-chip quota";
-                chip.textContent = view.text;
-                ops.appendChild(chip);
-              }
-            });
-          } else {
-            const view = quotaViewForWindow(null, reading);
-            quotaLine.textContent = view ? " · " + view.text : " · 暂无额度读数";
-          }
-        } catch (_) {
-          quotaLine.textContent = " · 额度暂不可读";
-        }
-      })();
-    }
-
-    // 轻量文字操作：刷新状态 / 刷新额度 / 历史 / 重新登录 / 删除。
-    // 每日活跃的「立即执行」也放这一行：不占右列按钮位置，账号卡保持紧凑。
-    if (provider.activity) {
-      const activity = activityForAccount(provider.id, accountKey);
-      const sentToday = !!(activity && activity.sent_today);
-      const runActivity = document.createElement("button");
-      runActivity.type = "button";
-      runActivity.className = "acct-link";
-      runActivity.textContent = sentToday ? "活跃已完成" : "立即活跃";
-      if (sentToday) {
-        // 今天已完成时，这个入口改为查看历史：活跃记录 + 相关日志，而不是
-        // 一个不能点的灰字。
-        runActivity.title = "点击查看每日活跃记录与日志";
-        runActivity.onclick = function () {
-          openActivityHistory(provider, account);
-        };
-      } else {
-        runActivity.disabled = !account.enabled;
-        runActivity.title = activity
-          ? activityDetailText(activity)
-          : "每天执行一次：WorkBuddy 上报连登，其他供应商发一条最小 hi";
-        runActivity.onclick = async function () {
-          runActivity.disabled = true;
-          showAccountsMessage("正在执行每日活跃…", "pending");
-          try {
-            await Bound.ActivityRun(provider.id, accountKey);
-            await refreshActivityView();
-            await renderAccounts();
-            await renderApps();
+          const fresh = activityForAccount(provider.id, accountKey);
+          const state = fresh ? String(fresh.today_state || "none") : "none";
+          if (state === "completed") {
+            flashAccountResult(box, "✓ 每日活跃执行完成", "good");
             showAccountsMessage("每日活跃执行完成", "success");
-          } catch (err) {
-            runActivity.disabled = false;
-            const detail = err && err.message ? String(err.message) : "";
-            showAccountsMessage(detail || "每日活跃执行失败；本次未宣称成功。");
+          } else if (activityStateKind(state) === "bad") {
+            flashAccountResult(box, "✕ 活跃失败：" + activityStateText(state), "bad");
+            showAccountsMessage("每日活跃执行失败；本次未宣称成功。", "error");
+          } else {
+            flashAccountResult(box, "今日活跃已完成（远端确认）", "");
+            showAccountsMessage("远端确认：今日活跃已完成", "success");
           }
-        };
-      }
-      links.appendChild(runActivity);
+        } catch (err) {
+          if (isAlreadyDoneError(err)) {
+            flashAccountResult(box, "今日活跃已完成（远端确认）", "");
+            showAccountsMessage("远端确认：今日活跃已完成", "success");
+          } else {
+            flashAccountResult(box, "✕ 活跃失败：请重试", "bad");
+            showAccountsMessage(accountErrorMessage(err, "每日活跃执行失败；本次未宣称成功。"), "error");
+          }
+        } finally {
+          activityBtn.disabled = false;
+        }
+      };
+      links.appendChild(activityBtn);
       if (provider.id === "workbuddy" && WORKBUDDY_TRAVEL_UI) {
         const travelLink = document.createElement("button");
         travelLink.type = "button";
@@ -7424,68 +7865,50 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         links.appendChild(travelLink);
       }
     }
+
     const rename = document.createElement("button");
     rename.type = "button";
     rename.className = "acct-link";
     rename.textContent = "改备注";
-    rename.title = "给这个账号起个界面显示名（例如真实手机号）；只改 QKA 的显示，不影响供应商";
-    rename.onclick = function () { startAccountRename(title, provider, account); };
+    rename.title = "账号名不变，只加一条备注；备注只显示在 QKA";
+    rename.onclick = function () { openAccountRemarkModal(provider, account); };
     links.appendChild(rename);
-    const refreshStatus = document.createElement("button");
-    refreshStatus.type = "button";
-    refreshStatus.className = "acct-link";
-    refreshStatus.textContent = "刷新状态";
-    refreshStatus.onclick = async function () {
-      refreshStatus.disabled = true;
-      showAccountsMessage("正在刷新账号状态…", "pending");
-      try {
-        await Bound.ProvidersRun(provider.id, account.key, "refresh");
-        await renderAccounts();
-        await renderApps();
-        showAccountsMessage("状态已刷新", "success");
-      } catch (err) {
-        showAccountsMessage(accountErrorMessage(err, "刷新状态失败，请重试。"));
-      } finally {
-        refreshStatus.disabled = false;
-      }
-    };
-    links.appendChild(refreshStatus);
-    const refreshQuota = document.createElement("button");
-    refreshQuota.type = "button";
-    refreshQuota.className = "acct-link";
-    refreshQuota.textContent = "刷新额度";
-    refreshQuota.onclick = async function () {
-      refreshQuota.disabled = true;
-      showAccountsMessage("正在读取供应商额度…", "pending");
-      try {
-        await Bound.ProvidersRun(provider.id, account.key, "refresh");
-        await renderAccounts();
-        showAccountsMessage("额度已刷新", "success");
-      } catch (err) {
-        refreshQuota.disabled = false;
-        showAccountsMessage(accountErrorMessage(err, "额度读取失败，请稍后重试。"));
-      }
-    };
-    links.appendChild(refreshQuota);
-    const history = document.createElement("button");
-    history.type = "button";
-    history.className = "acct-link";
-    history.textContent = "历史 / 额度";
-    history.onclick = function () {
-      toggleProviderHistory(box, history, provider, account);
-    };
-    links.appendChild(history);
+
     const relogin = document.createElement("button");
     relogin.type = "button";
     relogin.className = "acct-link";
     relogin.textContent = "重新登录";
+    relogin.title = "打开官方授权页面；登录后账号自动恢复";
     relogin.onclick = function () { openProviderLogin(provider); };
     links.appendChild(relogin);
+
+    // 删除两步确认：第一次点击变成红色「确认删除？」，3 秒内再点一次才真删，
+    // 超时自动还原。
     const del = document.createElement("button");
     del.type = "button";
     del.className = "acct-link danger";
     del.textContent = "删除";
+    del.title = "从 QKA 删除该账号；供应商侧数据不受影响";
+    let delArmed = false;
+    let delArmTimer = 0;
+    const revertDeleteArm = function () {
+      delArmed = false;
+      del.textContent = "删除";
+      del.classList.remove("arming");
+      del.title = "从 QKA 删除该账号；供应商侧数据不受影响";
+    };
     del.onclick = async function () {
+      if (!delArmed) {
+        delArmed = true;
+        del.textContent = "确认删除？";
+        del.classList.add("arming");
+        del.title = "再点一次确认删除；稍候不动会自动取消";
+        showAccountsMessage("再点一次「确认删除？」才会删除该账号");
+        delArmTimer = window.setTimeout(revertDeleteArm, 3200);
+        return;
+      }
+      window.clearTimeout(delArmTimer);
+      revertDeleteArm();
       del.disabled = true;
       showAccountsMessage("正在删除账号…", "pending");
       try {
@@ -7500,57 +7923,72 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     };
     links.appendChild(del);
 
-    box.appendChild(copy);
-    box.appendChild(right);
+    // 额度读取：账号卡不只看 op.balance（不少供应商只在用量窗口里给额度）。
+    // 口径统一走 account-quota.js（与面板同一套纯函数）：每个窗口一段
+    // 「剩余 X / 总量 Y」，第一个窗口带比例细条并走 odometer 滚动。
+    if (accountKey) {
+      (async function () {
+        try {
+          const page = asJSON(await Bound.ProvidersHistory(provider.id, accountKey, 1));
+          const reading = (page.quota || [])[0];
+          const windows = ((reading && reading.windows) || []).filter(function (w) { return !w.aside; });
+          quotaLine.textContent = "";
+          quotaLast.textContent = "";
+          let firstView = null;
+          const views = [];
+          windows.forEach(function (w, index) {
+            // 第二个参数传 null：单个窗口没有可用字段就整行跳过，不带
+            // reading.balance 兜底——那个兜底只在完全没有窗口时走。
+            const view = quotaViewForWindow(w, null);
+            if (!view) return;
+            views.push(view);
+            if (index === 0) firstView = view;
+          });
+          if (!views.length) {
+            firstView = quotaViewForWindow(null, reading);
+          }
+          if (firstView && firstView.text) {
+            quotaLine.textContent = "";
+            if (views.length) quotaLine.textContent = "";
+            const od = document.createElement("span");
+            od.className = "acct-od";
+            quotaLine.appendChild(od);
+            acctOdometer(od, provider.id + "/" + accountKey, firstView.text);
+            if (firstView.pct != null) {
+              const track = document.createElement("span");
+              track.className = "quota-track";
+              const bar = document.createElement("i");
+              bar.className = "quota-bar" + (firstView.pct >= 100 ? " full" : "");
+              bar.style.width = firstView.pct.toFixed(1) + "%";
+              track.appendChild(bar);
+              quotaLine.appendChild(track);
+            }
+            views.slice(1).forEach(function (view) {
+              const extra = document.createElement("span");
+              extra.textContent = " · " + view.text;
+              quotaLine.appendChild(extra);
+            });
+          } else {
+            quotaLine.textContent = "暂无额度读数";
+          }
+          if (reading && reading.observed_at) {
+            quotaLast.textContent = "自动刷新 · 上次 " + quotaClockText(reading.observed_at);
+            quotaLast.title = "额度每 30 分钟自动刷新";
+          }
+        } catch (_) {
+          quotaLine.textContent = "额度暂不可读";
+          quotaLast.textContent = "";
+        }
+      })();
+    }
+
     return box;
   }
 
-  async function toggleProviderHistory(box, button, provider, account) {
-    const existing = box.querySelector(".provider-history");
-    if (existing) {
-      existing.remove();
-      button.classList.remove("active");
-      return;
-    }
-    button.disabled = true;
-    try {
-      const page = asJSON(await Bound.ProvidersHistory(provider.id, account.key, 30));
-      const panel = document.createElement("div");
-      panel.className = "provider-history";
-      const items = page.items || [];
-      const reads = page.quota || [];
-      const title = document.createElement("b");
-      title.textContent = "最近执行与额度";
-      panel.appendChild(title);
-      if (!items.length && !reads.length) {
-        const empty = document.createElement("small");
-        empty.textContent = "暂无历史记录";
-        panel.appendChild(empty);
-      }
-      items.slice(0, 12).forEach(function (item) {
-        const line = document.createElement("div");
-        line.className = "provider-history-line";
-        line.textContent = (item.observed_at || "").replace("T", " ").slice(0, 16) + " · " +
-          (opLabel[item.action] || item.action) + " · " +
-          (opStateLabel[item.state] || item.state) +
-          (item.balance != null ? " · 额度 " + formatQuota(item.balance) : "");
-        panel.appendChild(line);
-      });
-      reads.slice(0, 5).forEach(function (read) {
-        const line = document.createElement("div");
-        line.className = "provider-history-line";
-        line.textContent = "额度观测 " + (read.observed_at || "").replace("T", " ").slice(0, 16) +
-          (read.balance ? " · " + read.balance : "") +
-          (read.plan ? " · " + read.plan : "");
-        panel.appendChild(line);
-      });
-      box.appendChild(panel);
-      button.classList.add("active");
-    } catch (err) {
-      showAccountsMessage(accountErrorMessage(err, "历史读取失败，请稍后重试。"));
-    } finally {
-      button.disabled = false;
-    }
+  // observed_at（ISO）→ HH:mm；解析不了就原样返回。
+  function quotaClockText(value) {
+    const text = String(value || "");
+    return text.length >= 16 ? text.slice(11, 16) : text;
   }
 
   // 通用供应商登录对话框。

@@ -5,25 +5,23 @@ import (
 	"testing"
 )
 
-// TestAccountCardsUseMacStyleRowsWithoutCollapse 断言账号卡采用 mac 版的行式语言，
-// 且不再「点头部展开」：签到结果与额度必须首屏常驻。
-// 结构：acct-title → acct-meta（签到结果 + 额度）→ acct-ops（状态 chips）→ acct-links。
+// TestAccountCardsUseMacStyleRowsWithoutCollapse 断言账号卡采用行式语言，
+// 且不再「点头部展开」：状态与额度必须首屏常驻。
+// 结构：acct-title（点+账号名+备注+自动开关）→ acct-meta（额度 + 小圆圈刷新）
+// → acct-status（今日签到/今日活跃/执行日志）→ acct-links（文字链操作）。
 func TestAccountCardsUseMacStyleRowsWithoutCollapse(t *testing.T) {
 	page := accountPage(t)
 	for _, want := range []string{
-		`copy.className = "account-body"`,
 		`title.className = "acct-title"`,
 		`meta.className = "acct-meta"`,
-		`ops.className = "acct-ops"`,
+		`status.className = "acct-status"`,
 		`links.className = "acct-links"`,
-		`trigger.className = "mini-action"`,
-		`resultText.textContent = "今日尚未执行"`,
-		`right.appendChild(trigger)`,
+		`refreshBtn.className = "acct-quota-refresh"`,
+		`checkinBtn.textContent = "手动签到"`,
 		`.acct-title {`,
 		`.acct-meta {`,
-		`.acct-ops {`,
+		`.acct-status {`,
 		`.acct-link {`,
-		`.mini-action {`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("账号卡 mac 行式布局缺少 %q", want)
@@ -45,16 +43,16 @@ func TestAccountCardsUseMacStyleRowsWithoutCollapse(t *testing.T) {
 		}
 	}
 
-	// 左列挂载顺序：标题 → 摘要 → chips → 操作；右列放开关与立即签到。
-	titleAt := strings.Index(page, `copy.appendChild(title)`)
-	metaAt := strings.Index(page, `copy.appendChild(meta)`)
-	opsAt := strings.Index(page, `copy.appendChild(ops)`)
-	linksAt := strings.Index(page, `copy.appendChild(links)`)
-	if titleAt < 0 || metaAt < 0 || opsAt < 0 || linksAt < 0 {
+	// 卡片挂载顺序：名称行 → 额度行 → 状态行 → 操作行。
+	titleAt := strings.Index(page, `box.appendChild(title)`)
+	metaAt := strings.Index(page, `box.appendChild(meta)`)
+	statusAt := strings.Index(page, `box.appendChild(status)`)
+	linksAt := strings.Index(page, `box.appendChild(links)`)
+	if titleAt < 0 || metaAt < 0 || statusAt < 0 || linksAt < 0 {
 		t.Fatal("账号卡行式结构标记缺失")
 	}
-	if !(titleAt < metaAt && metaAt < opsAt && opsAt < linksAt) {
-		t.Fatalf("账号卡顺序错误：title(%d) < meta(%d) < ops(%d) < links(%d)",
-			titleAt, metaAt, opsAt, linksAt)
+	if !(titleAt < metaAt && metaAt < statusAt && statusAt < linksAt) {
+		t.Fatalf("账号卡顺序错误：title(%d) < meta(%d) < status(%d) < links(%d)",
+			titleAt, metaAt, statusAt, linksAt)
 	}
 }

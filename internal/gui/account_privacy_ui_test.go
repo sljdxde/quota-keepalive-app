@@ -18,8 +18,9 @@ func TestMainWindowAccountPrivacyToggle(t *testing.T) {
 		`>隐藏账号</button>`,
 		`ACCOUNT_PRIVACY_STORAGE_KEY = "qka.accounts.hidden"`,
 		`function accountIdentityText(`,
+		`function accountIdentityName(`,
 		`account.identity`,
-		`const identity = accountIdentityText(account);`,
+		`const identity = accountIdentityName(account);`,
 		`function mosaicIdentityNode(`,
 		`function toggleAccountPrivacy(`,
 		`function syncAccountPrivacyButton(`,
@@ -32,7 +33,7 @@ func TestMainWindowAccountPrivacyToggle(t *testing.T) {
 	// 显示/隐藏分支必须分开：隐藏时不能把明文写进 DOM。
 	for _, want := range []string{
 		`if (hideAccountIdentities) {`,
-		`title.appendChild(document.createTextNode(identity));`,
+		`who.textContent = identity;`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("主窗口账号隐私缺少 %q", want)
