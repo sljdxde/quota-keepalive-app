@@ -671,8 +671,12 @@ func TestRunCheckinAndRefresh(t *testing.T) {
 		t.Fatal("unknown operation should fail")
 	}
 	history, quota, err := f.service.History(ctx, "fixture", "a1", 10)
-	if err != nil || len(history) != 2 || len(quota) == 0 {
+	if err != nil || len(history) != 1 || len(quota) == 0 {
 		t.Fatalf("history: %d %d %v", len(history), len(quota), err)
+	}
+	// 执行日志只记签到与每日活跃：refresh 观测不进 history（读数进 quota）。
+	if history[0].Action != "checkin" {
+		t.Fatalf("history 应只剩 checkin，实际 %q", history[0].Action)
 	}
 	for _, item := range history {
 		if item.Account != "****a1" {
@@ -1093,11 +1097,15 @@ func TestDeleteAccountAndRuntimeErrors(t *testing.T) {
 func TestHistoryLimitsAndEmptyFilters(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
+	if err := f.service.Run(ctx, "fixture", "a1", "checkin"); err != nil {
+		t.Fatal(err)
+	}
+	// refresh 的读数进 quota_readings，但 run_items 行不应出现在 history 里。
 	if err := f.service.Run(ctx, "fixture", "a1", "refresh"); err != nil {
 		t.Fatal(err)
 	}
 	items, readings, err := f.service.History(ctx, "", "", 0)
-	if err != nil || len(items) != 1 || len(readings) != 1 {
+	if err != nil || len(items) != 1 || len(readings) != 2 {
 		t.Fatalf("history all: %d %d %v", len(items), len(readings), err)
 	}
 	items, readings, err = f.service.History(ctx, "fixture", "missing", 500)

@@ -209,3 +209,9 @@ CREATE TABLE IF NOT EXISTS account_labels (
     PRIMARY KEY (provider, account_id)
 );
 `
+
+// schemaV9 记录一次执行的来源：调度器写入 auto，界面手动按钮写入 manual。
+// 旧行没有该字段（默认空），前端对空值不显示来源徽标。
+const schemaV9 = `
+ALTER TABLE runs ADD COLUMN source TEXT NOT NULL DEFAULT '';
+`

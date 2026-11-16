@@ -166,6 +166,9 @@ type RunItemView struct {
 	Balance    *float64 `json:"balance,omitempty"`
 	Model      string   `json:"model,omitempty"`
 	ObservedAt string   `json:"observed_at"`
+	// Source 是这次执行的来源（auto=调度器 / manual=界面手动按钮）；
+	// 旧行为空，前端不显示来源徽标。
+	Source string `json:"source,omitempty"`
 }
 
 // QuotaReadingView is one bounded quota observation for trend display.
@@ -216,6 +219,9 @@ type Service struct {
 	// overlap doubles the runtime round-trip and races their SQLite writes,
 	// which made the first paint come and go.
 	listMu sync.Mutex
+	// purgeOnce 保证历史垃圾行清理（0.2.4 及之前写入的幂等跳过与额度刷新
+	// 观测）只执行一次；挂在 Warm 与首次 List 前的公共路径上。
+	purgeOnce sync.Once
 	// viewMu guards the cached page projection served by CachedListView.
 	viewMu    sync.Mutex
 	viewCache *View
@@ -297,6 +303,7 @@ func (s *Service) runtime(ctx context.Context) (Runtime, error) {
 // Warm starts the provider runtime ahead of the first page load so the UI does
 // not wait for the Bun host to come up while it has nothing to show.
 func (s *Service) Warm(ctx context.Context) error {
+	s.purgeLegacyNoopRunItemsOnce(ctx)
 	_, err := s.runtime(ctx)
 	return err
 }
@@ -486,6 +493,8 @@ func (s *Service) Close() error {
 func (s *Service) List(ctx context.Context) (View, error) {
 	s.listMu.Lock()
 	defer s.listMu.Unlock()
+	// 首次 List 前清一次 0.2.4 及之前的历史垃圾行（幂等；详情见 purge 函数注释）。
+	s.purgeLegacyNoopRunItemsOnce(ctx)
 	host, err := s.runtime(ctx)
 	if err != nil {
 		return View{}, err
@@ -1609,7 +1618,9 @@ func (s *Service) Run(
 	started := s.now().UTC().Format(time.RFC3339)
 	runID := newRunID(s.now())
 	result := s.runOne(ctx, host, provider, account, operation)
-	if recordErr := s.recordRun(ctx, runID, started, operation, []runResult{result}); recordErr != nil {
+	// Run 只被界面的手动按钮（ProvidersRun/ActivityRun）调用：来源标记 manual。
+	if recordErr := s.recordRunWithSource(ctx, runID, started, operation,
+		RunSourceManual, []runResult{result}); recordErr != nil {
 		return recordErr
 	}
 	recorded = true
@@ -1652,7 +1663,7 @@ func (s *Service) RunAll(ctx context.Context, action string, exclude map[string]
 	if err != nil {
 		return RunSummary{}, err
 	}
-	return s.runAllViewLocked(ctx, view, action, exclude)
+	return s.runAllViewLocked(ctx, view, action, exclude, RunSourceManual)
 }
 
 // RunAllView executes an already synchronized provider view. App uses this to
@@ -1664,13 +1675,35 @@ func (s *Service) RunAllView(
 	action string,
 	exclude map[string]bool,
 ) (RunSummary, error) {
+	return s.runAllView(ctx, view, action, exclude, RunSourceManual)
+}
+
+// RunAllViewSource 同 RunAllView，但显式指定执行来源（auto=调度器 /
+// manual=界面手动按钮）；执行日志按它显示来源徽标。
+func (s *Service) RunAllViewSource(
+	ctx context.Context,
+	view View,
+	action string,
+	exclude map[string]bool,
+	source string,
+) (RunSummary, error) {
+	return s.runAllView(ctx, view, action, exclude, source)
+}
+
+func (s *Service) runAllView(
+	ctx context.Context,
+	view View,
+	action string,
+	exclude map[string]bool,
+	source string,
+) (RunSummary, error) {
 	if !features.ValidAction(action) {
 		return RunSummary{}, fmt.Errorf("unsupported provider action %q", action)
 	}
 	action = features.NormalizeAction(action)
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
-	return s.runAllViewLocked(ctx, view, action, exclude)
+	return s.runAllViewLocked(ctx, view, action, exclude, source)
 }
 
 func (s *Service) runAllViewLocked(
@@ -1678,6 +1711,7 @@ func (s *Service) runAllViewLocked(
 	view View,
 	action string,
 	exclude map[string]bool,
+	source string,
 ) (RunSummary, error) {
 	host, err := s.runtime(ctx)
 	if err != nil {
@@ -1735,7 +1769,7 @@ func (s *Service) runAllViewLocked(
 			}
 		}
 	}
-	if err := s.recordRun(ctx, runID, started, action, results); err != nil {
+	if err := s.recordRunWithSource(ctx, runID, started, action, source, results); err != nil {
 		return summary, err
 	}
 	return summary, errors.Join(failures...)
@@ -1980,11 +2014,44 @@ func newRunID(now time.Time) string {
 	return fmt.Sprintf("%s-%x", now.UTC().Format("20060102T150405"), suffix)
 }
 
+// RunSource 标记一次执行是谁触发的：调度器写入 auto，界面手动按钮写入
+// manual。执行日志按它显示「自动/手动」徽标。
+const (
+	RunSourceAuto   = "auto"
+	RunSourceManual = "manual"
+)
+
+// runNeedsAttention reports results the user must know about: real failures
+// and states that wait on a human. 幂等跳过（今天已做过）不算。
+func runNeedsAttention(result runResult) bool {
+	if result.Err != nil {
+		return true
+	}
+	switch result.State {
+	case string(engine.FailedRetryable), string(engine.FailedFinal),
+		string(engine.ManualRequired):
+		return true
+	}
+	return false
+}
+
+// recordRun 把一次执行（单账号或 RunAll 批量）写入 runs/run_items。
+// source 说明这次执行是谁触发的（auto=调度器 / manual=界面手动按钮），
+// 执行日志按它显示来源徽标；空值兼容旧调用（前端不显示徽标）。
 func (s *Service) recordRun(
 	ctx context.Context, runID, started, action string, results []runResult,
 ) error {
+	return s.recordRunWithSource(ctx, runID, started, action, "", results)
+}
+
+func (s *Service) recordRunWithSource(
+	ctx context.Context, runID, started, action, source string, results []runResult,
+) error {
 	if s.db == nil {
 		return nil
+	}
+	if source != RunSourceAuto && source != RunSourceManual {
+		source = ""
 	}
 	attempted := 0
 	succeeded := 0
@@ -1992,17 +2059,13 @@ func (s *Service) recordRun(
 	skipped := 0
 	state := "completed"
 	for _, result := range results {
-		if result.Err != nil || result.State == string(engine.FailedRetryable) ||
-			result.State == string(engine.FailedFinal) ||
-			result.State == string(engine.ManualRequired) {
+		if runNeedsAttention(result) {
 			needsAttention++
 			state = "failed_retryable"
 		}
 		if result.Executed {
 			attempted++
-			if result.Err == nil && result.State != string(engine.FailedRetryable) &&
-				result.State != string(engine.FailedFinal) &&
-				result.State != string(engine.ManualRequired) {
+			if result.Err == nil && !runNeedsAttention(result) {
 				succeeded++
 			}
 		} else if result.State != "" {
@@ -2020,16 +2083,25 @@ func (s *Service) recordRun(
 	finished := s.now().UTC().Format(time.RFC3339)
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO runs
-  (id, started_at, finished_at, action, state, attempted, succeeded, needs_attention, skipped, message)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  (id, started_at, finished_at, action, state, attempted, succeeded, needs_attention, skipped, message, source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		runID, started, finished, action, state, attempted, succeeded,
-		needsAttention, skipped, ""); err != nil {
+		needsAttention, skipped, "", source); err != nil {
 		return err
 	}
 	for _, result := range results {
+		// 幂等跳过（今天已做过、无需任何操作）不是一次「执行」：不写
+		// run_items 也不写审计日志，否则调度器每轮都会把「已领取/完成」
+		// 重复刷进执行日志。真实执行与失败仍然逐条记录。
+		if !result.Executed && !runNeedsAttention(result) {
+			continue
+		}
 		message := redactMessage(result.Message)
 		if result.Err != nil {
-			message = "执行失败，详情请查看脱敏日志"
+			// 失败原因要能进执行日志的「详情」：写脱敏后的真实原因，
+			// 不再统一洗成「执行失败，详情请查看脱敏日志」。
+			message = redactMessage(firstNonEmpty(
+				result.Message, result.Err.Error(), "执行失败"))
 		}
 		_, err := tx.ExecContext(ctx, `
 INSERT INTO run_items
@@ -2259,18 +2331,50 @@ func redactMessage(value string) string {
 
 // History returns recent provider run items and quota readings. Account IDs
 // are masked before leaving the service.
+// purgeLegacyNoopRunItems 清掉 0.2.4 及之前版本写入的历史垃圾行：
+// ① 调度器每轮写入的「额度刷新」观测（执行日志从来不该展示它）；
+// ② 幂等跳过行（今天已做过：整轮没有任何真实执行）——当时每 30 分钟
+// 就往日志里刷一条「已领取/完成」。
+// 判定「幂等跳过」用的是 runs.attempted=0 AND succeeded=0（整轮没有任何
+// 真实执行），避免误删同表里的真实失败行。启动后只在第一次 List 前跑一次。
+func (s *Service) purgeLegacyNoopRunItems(ctx context.Context) {
+	if s.db == nil {
+		return
+	}
+	_, err := s.db.ExecContext(ctx, `
+DELETE FROM run_items
+WHERE action = 'refresh'
+   OR (state IN ('signed_confirmed', 'signed_provisional', 'already',
+                 'completed', 'inactive', 'ineligible', 'none')
+       AND id IN (
+         SELECT i.id FROM run_items i
+         JOIN runs r ON r.id = i.run_id
+         WHERE r.attempted = 0 AND r.succeeded = 0
+       ))`)
+	if err != nil {
+		s.writeAuditFailure(ctx, "", "", "automation", err)
+	}
+}
+
+func (s *Service) purgeLegacyNoopRunItemsOnce(ctx context.Context) {
+	s.purgeOnce.Do(func() { s.purgeLegacyNoopRunItems(ctx) })
+}
+
 func (s *Service) History(
 	ctx context.Context, provider, account string, limit int,
 ) ([]RunItemView, []QuotaReadingView, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	// 执行日志只记签到与每日活跃：额度刷新（refresh）的观测不进日志，
+	// 旧库里已经写入的历史行也在这里一并过滤掉，避免刷屏占满展示额度。
 	query := `
 SELECT r.id, i.provider, i.account_id, i.action, i.state, i.message,
-       i.credits, i.balance, i.model, i.created_at
+       i.credits, i.balance, i.model, i.created_at, r.source
 FROM run_items i
 JOIN runs r ON r.id = i.run_id
 WHERE (? = '' OR i.provider = ?) AND (? = '' OR i.account_id = ?)
+  AND i.action != 'refresh'
 `
 	args := []any{provider, provider, account, account}
 	query += ` ORDER BY i.created_at DESC, i.id DESC LIMIT ?`
@@ -2286,7 +2390,7 @@ WHERE (? = '' OR i.provider = ?) AND (? = '' OR i.account_id = ?)
 		var credits, balance sql.NullFloat64
 		if err := rows.Scan(&item.RunID, &item.Provider, &item.Account, &item.Action,
 			&item.State, &item.Message, &credits, &balance, &item.Model,
-			&item.ObservedAt); err != nil {
+			&item.ObservedAt, &item.Source); err != nil {
 			return nil, nil, err
 		}
 		item.Account = maskIdentity(item.Account)

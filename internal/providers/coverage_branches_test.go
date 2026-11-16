@@ -253,11 +253,13 @@ func TestRunOneCheckinCaptchaObserved(t *testing.T) {
 }
 
 // TestRecordRunWriteFailures 覆盖 run 落库与日志写入失败分支。
+// 幂等跳过（Executed=false）现在不再写 run_items/日志，所以这里用一次
+// 真实执行来触发写入路径。
 func TestRecordRunWriteFailures(t *testing.T) {
 	ctx := context.Background()
 	results := []runResult{{
 		Provider: "fixture", Account: "a1", Action: "checkin",
-		State: string(engine.Already), Executed: false, Message: "今天已领取",
+		State: string(engine.SignedConfirmed), Executed: true, Message: "今天已领取",
 	}}
 
 	t.Run("run_items 写入失败", func(t *testing.T) {
@@ -278,6 +280,52 @@ func TestRecordRunWriteFailures(t *testing.T) {
 			t.Fatal("logs 缺失时应返回错误")
 		}
 	})
+}
+
+// TestRecordRunSkipsNoopRows 锁定新语义：幂等跳过（今天已做过）不写
+// run_items 与审计日志，否则调度器每轮都会把「已领取/完成」重复刷进
+// 执行日志。真实执行与失败仍逐条记录。
+func TestRecordRunSkipsNoopRows(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	results := []runResult{{
+		Provider: "fixture", Account: "a1", Action: "checkin",
+		State: string(engine.Already), Executed: false, Message: "今天已领取",
+	}}
+	if err := f.service.recordRun(ctx, "noop-run", "started", "checkin", results); err != nil {
+		t.Fatalf("recordRun: %v", err)
+	}
+	var items int
+	if err := f.store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM run_items WHERE run_id = ?`, "noop-run").Scan(&items); err != nil {
+		t.Fatal(err)
+	}
+	if items != 0 {
+		t.Fatalf("幂等跳过不应写 run_items，实际 %d 行", items)
+	}
+	var logs int
+	if err := f.store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM logs WHERE message = ?`, "今天已领取").Scan(&logs); err != nil {
+		t.Fatal(err)
+	}
+	if logs != 0 {
+		t.Fatalf("幂等跳过不应写审计日志，实际 %d 行", logs)
+	}
+	// 对照组：真实执行仍然落库。
+	done := []runResult{{
+		Provider: "fixture", Account: "a1", Action: "checkin",
+		State: string(engine.SignedConfirmed), Executed: true, Message: "今天已领取",
+	}}
+	if err := f.service.recordRun(ctx, "real-run", "started", "checkin", done); err != nil {
+		t.Fatalf("recordRun(真实执行): %v", err)
+	}
+	if err := f.store.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM run_items WHERE run_id = ?`, "real-run").Scan(&items); err != nil {
+		t.Fatal(err)
+	}
+	if items != 1 {
+		t.Fatalf("真实执行应写 1 行 run_items，实际 %d 行", items)
+	}
 }
 
 // TestAuditHelperNilAndEmptyBranches 覆盖审计辅助函数的 nil/空值防御分支。
