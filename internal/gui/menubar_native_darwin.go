@@ -9,25 +9,28 @@ package gui
 #include <stdlib.h>
 #import <Cocoa/Cocoa.h>
 
-// menuBarWidthSamples 是菜单栏需要同时容纳的几种文案形态：纯文本与分段彩色
-// 带「tok/s」，只显示数字时最窄。按最宽者定宽，切换样式或位数变化时都不会
-// 改变条目宽度。
-static const char *kMenuBarWidthSamples[] = {
-	"0 tok/s",
-	"88.8 tok/s",
-	"999 tok/s",
-	"1.00k tok/s",
-	"888",
-};
-
-// menuBarWidestLabelWidth 返回容纳所有样例文案所需的状态项宽度（点）：
-// 图标宽度 + 文字宽度 + 内边距。读 AppKit，必须在主线程执行；非主线程时
-// 同步切到主线程再量（只在安装时调用一次）。
-static double menuBarWidestLabelWidth(void *item) {
-	if (item == NULL) {
+// menuBarStringWidth 返回 text 在菜单栏字体下的宽度（点）。
+static double menuBarStringWidth(const char *text, NSFont *font) {
+	if (text == NULL || font == NULL) {
 		return 0;
 	}
-	__block double widest = 0;
+	NSString *value = [NSString stringWithUTF8String:text];
+	if (value == nil) {
+		return 0;
+	}
+	return [value sizeWithAttributes:@{NSFontAttributeName: font}].width;
+}
+
+// menuBarMeasure 量出 visible 这条文案的「文字宽度」与按钮固有开销
+// （图标 + 内边距 + 图文间距）。开销不写死：临时把状态项恢复成自适应宽度、
+// 设一个没有补白的标题，读回按钮真实 frame。全过程在同一个主线程 turn 内
+// 完成，用户看不到中间态，也不依赖特定 macOS 版本的内边距常数。
+static int menuBarMeasure(void *item, const char *visible,
+                          double *textWidth, double *overhead) {
+	if (item == NULL || visible == NULL) {
+		return 0;
+	}
+	__block int ok = 0;
 	void (^measure)(void) = ^{
 		NSStatusItem *statusItem = (NSStatusItem *)item;
 		NSStatusBarButton *button = statusItem.button;
@@ -35,120 +38,119 @@ static double menuBarWidestLabelWidth(void *item) {
 			return;
 		}
 		NSFont *font = button.font ?: [NSFont menuBarFontOfSize:0];
-		// Wails 会把模板图缩到菜单栏厚度；图标还没装上时按厚度预留，宁宽勿窄。
-		CGFloat iconWidth = button.image != nil
-			? button.image.size.width
-			: [NSStatusBar systemStatusBar].thickness;
-		// 图标与文字间距（约 4pt）加按钮左右内边距；窄了标题会被截断成「…」。
-		CGFloat extra = iconWidth + 14;
-		int count = (int)(sizeof(kMenuBarWidthSamples) / sizeof(kMenuBarWidthSamples[0]));
-		for (int i = 0; i < count; i++) {
-			NSString *text = [NSString stringWithUTF8String:kMenuBarWidthSamples[i]];
-			if (text == nil) {
-				continue;
-			}
-			CGFloat width = [text sizeWithAttributes:@{NSFontAttributeName: font}].width + extra;
-			if (width > widest) {
-				widest = width;
-			}
+		NSString *text = [NSString stringWithUTF8String:visible];
+		if (text == nil) {
+			return;
 		}
+		double textW = menuBarStringWidth(visible, font);
+
+		// 彩色标签走 attributedTitle、普通标签走 title；两者都要还原，
+		// 否则量宽会把用户正在看的文案与颜色冲掉。
+		NSAttributedString *savedAttr = nil;
+		if (button.attributedTitle.length > 0) {
+			savedAttr = [[button.attributedTitle copy] autorelease];
+		}
+		NSString *savedTitle = [[button.title copy] autorelease];
+		double savedLength = statusItem.length;
+
+		statusItem.length = NSVariableStatusItemLength;
+		button.title = text;
+		[button layoutSubtreeIfNeeded];
+		double needed = button.frame.size.width;
+
+		if (savedAttr != nil) {
+			button.attributedTitle = savedAttr;
+		} else {
+			button.title = savedTitle;
+		}
+		statusItem.length = savedLength;
+
+		double extra = needed - textW;
+		if (extra < 0) {
+			extra = 0;
+		}
+		*textWidth = textW;
+		*overhead = extra;
+		ok = 1;
 	};
 	if ([NSThread isMainThread]) {
 		measure();
 	} else {
 		dispatch_sync(dispatch_get_main_queue(), measure);
 	}
-	return widest;
+	return ok;
 }
 
-// menuBarStringWidth 返回 text 在菜单栏字体下的宽度（点）。
-static double menuBarStringWidth(const char *text) {
-	if (text == NULL) {
-		return 0;
-	}
-	NSString *value = [NSString stringWithUTF8String:text];
-	if (value == nil) {
-		return 0;
-	}
-	NSFont *font = [NSFont menuBarFontOfSize:0];
-	return [value sizeWithAttributes:@{NSFontAttributeName: font}].width;
-}
-
-// menuBarPaddedLabel 在 label 末尾补空白，使它的可见文字宽度与最宽样例一致。
-// 状态项会把「图标 + 标题」整体居中，标题宽度每变一位数字就整体左右挪几像素；
-// 把每条标签补到同一宽度后，内容宽度恒定，数字左缘就固定在同一个位置。
-// visible 是不含 ANSI 转义码的可见文字，只用于量宽；返回 malloc 的字符串。
-static char *menuBarPaddedLabel(const char *label, const char *visible) {
-	if (label == NULL || visible == NULL) {
+// menuBarApply 把状态项宽度收紧到 width，并把 label 补到 width - overhead
+// 的可见文字宽度：数字左缘固定，右侧最多留一个量化步长的空白。
+// 返回 malloc 的字符串，调用方负责释放。
+static char *menuBarApply(void *item, const char *label, double width,
+                          double textWidth, double overhead) {
+	if (item == NULL || label == NULL || width <= 0) {
 		return NULL;
 	}
-	double target = 0;
-	int count = (int)(sizeof(kMenuBarWidthSamples) / sizeof(kMenuBarWidthSamples[0]));
-	for (int i = 0; i < count; i++) {
-		double width = menuBarStringWidth(kMenuBarWidthSamples[i]);
-		if (width > target) {
-			target = width;
-		}
-	}
-	double need = target - menuBarStringWidth(visible);
-	// 空格 / thin space / hair space 三种宽度组合，误差控制在 0.5pt 以内。
-	double spaceWidth = menuBarStringWidth(" ");
-	double thinWidth = menuBarStringWidth("\xE2\x80\x89");
-	double hairWidth = menuBarStringWidth("\xE2\x80\x8A");
-	char pad[128];
-	int padLength = 0;
-	while (need >= spaceWidth && padLength < (int)sizeof(pad) - 4) {
-		pad[padLength++] = ' ';
-		need -= spaceWidth;
-	}
-	while (need >= thinWidth && padLength < (int)sizeof(pad) - 4) {
-		pad[padLength++] = '\xE2';
-		pad[padLength++] = '\x80';
-		pad[padLength++] = '\x89';
-		need -= thinWidth;
-	}
-	while (need >= hairWidth && padLength < (int)sizeof(pad) - 4) {
-		pad[padLength++] = '\xE2';
-		pad[padLength++] = '\x80';
-		pad[padLength++] = '\x8A';
-		need -= hairWidth;
-	}
-	size_t labelLength = strlen(label);
-	char *out = malloc(labelLength + (size_t)padLength + 1);
-	if (out == NULL) {
-		return NULL;
-	}
-	memcpy(out, label, labelLength);
-	memcpy(out + labelLength, pad, (size_t)padLength);
-	out[labelLength + (size_t)padLength] = '\0';
-	return out;
-}
-
-// menuBarApplyFixedWidth 固定状态项宽度并让内容左对齐：
-// 宽度固定后，数字从 2 位变 3 位、切到「1.00k」或只显示数字时，整个菜单栏
-// 条目都不会再把左右相邻的状态项挤开；左对齐让数字左缘也保持不动。
-static void menuBarApplyFixedWidth(void *item, double width) {
-	if (item == NULL || width <= 0) {
-		return;
-	}
-	dispatch_async(dispatch_get_main_queue(), ^{
+	__block char *result = NULL;
+	void (^apply)(void) = ^{
 		NSStatusItem *statusItem = (NSStatusItem *)item;
-		if (statusItem == nil) {
+		NSStatusBarButton *button = statusItem.button;
+		if (button == nil) {
 			return;
 		}
-		statusItem.length = width;
-		NSStatusBarButton *button = statusItem.button;
-		if (button != nil) {
-			button.alignment = NSTextAlignmentLeft;
+		NSFont *font = button.font ?: [NSFont menuBarFontOfSize:0];
+		double need = (width - overhead) - textWidth;
+		if (need < 0) {
+			need = 0;
 		}
-	});
+		// 空格 / thin space / hair space 三种宽度组合，误差控制在 0.5pt 以内。
+		double spaceWidth = menuBarStringWidth(" ", font);
+		double thinWidth = menuBarStringWidth("\xE2\x80\x89", font);
+		double hairWidth = menuBarStringWidth("\xE2\x80\x8A", font);
+		char pad[128];
+		int padLength = 0;
+		while (need >= spaceWidth && padLength < (int)sizeof(pad) - 4) {
+			pad[padLength++] = ' ';
+			need -= spaceWidth;
+		}
+		while (need >= thinWidth && padLength < (int)sizeof(pad) - 4) {
+			pad[padLength++] = '\xE2';
+			pad[padLength++] = '\x80';
+			pad[padLength++] = '\x89';
+			need -= thinWidth;
+		}
+		while (need >= hairWidth && padLength < (int)sizeof(pad) - 4) {
+			pad[padLength++] = '\xE2';
+			pad[padLength++] = '\x80';
+			pad[padLength++] = '\x8A';
+			need -= hairWidth;
+		}
+		size_t labelLength = strlen(label);
+		char *out = malloc(labelLength + (size_t)padLength + 1);
+		if (out == NULL) {
+			return;
+		}
+		memcpy(out, label, labelLength);
+		memcpy(out + labelLength, pad, (size_t)padLength);
+		out[labelLength + (size_t)padLength] = '\0';
+
+		if (statusItem.length != width) {
+			statusItem.length = width;
+		}
+		button.alignment = NSTextAlignmentLeft;
+		result = out;
+	};
+	if ([NSThread isMainThread]) {
+		apply();
+	} else {
+		dispatch_sync(dispatch_get_main_queue(), apply);
+	}
+	return result;
 }
 */
 import "C"
 
 import (
 	"reflect"
-	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -156,59 +158,104 @@ import (
 	"qka/internal/applog"
 )
 
-var menuBarFixedWidth struct {
-	mu   sync.Mutex
-	done bool
-}
-
-// installMenuBarFixedWidth 给 macOS 菜单栏速度项设置固定宽度。
+// applyMenuBarLayout 让状态项宽度跟着当前标签走，并把标签补到刚好占满它。
 //
-// 状态项由 Wails 在事件循环启动后创建，这里可能还拿不到原生指针：拿不到就
-// 保持原样并返回，下一次标签刷新会再试（成功一次后不再重复）。
-// 非 darwin 平台是空实现。
-func installMenuBarFixedWidth(tray *application.SystemTray) {
-	if tray == nil {
-		return
+// 旧实现按「所有样式里最宽的文案（1.00k tok/s）」永久定宽，再把每条标签
+// 补满到那个宽度：空闲的「0 tok/s」右侧就挂着几十 pt 看不见的空白，
+// 「只显示数字」也省不下空间。现在宽度按当前可见文案实测、按步长量化，
+// 只保留一个步长以内的补白，样式切换与伙伴图标变化都自动跟随。
+//
+// 文案不变时直接复用上轮补白标签，不重复触发 AppKit 排版。
+func applyMenuBarLayout(tray *application.SystemTray, label, visible string, now time.Time) string {
+	if tray == nil || label == "" {
+		return label
 	}
-	menuBarFixedWidth.mu.Lock()
-	if menuBarFixedWidth.done {
-		menuBarFixedWidth.mu.Unlock()
-		return
-	}
-	menuBarFixedWidth.mu.Unlock()
-
 	item := statusItemPointer(tray)
 	if item == nil {
-		return
+		// 状态项还没创建（或 Wails 内部结构变化）时保持自适应宽度、不补白，
+		// 本身就是最省空间的状态；下一轮刷新会再试。
+		return label
 	}
-	// 量宽度要读 AppKit：C 侧会同步切到主线程，调用方在哪个 goroutine 都可以。
-	width := float64(C.menuBarWidestLabelWidth(item))
-	if width <= 0 {
-		return
+
+	menuBarWidthState.mu.Lock()
+	if menuBarWidthState.ready && menuBarWidthState.padded != "" &&
+		menuBarWidthState.visible == visible && menuBarWidthState.label == label {
+		width, narrowSince := menuBarDecideWidth(
+			menuBarWidthState.width, menuBarWidthState.target, menuBarWidthState.narrowSince, now)
+		menuBarWidthState.narrowSince = narrowSince
+		if width == menuBarWidthState.width {
+			padded := menuBarWidthState.padded
+			menuBarWidthState.mu.Unlock()
+			return padded
+		}
+		// 变窄观察期到期：沿用上轮实测数据，只重设宽度并重新补白。
+		menuBarWidthState.width = width
+		textWidth := menuBarWidthState.textWidth
+		overhead := menuBarWidthState.overhead
+		menuBarWidthState.mu.Unlock()
+		return menuBarApplyLabel(item, label, visible, width, textWidth, overhead)
 	}
-	C.menuBarApplyFixedWidth(item, C.double(width))
-	menuBarFixedWidth.mu.Lock()
-	menuBarFixedWidth.done = true
-	menuBarFixedWidth.mu.Unlock()
-	applog.Infof("gui", "菜单栏速度条固定宽度 %.0fpt（数字位数变化不再挤动相邻状态项）", width)
+	menuBarWidthState.mu.Unlock()
+
+	textWidth, overhead, ok := menuBarMeasureLabel(item, visible)
+	if !ok {
+		return label
+	}
+	target := menuBarQuantizedWidth(textWidth + overhead)
+
+	menuBarWidthState.mu.Lock()
+	firstLayout := !menuBarWidthState.ready
+	width, narrowSince := menuBarDecideWidth(
+		menuBarWidthState.width, target, menuBarWidthState.narrowSince, now)
+	menuBarWidthState.width = width
+	menuBarWidthState.target = target
+	menuBarWidthState.narrowSince = narrowSince
+	menuBarWidthState.ready = true
+	menuBarWidthState.visible = visible
+	menuBarWidthState.label = label
+	menuBarWidthState.textWidth = textWidth
+	menuBarWidthState.overhead = overhead
+	menuBarWidthState.padded = "" // 新文案不能复用旧补白结果
+	menuBarWidthState.mu.Unlock()
+
+	if firstLayout {
+		applog.Infof("gui", "菜单栏速度条按当前文案收紧宽度 %.0fpt（可见文案 %q，图标与内边距 %.0fpt）", width, visible, overhead)
+	}
+	return menuBarApplyLabel(item, label, visible, width, textWidth, overhead)
 }
 
-// padMenuBarLabel 把标签补到固定宽度的可见文字，避免数字位数变化时整条
-// 内容在固定宽度里左右挪动。visible 是去掉 ANSI 转义码后的可见文字。
-func padMenuBarLabel(label, visible string) string {
-	if label == "" {
-		return label
-	}
-	cLabel := C.CString(label)
+// menuBarMeasureLabel 调用 C 侧实测文字宽度与按钮固有开销。
+func menuBarMeasureLabel(item unsafe.Pointer, visible string) (textWidth, overhead float64, ok bool) {
 	cVisible := C.CString(visible)
-	defer C.free(unsafe.Pointer(cLabel))
 	defer C.free(unsafe.Pointer(cVisible))
-	padded := C.menuBarPaddedLabel(cLabel, cVisible)
+	var text, extra C.double
+	if C.menuBarMeasure(item, cVisible, &text, &extra) == 0 {
+		return 0, 0, false
+	}
+	return float64(text), float64(extra), true
+}
+
+// menuBarApplyLabel 把宽度与补白写回状态项，并缓存结果供后续刷新复用。
+func menuBarApplyLabel(item unsafe.Pointer, label, visible string, width, textWidth, overhead float64) string {
+	cLabel := C.CString(label)
+	defer C.free(unsafe.Pointer(cLabel))
+	padded := C.menuBarApply(item, cLabel, C.double(width), C.double(textWidth), C.double(overhead))
 	if padded == nil {
+		// 写回失败就作废缓存：下一轮重新量，别复用旧文案的补白结果。
+		menuBarWidthState.mu.Lock()
+		menuBarWidthState.ready = false
+		menuBarWidthState.mu.Unlock()
 		return label
 	}
-	defer C.free(unsafe.Pointer(padded))
-	return C.GoString(padded)
+	result := C.GoString(padded)
+	C.free(unsafe.Pointer(padded))
+
+	menuBarWidthState.mu.Lock()
+	if menuBarWidthState.ready && menuBarWidthState.visible == visible && menuBarWidthState.label == label {
+		menuBarWidthState.padded = result
+	}
+	menuBarWidthState.mu.Unlock()
+	return result
 }
 
 // statusItemPointer 从 Wails 的 SystemTray 里取出 NSStatusItem 指针。

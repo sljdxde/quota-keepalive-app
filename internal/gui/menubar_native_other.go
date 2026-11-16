@@ -2,11 +2,14 @@
 
 package gui
 
-import "github.com/wailsapp/wails/v3/pkg/application"
+import (
+	"time"
 
-// installMenuBarFixedWidth 只在 macOS 上需要：其它平台的托盘标签宽度由
-// 系统自己决定（Windows 托盘本来就不显示 label 文本），这里保持空实现。
-func installMenuBarFixedWidth(*application.SystemTray) {}
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
 
-// padMenuBarLabel 只在 macOS 上需要：其它平台不按像素宽度渲染菜单栏文本。
-func padMenuBarLabel(label, _ string) string { return label }
+// applyMenuBarLayout 只在 macOS 上需要：其它平台的托盘标签宽度由系统自己
+// 决定（Windows 托盘本来就不显示 label 文本），这里原样返回标签。
+func applyMenuBarLayout(_ *application.SystemTray, label, _ string, _ time.Time) string {
+	return label
+}

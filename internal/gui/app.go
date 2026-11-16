@@ -989,10 +989,8 @@ func (a *App) PanelToggleAt(x, y int) { a.togglePanelAtNotch(x, y) }
 
 func (a *App) onApplicationStarted(*application.ApplicationEvent) {
 	a.startedAt.Store(time.Now().UnixNano())
-	// 菜单栏速度项固定宽度：数字位数变化时不再左右挤动相邻状态项。
-	// 事件循环启动后状态项才真正创建，所以放在这里；monitorTokenSpeed
-	// 每一轮也会再试一次，成功一次即停。
-	installMenuBarFixedWidth(a.tray)
+	// 状态项在事件循环启动后才由 Wails 创建，宽度收紧交给 monitorTokenSpeed
+	// 的首轮刷新；拿不到原生指针时它会自动重试。
 }
 
 // trayPetFromEventData 从「pet-selected」事件里取出伙伴 id：前端发的是
@@ -1879,14 +1877,12 @@ func (a *App) monitorTokenSpeed(ctx context.Context) {
 				ticker.Reset(next)
 				lastInterval = next
 			}
-			// 状态项未就绪时这里拿不到原生指针，成功后会置位、后续直接返回。
-			installMenuBarFixedWidth(a.tray)
 			snapshot := a.tokenSpeed.Snapshot()
 			style := a.menuBarSpeedStyle()
 			label := menuBarLabel(style, snapshot.OutputTokensPerSecond)
-			// 补到固定宽度：状态项会把「图标 + 标题」整体居中，位数变一位
-			// 数字就左右挪几像素；补齐后数字左缘固定在这个位置上。
-			label = padMenuBarLabel(label, visibleMenuBarLabel(label))
+			// 宽度跟着当前标签走、只补一个步长以内的空白：既不按最宽形态
+			// 永久预留（空闲时右侧一大段空白），也保留数字左缘不跳动。
+			label = applyMenuBarLayout(a.tray, label, visibleMenuBarLabel(label), time.Now())
 			// 内容变化才刷新；另外每 10 秒补写一次，防止某个系统版本上
 			// 状态项标题被 AppKit 重排/重建后丢掉，让数字自己恢复。
 			if label != lastLabel || time.Since(lastLabelAt) >= 10*time.Second {
