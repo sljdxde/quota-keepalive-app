@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -180,14 +181,19 @@ func TestWindowsTaskXMLValidationAndTimeBoundary(t *testing.T) {
 }
 
 func TestRealRunnerAndNewAreUsableWithoutInstallingTasks(t *testing.T) {
+	if New() == nil {
+		t.Fatal("New 必须返回 scheduler")
+	}
+	if runtime.GOOS == "windows" {
+		// /usr/bin/true 与 /usr/bin/false 只在 Unix 存在；Windows 的调度器实现
+		// 由 windows_locale_test.go 用真实 schtasks 覆盖。
+		t.Skip("Unix-only fixture")
+	}
 	if _, err := realRunner(context.Background(), "/usr/bin/true"); err != nil {
 		t.Fatalf("本地无副作用命令应运行成功: %v", err)
 	}
 	if _, err := realRunner(context.Background(), "/usr/bin/false"); err == nil {
 		t.Fatal("非零退出状态必须由 realRunner 返回错误")
-	}
-	if New() == nil {
-		t.Fatal("New 必须返回 scheduler")
 	}
 }
 

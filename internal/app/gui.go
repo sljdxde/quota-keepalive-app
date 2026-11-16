@@ -98,16 +98,32 @@ func ensureSchedulePlan(ctx context.Context, mgr *schedule.Manager, configDir st
 		if err != nil {
 			return err
 		}
-		if view.Enabled && !view.Installed {
+		cfg, err := schedule.Load(configDir)
+		if err != nil {
+			return err
+		}
+		switch {
+		case view.Enabled && !view.Installed:
 			if _, err := mgr.SetEnabled(ctx, true); err != nil {
 				return err
 			}
 			applog.Infof("app", "自动执行：系统任务缺失，已按现有计划重新安装")
+		case !view.Enabled && !view.Installed && cfg.Schema == 0 &&
+			view.LastRun == nil &&
+			view.IntervalMinutes == schedule.DefaultIntervalMinutes &&
+			view.Action == schedule.ActionAll:
+			// 旧版在中文 Windows 上首次启用失败，把默认计划写成了「已关闭」，
+			// 且从未运行过、系统任务也不存在。这不是用户选择：重新开通默认计划。
+			// 新版写入 schema 后，用户主动关闭的计划不会再被这里打开。
+			if _, err := mgr.SetEnabled(ctx, true); err != nil {
+				return err
+			}
+			applog.Infof("app", "自动执行：修复旧版遗留的未启用默认计划")
 		}
 	} else {
-		if _, err := mgr.SetConfig(ctx, schedule.DefaultIntervalMinutes, schedule.ActionAll); err != nil {
-			return err
-		}
+		// 首次启动直接启用默认计划：Default() 本身就是 120 分钟 / all。
+		// 不先 SetConfig 再 SetEnabled——那会把「已关闭」写进 schedule.json，
+		// 一旦随后安装失败，下次启动就会把它当成用户选择而放弃重试。
 		if _, err := mgr.SetEnabled(ctx, true); err != nil {
 			return err
 		}

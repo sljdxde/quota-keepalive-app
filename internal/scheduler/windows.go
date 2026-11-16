@@ -17,6 +17,9 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
+
+	"golang.org/x/sys/windows"
 
 	"qka/internal/procattr"
 )
@@ -84,7 +87,7 @@ func (s *windowsScheduler) Install(ctx context.Context, spec Spec) error {
 		WindowsTaskName(spec.ConfigDir), "/XML", path, "/F")
 	if err != nil {
 		return fmt.Errorf("scheduler: schtasks create: %w (%s)",
-			err, strings.TrimSpace(string(out)))
+			err, strings.TrimSpace(decodeTaskOutput(out)))
 	}
 	return nil
 }
@@ -94,7 +97,7 @@ func (s *windowsScheduler) Remove(ctx context.Context, spec Spec) error {
 	out, err := s.run(ctx, "schtasks", "/Delete", "/TN", name, "/F")
 	if err != nil && !taskMissing(out) {
 		return fmt.Errorf("scheduler: schtasks delete: %w (%s)",
-			err, strings.TrimSpace(string(out)))
+			err, strings.TrimSpace(decodeTaskOutput(out)))
 	}
 	return nil
 }
@@ -104,7 +107,7 @@ func (s *windowsScheduler) Status(ctx context.Context, spec Spec) (Status, error
 	if err != nil {
 		if !taskMissing(out) {
 			return Status{}, fmt.Errorf("scheduler: schtasks query: %w (%s)",
-				err, strings.TrimSpace(string(out)))
+				err, strings.TrimSpace(decodeTaskOutput(out)))
 		}
 		return Status{
 			Installed:   false,
@@ -118,15 +121,78 @@ func (s *windowsScheduler) Status(ctx context.Context, spec Spec) (Status, error
 }
 
 func taskMissing(output []byte) bool {
-	text := strings.ToLower(string(output))
+	text := strings.ToLower(decodeTaskOutput(output))
 	for _, marker := range []string{
-		"cannot find", "does not exist", "not found", "找不到", "不存在",
+		"cannot find", "does not exist", "not found",
+		"找不到", "不存在",
+		"見つかりません", "見つけることができません",
+		"찾을 수 없습니다",
 	} {
 		if strings.Contains(text, marker) {
 			return true
 		}
 	}
 	return false
+}
+
+// decodeTaskOutput 把 schtasks 的控制台输出转成 UTF-8。中文 Windows 上
+// 「错误: 系统找不到指定的文件。」按控制台代码页（CP936）输出，旧实现直接拿
+// UTF-8 的「找不到」去匹配永远失败，于是「任务不存在」被当成硬失败：首次启动
+// 装不上默认计划，界面也无法点「启用/修复」。这里先按控制台代码页解码，再
+// 匹配本地化错误文案。
+func decodeTaskOutput(data []byte) string {
+	if len(data) == 0 {
+		return ""
+	}
+	// schtasks /XML 的输出是 UTF-16LE；普通错误文本可能是 UTF-8 或 OEM 代码页。
+	if (len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE) ||
+		(len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF) {
+		data = decodeScheduledTaskXML(data)
+	}
+	if utf8.Valid(data) {
+		return string(data)
+	}
+	consoleCP, _ := windows.GetConsoleOutputCP()
+	fallback := ""
+	for _, codePage := range []uint32{consoleCP, windows.GetACP(), 65001} {
+		if codePage == 0 {
+			continue
+		}
+		text, ok := decodeCodePage(codePage, data)
+		if !ok {
+			continue
+		}
+		// 用错代码页通常还能「解码成功」，只是塞满 U+FFFD；这种结果不能
+		// 用来匹配错误文案，继续试下一个代码页。
+		if !strings.ContainsRune(text, utf8.RuneError) {
+			return text
+		}
+		if fallback == "" {
+			fallback = text
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return string(data)
+}
+
+func decodeCodePage(codePage uint32, data []byte) (string, bool) {
+	if codePage == 0 || len(data) == 0 {
+		return "", false
+	}
+	size, err := windows.MultiByteToWideChar(
+		codePage, 0, &data[0], int32(len(data)), nil, 0)
+	if err != nil || size <= 0 {
+		return "", false
+	}
+	buf := make([]uint16, size)
+	written, err := windows.MultiByteToWideChar(
+		codePage, 0, &data[0], int32(len(data)), &buf[0], size)
+	if err != nil || written <= 0 {
+		return "", false
+	}
+	return string(utf16.Decode(buf[:written])), true
 }
 
 // pruneTaskPattern 只匹配「自动执行」任务（QKA Auto Run <8 位 hash>）。

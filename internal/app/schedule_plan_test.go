@@ -11,16 +11,20 @@ import (
 )
 
 type fakePlanScheduler struct {
-	installed bool
-	installs  int
-	lastSpec  scheduler.Spec
-	pruned    int
-	pruneErr  error
+	installed   bool
+	installs    int
+	lastSpec    scheduler.Spec
+	pruned      int
+	pruneErr    error
+	failInstall error
 }
 
 func (f *fakePlanScheduler) Install(_ context.Context, spec scheduler.Spec) error {
 	f.installs++
 	f.lastSpec = spec
+	if f.failInstall != nil {
+		return f.failInstall
+	}
 	f.installed = true
 	return nil
 }
@@ -84,6 +88,77 @@ func TestEnsureSchedulePlanFirstRunAndPreserveUserChoice(t *testing.T) {
 	}
 	if fake2.installs != 0 {
 		t.Fatalf("用户关闭后不应重装，实际安装 %d 次", fake2.installs)
+	}
+}
+
+// 首次启动安装失败时不能先写下「已关闭」的 schedule.json：那会把一次安装
+// 失败伪装成用户选择，下次启动就不再尝试默认计划。
+func TestEnsureSchedulePlanFirstRunInstallFailureLeavesNoConfig(t *testing.T) {
+	dir := t.TempDir()
+	fake := &fakePlanScheduler{failInstall: errors.New("schtasks unavailable")}
+	if err := ensureSchedulePlan(context.Background(), planManager(t, dir, fake), dir); err == nil {
+		t.Fatal("首次安装失败应向上返回错误")
+	}
+	if schedule.Exists(dir) {
+		t.Fatal("安装失败不应写入 schedule.json")
+	}
+}
+
+// 旧版在中文 Windows 上首次启用失败，会把默认计划写成「已关闭」且从未运行。
+// 这种文件没有 schema 标记：启动时应重新开通一次默认计划。
+func TestEnsureSchedulePlanRepairsLegacyDefaultDisabled(t *testing.T) {
+	dir := t.TempDir()
+	if err := schedule.Save(dir, schedule.Default()); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakePlanScheduler{}
+	if err := ensureSchedulePlan(context.Background(), planManager(t, dir, fake), dir); err != nil {
+		t.Fatal(err)
+	}
+	if fake.installs != 1 {
+		t.Fatalf("旧版遗留的默认关闭计划应重装 1 次，实际 %d", fake.installs)
+	}
+	cfg, err := schedule.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Enabled || cfg.Schema != schedule.CurrentSchema {
+		t.Fatalf("修复后应启用并写入 schema，实际 %+v", cfg)
+	}
+}
+
+// 用户主动关闭的计划（带 schema 标记或已有 last_run）不能被重新打开。
+func TestEnsureSchedulePlanKeepsExplicitlyDisabledPlan(t *testing.T) {
+	for name, cfg := range map[string]schedule.Config{
+		"schema marked": func() schedule.Config {
+			c := schedule.Default()
+			c.Schema = schedule.CurrentSchema
+			return c
+		}(),
+		"has last run": func() schedule.Config {
+			c := schedule.Default()
+			c.LastRun = &schedule.LastRun{At: "2026-11-13T00:00:00Z", Result: "success"}
+			return c
+		}(),
+		"custom interval": func() schedule.Config {
+			c := schedule.Default()
+			c.IntervalMinutes = 30
+			return c
+		}(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := schedule.Save(dir, cfg); err != nil {
+				t.Fatal(err)
+			}
+			fake := &fakePlanScheduler{}
+			if err := ensureSchedulePlan(context.Background(), planManager(t, dir, fake), dir); err != nil {
+				t.Fatal(err)
+			}
+			if fake.installs != 0 {
+				t.Fatalf("用户关闭的计划不应重装，实际 %d 次", fake.installs)
+			}
+		})
 	}
 }
 

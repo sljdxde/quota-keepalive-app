@@ -73,8 +73,8 @@ func TestManagerEnableDisableKeepsSystemAndFileInStep(t *testing.T) {
 		t.Fatalf("启用应安装原生任务并持久化: view=%+v fake=%+v", view, fake)
 	}
 	cfg, err := Load(m.ConfigDir)
-	if err != nil || !cfg.Enabled {
-		t.Fatalf("启用后 schedule.json 应为 enabled: %+v %v", cfg, err)
+	if err != nil || !cfg.Enabled || cfg.Schema != CurrentSchema {
+		t.Fatalf("启用后 schedule.json 应为 enabled 且带 schema: %+v %v", cfg, err)
 	}
 
 	view, err = m.SetEnabled(ctx, false)

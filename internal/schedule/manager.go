@@ -106,6 +106,9 @@ func (m *Manager) SetEnabled(ctx context.Context, enabled bool) (View, error) {
 		return View{}, err
 	}
 	previous := cfg
+	// 任何一次显式启停都说明用户/产品已经接管这个计划；写 schema 后
+	// 旧版遗留状态的自动修复不会再碰它。
+	cfg.Schema = CurrentSchema
 	if enabled {
 		if m.Executable == "" {
 			return View{}, fmt.Errorf("schedule: executable path is unavailable")
@@ -148,6 +151,7 @@ func (m *Manager) SetConfig(
 		return View{}, err
 	}
 	previous := cfg
+	cfg.Schema = CurrentSchema
 	cfg.IntervalMinutes = intervalMinutes
 	cfg.Action = action
 	cfg.normalize()

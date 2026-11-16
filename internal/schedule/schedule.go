@@ -50,6 +50,11 @@ const (
 	ActionActivity = "activity"
 )
 
+// CurrentSchema 标记 schedule.json 由「自动执行已成功安装或用户已操作」的
+// 版本写入。旧版本没有 schema 字段（读出来是 0）；启动时可据此识别旧版
+// 首次启用失败留下的「默认关闭」文件并修复一次。
+const CurrentSchema = 1
+
 // LastRun is a redacted summary of one task-run invocation.
 type LastRun struct {
 	At             string `json:"at"`
@@ -63,6 +68,7 @@ type LastRun struct {
 
 // Config is persisted in schedule.json.
 type Config struct {
+	Schema          int      `json:"schema,omitempty"`
 	Enabled         bool     `json:"enabled"`
 	IntervalMinutes int      `json:"interval_minutes"`
 	Action          string   `json:"action"`
