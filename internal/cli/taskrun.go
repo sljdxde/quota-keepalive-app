@@ -13,7 +13,8 @@ import (
 )
 
 type taskRunRunner interface {
-	RunAllActionSummary(context.Context, string) (app.RunSummary, error)
+	// 调度器触发的执行标记为 auto，执行日志显示「自动」徽标。
+	RunAllActionSummaryAuto(context.Context, string) (app.RunSummary, error)
 	Close() error
 }
 
@@ -139,7 +140,7 @@ func runTaskRun(ctx context.Context, configDir string, deps taskRunDeps) (*Respo
 	}
 	defer runner.Close()
 
-	summary, runErr := runner.RunAllActionSummary(ctx, cfg.Action)
+	summary, runErr := runner.RunAllActionSummaryAuto(ctx, cfg.Action)
 	if runErr != nil && summary.NeedsAttention == 0 {
 		summary.NeedsAttention = 1
 	}

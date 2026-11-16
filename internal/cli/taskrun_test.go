@@ -22,7 +22,7 @@ type fakeTaskRunRunner struct {
 	action  string
 }
 
-func (f *fakeTaskRunRunner) RunAllActionSummary(_ context.Context, action string) (app.RunSummary, error) {
+func (f *fakeTaskRunRunner) RunAllActionSummaryAuto(_ context.Context, action string) (app.RunSummary, error) {
 	f.calls++
 	f.action = action
 	return f.summary, f.err

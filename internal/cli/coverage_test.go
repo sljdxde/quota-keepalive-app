@@ -415,7 +415,7 @@ type recordingTaskRunRunner struct {
 	closed   bool
 }
 
-func (r *recordingTaskRunRunner) RunAllActionSummary(context.Context, string) (app.RunSummary, error) {
+func (r *recordingTaskRunRunner) RunAllActionSummaryAuto(context.Context, string) (app.RunSummary, error) {
 	return r.summary, r.err
 }
 

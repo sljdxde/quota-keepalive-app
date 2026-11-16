@@ -75,6 +75,16 @@ func (a *App) RunAllSummary(ctx context.Context) (RunSummary, error) {
 // scheduler uses all/checkin/activity while manual "run all" keeps the same
 // shared state machine and Beijing-day idempotency rules.
 func (a *App) RunAllActionSummary(ctx context.Context, action string) (RunSummary, error) {
+	return a.runAllActionSummary(ctx, action, providers.RunSourceManual)
+}
+
+// RunAllActionSummaryAuto 同 RunAllActionSummary，但执行来源标记为调度器
+// （auto）。task-run（Windows 计划任务）走这里，执行日志会显示「自动」徽标。
+func (a *App) RunAllActionSummaryAuto(ctx context.Context, action string) (RunSummary, error) {
+	return a.runAllActionSummary(ctx, action, providers.RunSourceAuto)
+}
+
+func (a *App) runAllActionSummary(ctx context.Context, action, source string) (RunSummary, error) {
 	if !features.ValidAction(action) {
 		return RunSummary{}, fmt.Errorf("unsupported run action %q", action)
 	}
@@ -137,7 +147,7 @@ func (a *App) RunAllActionSummary(ctx context.Context, action string) (RunSummar
 	}
 
 	if providerActive && providerErr == nil {
-		providerSummary, runErr := a.providers.RunAllView(ctx, providerView, action, nil)
+		providerSummary, runErr := a.providers.RunAllViewSource(ctx, providerView, action, nil, source)
 		summary.Attempted += providerSummary.Attempted
 		summary.Succeeded += providerSummary.Succeeded
 		summary.NeedsAttention += providerSummary.NeedsAttention
