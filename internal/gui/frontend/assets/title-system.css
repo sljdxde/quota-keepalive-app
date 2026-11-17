@@ -58,24 +58,6 @@
   opacity: 1;
 }
 
-.title-rank-count {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  min-width: 12px;
-  padding: 1px 2px;
-  border-radius: 4px;
-  color: var(--fg-2);
-  background: color-mix(in srgb, var(--card) 90%, transparent);
-  font: 650 6.5px/1 var(--code);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.title-icon.is-compact .title-rank-count {
-  display: none;
-}
-
 .title-theme-glyph .title-rank-mark {
   --title-rank-size: 27px;
   padding: 1px;

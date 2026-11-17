@@ -191,22 +191,23 @@
     --glass-rgb: 24,24,29; --glass-card-rgb: 35,35,39;
     --glass-border-rgb: 255,255,255; --glass-border-alpha: .12;
   }
-  /* 新版扁平设计：背景只做极轻的整体色调，不再铺渐变壁纸。
-     这些值直接改 --bg，由 body 铺满整个窗口（窗口本身透明），
-     因此不会再出现「上半截新底、下半截旧壁纸」的割裂。 */
-  html[data-background="coast"] { --bg: #f7fafb; }
-  html[data-theme="dark"][data-background="coast"] { --bg: #0b0d0f; }
-  html[data-background="ember"] { --bg: #fbf7f3; }
-  html[data-theme="dark"][data-background="ember"] { --bg: #0d0b0b; }
-  html[data-background="glacier"] { --bg: #f6f9fc; }
-  html[data-theme="dark"][data-background="glacier"] { --bg: #0a0d10; }
-  html[data-background="night"] { --bg: #f5f6f9; }
-  html[data-theme="dark"][data-background="night"] { --bg: #0a0b0e; }
+  /* 新版扁平设计：背景是整窗极轻的色调（98e4d2a 起），body 铺满整个窗口
+     （窗口本身透明），不会出现「上半截新底、下半截旧壁纸」的割裂。
+     五套背景的底色差必须让人一眼分辨（浅色下至少差出冷暖，深色下亮度
+     可感知），否则设置里选谁都是同一个样子，等于失效。 */
+  html[data-background="coast"] { --bg: #eef5f6; }
+  html[data-theme="dark"][data-background="coast"] { --bg: #0e171a; }
+  html[data-background="ember"] { --bg: #f8efe6; }
+  html[data-theme="dark"][data-background="ember"] { --bg: #171009; }
+  html[data-background="glacier"] { --bg: #eef2f9; }
+  html[data-theme="dark"][data-background="glacier"] { --bg: #0d1420; }
+  html[data-background="night"] { --bg: #edeff5; }
+  html[data-theme="dark"][data-background="night"] { --bg: #0a0d16; }
   @media (prefers-color-scheme: dark) {
-    html:not([data-theme="light"])[data-background="coast"] { --bg: #0b0d0f; }
-    html:not([data-theme="light"])[data-background="ember"] { --bg: #0d0b0b; }
-    html:not([data-theme="light"])[data-background="glacier"] { --bg: #0a0d10; }
-    html:not([data-theme="light"])[data-background="night"] { --bg: #0a0b0e; }
+    html:not([data-theme="light"])[data-background="coast"] { --bg: #0e171a; }
+    html:not([data-theme="light"])[data-background="ember"] { --bg: #171009; }
+    html:not([data-theme="light"])[data-background="glacier"] { --bg: #0d1420; }
+    html:not([data-theme="light"])[data-background="night"] { --bg: #0a0d16; }
   }
   html[data-glass="clear"] {
     --glass-alpha-window: .50;
@@ -2039,7 +2040,6 @@
     color: var(--fg-2); font-size: var(--fs-sm);
   }
   .speed-title-icon { width: 30px; height: 30px; flex: none; display: grid; place-items: center; }
-  .speed-title-icon .title-rank-count { display: none; }
   .speed-title-picker {
     margin-left: auto; height: 31px; padding: 0 10px; border: 0;
     border-radius: 8px; color: var(--fg-2); background: transparent;
@@ -2116,11 +2116,6 @@
     --title-rank-size: 40px;
     padding: 2px;
   }
-  .speed-rank-icon .title-rank-count {
-    min-width: 15px;
-    padding: 1px 2px;
-    font-size: var(--fs-3xs);
-  }
   .speed-rank-icon .title-rank-sigil {
     width: 46%; height: 46%;
   }
@@ -2154,12 +2149,6 @@
   .title-icon-current .title-rank-sigil { color: var(--title-accent); }
   .title-icon-current {
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--title-accent) 7%, transparent);
-  }
-  .title-rank-count {
-    position: absolute; right: 1px; bottom: 0;
-    min-width: 12px; padding: 1px 2px;
-    color: var(--fg-2); background: color-mix(in srgb, var(--card) 88%, transparent);
-    font: 650 6.5px/1 var(--code); text-align: center;
   }
   dialog.provider-login-dialog {
     position: fixed; inset: 0; margin: auto;
@@ -2534,7 +2523,6 @@
   }
   .title-theme-card.on .title-theme-glyph { color: var(--title-accent); }
   .title-theme-glyph .title-rank-mark { --title-rank-size: 27px; padding: 1px; }
-  .title-theme-glyph .title-rank-count { display: none; }
   .title-theme-copy { min-width: 0; flex: 1; }
   .title-theme-copy b { display: block; font-size: var(--fs-lg); font-weight: 600; }
   .title-theme-copy small {
@@ -2566,7 +2554,6 @@
     --title-rank-size: 34px;
     padding: 1px;
   }
-  .title-ladder-preview .title-rank-count { display: none; }
   .title-ladder-title { min-width: 0; display: grid; gap: 2px; }
   .title-ladder-head b { font-size: var(--fs-lg); font-weight: 600; }
   .title-ladder-head small { color: var(--muted); font-size: var(--fs-xs); }
@@ -2592,7 +2579,6 @@
     color: var(--title-accent); background: transparent; box-shadow: none;
   }
   .title-level-icon .title-rank-mark { --title-rank-size: 20px; padding: 1px; }
-  .title-level-icon .title-rank-count { display: none; }
   .title-level-name { min-width: 0; font-size: var(--fs-lg); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .title-level-speed { color: var(--muted); font: 10px/1.2 var(--code); font-variant-numeric: tabular-nums; white-space: nowrap; }
   html[data-theme="dark"] .title-picker-rail {
@@ -3489,7 +3475,7 @@
     </span>
     <div class="title-dialog-copy">
       <h2>称号体系</h2>
-      <p>内置九套速度称号体系；每套使用统一描边图标、等级环与进入速度。</p>
+      <p>内置九套速度称号体系；每套各级使用专属描边图标、等级环与进入速度。</p>
     </div>
     <button class="title-dialog-close" id="title-picker-close" type="button" aria-label="关闭">
       <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -3601,6 +3587,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     titleThemeOrder,
     titleThresholds,
   } from "./assets/title-system.js";
+  import {
+    applyCustomBackground as applyCustomBackgroundSetting,
+    clearCustomImage,
+    hasCustomImage,
+    saveCustomImage,
+  } from "./assets/custom-background.js";
 
   // 猫猫旅行暂时关闭：上游对这类请求做了账号级风控（403/11140），先隐藏入口
   // 并停掉自动执行，等确认安全口径后再打开。代码保留，改为 true 即可恢复。
@@ -3620,8 +3612,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
   }
 
-  const CUSTOM_BACKGROUND_KEY = "qka.custom-background";
-
   // 签到管理的折叠状态。这两个集合必须在任何使用它们的函数（含深链入口）
   // 定义之前声明：模块作用域的 const 存在暂时性死区，声明晚于调用点会抛
   // ReferenceError 并让整页空白。
@@ -3629,28 +3619,13 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   // 供应商组默认折叠（先看供应商列表，点开谁就看谁的账号），账号卡片默认折叠。
   const expandedProviderGroups = new Set();
 
-  function customBackgroundData() {
-    try {
-      return localStorage.getItem(CUSTOM_BACKGROUND_KEY) || "";
-    } catch (_) {
-      return "";
-    }
-  }
-
   function applyCustomBackground(background) {
-    const image = customBackgroundData();
-    const active = background === "custom" && !!image;
-    document.body.classList.toggle("has-custom-bg", active);
-    if (active) {
-      document.documentElement.style.setProperty("--custom-image", 'url("' + image + '")');
-    } else {
-      document.documentElement.style.removeProperty("--custom-image");
-    }
+    applyCustomBackgroundSetting(background);
     const card = document.getElementById("settings-custom-bg-card");
     if (card) card.hidden = background !== "custom";
     const name = document.getElementById("settings-custom-bg-name");
     if (name && background === "custom") {
-      name.textContent = image
+      name.textContent = hasCustomImage()
         ? "已加载自定义图片；图片只保存在本机，最大 8 MB。"
         : "请选择一张横向图片；图片只保存在本机，最大 8 MB。";
     }
@@ -3710,34 +3685,26 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   document.getElementById("settings-custom-bg-pick").onclick = function () {
     document.getElementById("settings-custom-bg-file").click();
   };
-  document.getElementById("settings-custom-bg-file").onchange = function () {
+  document.getElementById("settings-custom-bg-file").onchange = async function () {
     const file = this.files && this.files[0];
+    this.value = "";
     if (!file) return;
-    if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.size > 8 * 1024 * 1024) {
-      settingsMessage("请选择 8 MB 以内的 PNG、JPEG、WebP 或 GIF 图片。", true);
-      this.value = "";
+    const error = await saveCustomImage(file);
+    if (error) {
+      settingsMessage(error, true);
       return;
     }
-    const reader = new FileReader();
-    reader.onload = async function () {
-      try {
-        localStorage.setItem(CUSTOM_BACKGROUND_KEY, String(reader.result || ""));
-        await Bound.SettingsSetString("background", "custom");
-        await renderSettings();
-        settingsMessage("自定义背景已保存。", false);
-      } catch (_) {
-        settingsMessage("自定义背景保存失败，请重试。", true);
-      }
-    };
-    reader.onerror = function () {
-      settingsMessage("无法读取图片，请重试。", true);
-    };
-    reader.readAsDataURL(file);
-    this.value = "";
+    try {
+      await Bound.SettingsSetString("background", "custom");
+      await renderSettings();
+      settingsMessage("自定义背景已保存；图片已压缩到适配屏幕的尺寸。", false);
+    } catch (_) {
+      settingsMessage("自定义背景保存失败，请重试。", true);
+    }
   };
   document.getElementById("settings-custom-bg-reset").onclick = async function () {
     try {
-      localStorage.removeItem(CUSTOM_BACKGROUND_KEY);
+      clearCustomImage();
       await Bound.SettingsSetString("background", "mist");
       await renderSettings();
       settingsMessage("自定义背景已清除。", false);
@@ -5448,7 +5415,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       });
     document.getElementById("title-ladder-name").textContent = theme.label;
     document.getElementById("title-ladder-desc").textContent =
-      "13 个速度等级 + " + (theme.idle || "待机") + " · 统一描边图标";
+      "13 个速度等级 + " + (theme.idle || "待机") + " · 每级专属描边图标";
     document.getElementById("title-ladder-active").textContent =
       "当前 " + compactTokenRate(latestTitleSpeed) + " tok/s · " + currentTitle;
   }
