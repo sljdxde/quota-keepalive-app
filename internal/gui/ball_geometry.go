@@ -221,6 +221,31 @@ func resolveBarDrop(
 	return ballDrop{Action: "float", X: nx, Y: ny, Size: size}
 }
 
+// ballHoverSlack 是 hover 呼出命中区在窗口矩形外扩的余量（物理 px）：光标
+// 不必精确压在球面上，探到窗口附近即呼出。命中区太小会导致「明明摸到了却
+// 没反应」，太大则路过边缘就弹——8px 是两者平衡。
+const ballHoverSlack = 8
+
+// pointInDockHitRect 判定物理坐标点是否落在贴边球的命中区内。rect 是窗口
+// 物理矩形（贴边态有一半越出屏幕，光标到不了屏外，等效于只判可见半圆），
+// 命中区整体外扩 ballHoverSlack。纯函数，表驱动单测覆盖边缘与角点。
+//
+// rect 退化（W/H ≤ 0）时返回 false。
+func pointInDockHitRect(rect wRect, mx, my int) bool {
+	if rect.W <= 0 || rect.H <= 0 {
+		return false
+	}
+	// 外扩后的窗口矩形：hover 意图发生在球附近即可，不必压在可见像素上。
+	x0 := rect.X - ballHoverSlack
+	y0 := rect.Y - ballHoverSlack
+	x1 := rect.X + rect.W + ballHoverSlack
+	y1 := rect.Y + rect.H + ballHoverSlack
+	if mx < x0 || mx > x1 || my < y0 || my > y1 {
+		return false
+	}
+	return true
+}
+
 // ballPanelOrigin 把精简面板摆在球旁边：优先右侧，右侧放不下放左侧；
 // 两侧都不够时钳进工作区。垂直方向与球顶对齐（略高于球 8px），并限制在
 // 工作区内。

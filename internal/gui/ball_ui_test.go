@@ -686,3 +686,38 @@ func TestRedlineDefaultsStayInSync(t *testing.T) {
 		t.Error("前端 DEFAULT_REDLINE 应为 500")
 	}
 }
+
+// 贴边/弹回切换必须走 setBarGeometry 并广播 bar-geometry-changed：页面对
+// 快速连续 resize 会漏事件，停在 76px 贴边布局、内容整体偏出可视区——
+// 用户看到「贴边拉出来全白」。几何事件是终态同步的第二条腿。
+func TestBarGeometryChangeSyncWired(t *testing.T) {
+	pageData, err := frontendFS.ReadFile("frontend/bar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(pageData)
+	for _, want := range []string{
+		`Events.On("bar-geometry-changed"`,
+		`syncDocked()`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("bar.html 缺少几何事件处理 %q", want)
+		}
+	}
+	appData, err := os.ReadFile("app.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(appData)
+	for _, want := range []string{
+		`a.setBarGeometry(bar, ballSize, ballSize, x, y)`,        // undockBar 弹回
+		`a.setBarGeometry(bar, ballDockSize, ballDockSize, x, y)`, // dockBarNow 收回
+		`a.broadcastBarGeometry()`,                                // 每次几何变化都广播
+		`a.startBarHover()`,                                       // 贴边态启用 hover 呼出
+		`a.stopBarHover()`,                                        // 弹回后停轮询
+	} {
+		if !strings.Contains(source, want) {
+			t.Errorf("app.go 缺少 %q", want)
+		}
+	}
+}

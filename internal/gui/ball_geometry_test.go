@@ -238,3 +238,48 @@ func TestLoadBarStateRejectsBadFiles(t *testing.T) {
 		t.Fatalf("非法贴边侧应清空，实际 %+v ok=%v", state, ok)
 	}
 }
+
+// TestPointInDockHitRect 锁定 hover 呼出的命中判定：贴边窗口矩形（物理 px，
+// 一半越出屏幕）外扩 ballHoverSlack 后命中；屏外一半光标到不了，等效只判
+// 可见半圆。退化矩形一律不命中。
+func TestPointInDockHitRect(t *testing.T) {
+	// 右贴边：窗口 (1863,222)-(1977,336)，右半出屏（屏宽 1920）。
+	rect := wRect{X: 1863, Y: 222, W: 114, H: 114}
+	cases := []struct {
+		name     string
+		x, y     int
+		want     bool
+	}{
+		{"可见半圆中心", 1891, 279, true},
+		{"可见左缘", 1863, 279, true},
+		{"上外扩余量", 1891, 222 - ballHoverSlack, true},
+		{"下外扩余量", 1891, 336 + ballHoverSlack, true},
+		{"左侧外扩余量", 1863 - ballHoverSlack, 279, true},
+		{"超过余量", 1863 - ballHoverSlack - 1, 279, false},
+		{"上方超出", 1891, 222 - ballHoverSlack - 1, false},
+		{"下方超出", 1891, 336 + ballHoverSlack + 1, false},
+		{"屏外半圆（光标到不了，但坐标上仍属矩形）", 1950, 279, true},
+	}
+	for _, test := range cases {
+		if got := pointInDockHitRect(rect, test.x, test.y); got != test.want {
+			t.Errorf("%s: pointInDockHitRect(%d,%d) = %v，期望 %v",
+				test.name, test.x, test.y, got, test.want)
+		}
+	}
+	// 左贴边（负 X 屏外）与上下贴边同样命中可见半圆。
+	left := wRect{X: -57, Y: 200, W: 114, H: 114}
+	if !pointInDockHitRect(left, 0, 257) {
+		t.Error("左贴边可见半圆中心应命中")
+	}
+	if pointInDockHitRect(left, -57 - ballHoverSlack - 1, 257) {
+		t.Error("左贴边屏外方向超出余量不应命中（光标也到不了）")
+	}
+	top := wRect{X: 500, Y: -57, W: 114, H: 114}
+	if !pointInDockHitRect(top, 557, 0) {
+		t.Error("顶贴边可见半圆中心应命中")
+	}
+	// 退化矩形不命中。
+	if pointInDockHitRect(wRect{}, 0, 0) {
+		t.Error("零矩形不应命中")
+	}
+}

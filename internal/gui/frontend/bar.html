@@ -275,6 +275,17 @@
   });
   syncDocked();
 
+  // Go 侧每次 SetSize/SetPosition 后都会广播一次几何事件（带最终尺寸与
+  // 位置）。快速连续的贴边/弹回切换下 WebView2 可能吞掉 resize 事件，页面
+  // 会停在旧布局——「贴边拉出来变全白」就是页面停在 76px 贴边布局、内容
+  // 整体偏出可视区。这里按终态立刻重算，不等 resize / dockPoll。
+  Events.On("bar-geometry-changed", function () {
+    clearTimeout(dockTimer);
+    syncDocked();
+    // resize 事件若随后仍会到达，80ms 后的重算保持幂等。
+    dockTimer = setTimeout(syncDocked, 80);
+  });
+
   // ---------- 手势：按住并移动超过阈值才拖动，否则算点击 ----------
   // Wails 的 --wails-draggable 在 mousedown 就武装拖动，鼠标移动 1px 即进入
   // 原生移动循环，之后的 pointerup/click 会被 runtime 吞掉——表现为「点了

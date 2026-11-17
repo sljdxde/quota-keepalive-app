@@ -74,6 +74,13 @@ type App struct {
 	barShapedW    int
 	barShapedH    int
 	barShapedSide string
+	// barHoverStop 停掉贴边态的「鼠标靠近弹回」游标轮询；浮动态为 nil。
+	// hover 呼出只在贴边态有意义：贴边球只露半个，点击目标是「拉出来」，
+	// 靠近即弹回比先点一下更顺手。
+	barHoverStop func()
+	// barSeq 是悬浮球几何变更的序号：每次 SetSize/SetPosition 后自增并广播
+	// 给页面，页面据此立刻重算贴边布局（不再依赖 500ms 的 dockPoll 兜底）。
+	barSeq atomic.Int64
 	startedAt     atomic.Int64
 	dockShow      atomic.Bool
 	failureOn     atomic.Bool
@@ -372,6 +379,7 @@ func (a *App) restoreBarPosition(bar *application.WebviewWindow) {
 			X: x, Y: y, Docked: state.Docked,
 			RestoreX: state.RestoreX, RestoreY: state.RestoreY,
 		})
+		a.startBarHover()
 		return
 	}
 	area := a.workAreaForPoint(state.X, state.Y)
@@ -524,6 +532,54 @@ func (a *App) shapeBall(bar *application.WebviewWindow) {
 	a.barStateMu.Unlock()
 }
 
+// setBarGeometry 把悬浮球窗口挪到目标几何（尺寸+位置），并在落定后广播一次
+// bar-geometry-changed。之前各处直接 SetSize+SetPosition 的排列有两个坑：
+//
+//  1. SetSize 先触发 WM_SIZE，页面立刻按新尺寸重算贴边布局；此时窗口还在
+//     旧位置（半出屏），dockSideForWindow 会误判侧向，把内容整体平移出
+//     可视区——用户看到的就是「拉出来变成全白」。先 SetPosition 再 SetSize
+//     也一样有中间态，只是顺序反过来。这里不追求消灭中间态（Wails 的
+//     SetSize/SetPosition 是两次 SetWindowPos，做不到原子），而是让页面在
+//     最终几何落定后再同步一次：几何事件带最终尺寸与位置，页面直接按
+//     终态重算，中间态渲染会被立即覆盖。
+//  2. 弹回浮动态时页面 500ms 的 dockPoll 已经停掉（resize 到 >99px 触发
+//     clearInterval），如果最后一次 resize 事件在页面侧被吞（WebView2 在
+//     快速连续 resize 下偶发），页面会永远停在贴边布局。几何事件是第二条
+//     腿，两条腿都断才有问题，概率大幅降低。
+func (a *App) setBarGeometry(bar *application.WebviewWindow, width, height, x, y int) {
+	if bar == nil {
+		return
+	}
+	if w, h := bar.Size(); w != width || h != height {
+		bar.SetSize(width, height)
+	}
+	bar.SetPosition(x, y)
+	a.broadcastBarGeometry()
+}
+
+// broadcastBarGeometry 通知 bar 页面重算贴边布局。读窗口真实几何而非传参：
+// SetSize/SetPosition 是异步落窗的，读回来的才是页面将看到的终态。窗口
+// 不存在（单测/未创建）时静默跳过。
+func (a *App) broadcastBarGeometry() {
+	if a.wails == nil {
+		return
+	}
+	a.barSeq.Add(1)
+	bar := a.bar
+	if bar == nil {
+		return
+	}
+	w, h := bar.Size()
+	x, y := bar.Position()
+	a.wails.Event.Emit("bar-geometry-changed", map[string]any{
+		"seq":    a.barSeq.Load(),
+		"width":  w,
+		"height": h,
+		"x":      x,
+		"y":      y,
+	})
+}
+
 // rememberBarState 更新内存中的贴边状态并写盘（原子写、失败只记日志）。
 func (a *App) rememberBarState(state barWindowState) {
 	a.barStateMu.Lock()
@@ -563,18 +619,21 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 		a.hidePetMini()
 		a.hideBallMenu()
 	}
-	if drop.Size != width {
-		bar.SetSize(drop.Size, drop.Size)
-	}
-	bar.SetPosition(drop.X, drop.Y)
+	a.setBarGeometry(bar, drop.Size, drop.Size, drop.X, drop.Y)
 	a.rememberBarState(barWindowState{
 		X: drop.X, Y: drop.Y, Docked: drop.Docked,
 		RestoreX: drop.RestoreX, RestoreY: drop.RestoreY,
 	})
 	a.shapeBall(bar)
+	// 贴边/弹回切换 hover 轮询：贴边态靠 hover 呼出，浮动态不需要。
+	if drop.Action == "dock" {
+		a.startBarHover()
+	} else {
+		a.stopBarHover()
+	}
 }
 
-// undockBar 把贴边态弹回浮动态：恢复 52px 与贴边前的位置（再钳进工作区）。
+// undockBar 把贴边态弹回浮动态：恢复 64px 球与贴边前的位置（再钳进工作区）。
 func (a *App) undockBar(restoreX, restoreY int) {
 	a.windowMu.Lock()
 	bar := a.bar
@@ -586,11 +645,11 @@ func (a *App) undockBar(restoreX, restoreY int) {
 	if area.Width <= 0 || area.Height <= 0 {
 		return
 	}
-	bar.SetSize(ballSize, ballSize)
 	x, y := clampBallPosition(area, restoreX, restoreY, ballSize)
-	bar.SetPosition(x, y)
+	a.setBarGeometry(bar, ballSize, ballSize, x, y)
 	a.rememberBarState(barWindowState{X: x, Y: y})
 	a.shapeBall(bar)
+	a.stopBarHover()
 }
 
 // BarToggle 实现悬浮球左键点击：贴边时先弹回，否则切换三 tab 面板
@@ -673,15 +732,104 @@ func (a *App) dockBarNow(side string, restoreX, restoreY int) {
 	a.hideBallPanel()
 	a.hidePetMini()
 	a.hideBallMenu()
-	if w, _ := bar.Size(); w != ballDockSize {
-		bar.SetSize(ballDockSize, ballDockSize)
-	}
 	x, y := ballDockedPosition(area, side, restoreX, restoreY)
-	bar.SetPosition(x, y)
+	a.setBarGeometry(bar, ballDockSize, ballDockSize, x, y)
 	a.rememberBarState(barWindowState{
 		X: x, Y: y, Docked: side, RestoreX: restoreX, RestoreY: restoreY,
 	})
 	a.shapeBall(bar)
+	a.startBarHover()
+}
+
+// barHoverTickMS 是贴边态游标轮询的间隔。120ms 足够「靠近即呼出」的跟手度，
+// 又远低于空闲 CPU 的可感知线（一次 GetCursorPos + 一次矩形判断）。
+const barHoverTickMS = 120
+
+// startBarHover 启动贴边态的「鼠标靠近弹回」轮询：光标进入贴边半圆的可见
+// 命中区即视为 hover，自动把球弹回浮动态。幂等：已在轮询中则跳过。
+//
+// 只在贴边态运行；undockBar/onBarMoveEnd(float) 会停掉它。轮询里每次都
+// 重读贴边状态，状态被其它路径（拖动、设置）改变时轮询自行退出。
+func (a *App) startBarHover() {
+	if goos != "windows" || a.wails == nil {
+		return
+	}
+	a.windowMu.Lock()
+	already := a.barHoverStop != nil
+	a.windowMu.Unlock()
+	if already {
+		return
+	}
+	done := make(chan struct{})
+	var once sync.Once
+	stop := func() { once.Do(func() { close(done) }) }
+	a.windowMu.Lock()
+	a.barHoverStop = stop
+	a.windowMu.Unlock()
+	go func() {
+		ticker := time.NewTicker(barHoverTickMS * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if !a.barHoverCheck() {
+					// 状态不再是贴边（或窗口没了）：停掉自己。
+					stop()
+					a.windowMu.Lock()
+					a.barHoverStop = nil
+					a.windowMu.Unlock()
+					return
+				}
+			}
+		}
+	}()
+}
+
+// stopBarHover 停掉 hover 轮询（幂等，浮动态/退出时调用）。
+func (a *App) stopBarHover() {
+	a.windowMu.Lock()
+	stop := a.barHoverStop
+	a.barHoverStop = nil
+	a.windowMu.Unlock()
+	if stop != nil {
+		stop()
+	}
+}
+
+// barHoverCheck 执行一次「光标是否在贴边球可见半圆上」的检查。返回 false
+// 表示轮询应当退出（非贴边态/无窗口/已触发弹回）。物理坐标全程直读直判：
+// GetCursorPos 与 GetWindowRect 同一坐标系，不需要 DPI 换算，也避免了
+// 150% 缩放下 DIP/物理混用的偏差。
+func (a *App) barHoverCheck() bool {
+	if goos != "windows" {
+		return false
+	}
+	side, restoreX, restoreY := a.barDockState()
+	if side == "" {
+		return false
+	}
+	a.windowMu.Lock()
+	bar := a.bar
+	a.windowMu.Unlock()
+	if bar == nil {
+		return false
+	}
+	rect, mx, my, ok := barHoverCursor(bar)
+	if !ok {
+		return true // 矩形/光标读不到（窗口过渡态）：本轮跳过，继续轮询
+	}
+	if !pointInDockHitRect(rect, mx, my) {
+		return true
+	}
+	// 命中：等价一次点击弹回（不做停留时长门槛，靠近即呼出）。登记待收起 +
+	// 弹回 + 聚焦，与 BarToggle 一致，用户随即点空白仍会收回贴边。触发弹回
+	// 后轮询退出（undockBar 里会再停一次）。
+	a.armBarRedock(side, restoreX, restoreY)
+	a.undockBar(restoreX, restoreY)
+	a.focusBar()
+	return false
 }
 
 // focusBar 把球窗带到前台并聚焦，让随后的「点桌面/别处」能触发失焦收回。
