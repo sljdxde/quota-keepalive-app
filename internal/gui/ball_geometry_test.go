@@ -246,9 +246,9 @@ func TestPointInDockHitRect(t *testing.T) {
 	// 右贴边：窗口 (1863,222)-(1977,336)，右半出屏（屏宽 1920）。
 	rect := wRect{X: 1863, Y: 222, W: 114, H: 114}
 	cases := []struct {
-		name     string
-		x, y     int
-		want     bool
+		name string
+		x, y int
+		want bool
 	}{
 		{"可见半圆中心", 1891, 279, true},
 		{"可见左缘", 1863, 279, true},
@@ -271,7 +271,7 @@ func TestPointInDockHitRect(t *testing.T) {
 	if !pointInDockHitRect(left, 0, 257) {
 		t.Error("左贴边可见半圆中心应命中")
 	}
-	if pointInDockHitRect(left, -57 - ballHoverSlack - 1, 257) {
+	if pointInDockHitRect(left, -57-ballHoverSlack-1, 257) {
 		t.Error("左贴边屏外方向超出余量不应命中（光标也到不了）")
 	}
 	top := wRect{X: 500, Y: -57, W: 114, H: 114}

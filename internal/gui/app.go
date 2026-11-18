@@ -80,10 +80,10 @@ type App struct {
 	barHoverStop func()
 	// barSeq 是悬浮球几何变更的序号：每次 SetSize/SetPosition 后自增并广播
 	// 给页面，页面据此立刻重算贴边布局（不再依赖 500ms 的 dockPoll 兜底）。
-	barSeq atomic.Int64
-	startedAt     atomic.Int64
-	dockShow      atomic.Bool
-	failureOn     atomic.Bool
+	barSeq    atomic.Int64
+	startedAt atomic.Int64
+	dockShow  atomic.Bool
+	failureOn atomic.Bool
 	// ballShow 记录「显示悬浮球」设置：false 时球与它的浮层都不再出现，
 	// 也不参与「主窗口关闭后恢复」逻辑。
 	ballShow  atomic.Bool

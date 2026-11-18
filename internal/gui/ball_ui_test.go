@@ -710,7 +710,7 @@ func TestBarGeometryChangeSyncWired(t *testing.T) {
 	}
 	source := string(appData)
 	for _, want := range []string{
-		`a.setBarGeometry(bar, ballSize, ballSize, x, y)`,        // undockBar 弹回
+		`a.setBarGeometry(bar, ballSize, ballSize, x, y)`,         // undockBar 弹回
 		`a.setBarGeometry(bar, ballDockSize, ballDockSize, x, y)`, // dockBarNow 收回
 		`a.broadcastBarGeometry()`,                                // 每次几何变化都广播
 		`a.startBarHover()`,                                       // 贴边态启用 hover 呼出
