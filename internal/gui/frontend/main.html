@@ -3529,7 +3529,8 @@
     timingAccuracy,
   } from "./assets/pet-motion.js";
   import { resolveAccountProviderView } from "./assets/account-view.js";
-  import { formatQuotaNumber as formatQuota, quotaViewForWindow } from "./assets/account-quota.js";
+  import { formatQuotaNumber as formatQuota, quotaViewForWindow,
+    lastRefreshClockText } from "./assets/account-quota.js";
   import {
     activityAccountsFor,
     activityDetailText,
@@ -7332,6 +7333,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   // 重建，所以把上一次显示的文本记在 acctQuotaShown 里；重建时数字有变就从
   // 旧值滚到新值（自动刷新 / 签到到账时肉眼可见变化）。
   const acctQuotaShown = new Map();
+  // 卡片「上次刷新」的本地时刻（毫秒），按 provider/account 记。手动刷新成功后
+  // 立即记下：一是给即时反馈，二是覆盖后端 15s 去重没写新观测的情况（此时
+  // observed_at 还是旧的，但用户确实刚点过刷新）。
+  const acctQuotaRefreshAt = new Map();
   function acctOdometer(el, key, text) {
     const prev = acctQuotaShown.get(key) || "";
     acctQuotaShown.set(key, text);
@@ -7670,6 +7675,10 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       showAccountsMessage("正在刷新状态与额度…", "pending");
       try {
         await Bound.ProvidersRun(provider.id, account.key, "refresh");
+        // 记下本次手动刷新的本地时刻：后端 15s 去重可能没写新观测
+        // （observed_at 仍是旧的），但用户确实刚点过，界面时间要跟着走。
+        // 随后的 renderAccounts 重建卡片时会读这个时间戳显示「上次」。
+        acctQuotaRefreshAt.set(provider.id + "/" + accountKey, Date.now());
         await renderAccounts();
         showAccountsMessage("额度已刷新", "success");
       } catch (err) {
@@ -7938,8 +7947,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
           } else {
             quotaLine.textContent = "暂无额度读数";
           }
-          if (reading && reading.observed_at) {
-            quotaLast.textContent = "自动刷新 · 上次 " + quotaClockText(reading.observed_at);
+          const observedAt = reading && reading.observed_at;
+          const manualAt = acctQuotaRefreshAt.get(provider.id + "/" + accountKey);
+          if (observedAt || manualAt != null) {
+            quotaLast.textContent = "自动刷新 · 上次 " +
+              lastRefreshClockText(observedAt, manualAt);
             quotaLast.title = "额度每 30 分钟自动刷新";
           }
         } catch (_) {
@@ -7950,12 +7962,6 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
 
     return box;
-  }
-
-  // observed_at（ISO）→ HH:mm；解析不了就原样返回。
-  function quotaClockText(value) {
-    const text = String(value || "");
-    return text.length >= 16 ? text.slice(11, 16) : text;
   }
 
   // 通用供应商登录对话框。

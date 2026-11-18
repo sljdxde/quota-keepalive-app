@@ -60,3 +60,34 @@ export function quotaViewForBalance(balance) {
   if (!Number.isFinite(n)) return null;
   return { text: "剩余 " + formatQuotaNumber(n), pct: null };
 }
+
+// 把一次观测时刻格式化成「本地」HH:mm。后端 observed_at 是 UTC 的 ISO 串，
+// 直接 slice(11,16) 会显示 UTC 时间（东八区差 8 小时），刷新后看着像没变。
+// 解析不了就退回原样（兼容早期只存 HH:mm 的库）。
+export function quotaClockText(value) {
+  if (value == null || value === "") return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const text = String(value);
+    return text.length >= 16 ? text.slice(11, 16) : text;
+  }
+  return String(date.getHours()).padStart(2, "0") + ":" +
+    String(date.getMinutes()).padStart(2, "0");
+}
+
+// lastRefreshClockText 取后端观测时刻与「本次会话里手动刷新的本地时刻」中较晚
+// 的那个，按本地时区输出 HH:mm。手动刷新会记一个本地时间戳：即使后端 15s 去重
+// 没写新观测（observed_at 还是旧的），用户刚点过刷新也应看到时间前进。
+export function lastRefreshClockText(observedAt, manualRefreshedAt) {
+  let chosen = observedAt || "";
+  if (manualRefreshedAt != null) {
+    const observedDate = observedAt ? new Date(observedAt) : null;
+    const manualDate = new Date(manualRefreshedAt);
+    if (!Number.isNaN(manualDate.getTime()) &&
+        (!observedDate || Number.isNaN(observedDate.getTime()) ||
+          manualDate.getTime() > observedDate.getTime())) {
+      chosen = manualDate.getTime();
+    }
+  }
+  return quotaClockText(chosen);
+}

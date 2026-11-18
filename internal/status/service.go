@@ -266,9 +266,13 @@ func (s *Service) Status(ctx context.Context) (View, error) {
 
 func (s *Service) lastInvocation(ctx context.Context) string {
 	var ts sql.NullString
-	// 每日活跃是心跳操作，不计入「最近一次实质调用」。
+	// 每日活跃是心跳操作、模型测试是只读诊断探针，都不计入「最近一次实质调用」。
+	// 尤其不能让 model_test 改动这个值：它进入 statusSignature 后会触发
+	// accounts-changed，令前端重建整个 Agent 弹层——表现为点「测试模型」后
+	// 模型区自动折叠、刚出来的测试结果随之消失。
 	_ = s.db.QueryRowContext(ctx,
-		`SELECT MAX(ts) FROM logs WHERE operation <> ?`, "keepalive").Scan(&ts)
+		`SELECT MAX(ts) FROM logs WHERE operation <> ? AND operation <> ?`,
+		"keepalive", "model_test").Scan(&ts)
 	return ts.String
 }
 

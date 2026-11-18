@@ -533,3 +533,52 @@ func contains(items []string, want string) bool {
 	}
 	return false
 }
+
+// 模型测试是只读诊断探针，不应计入「最近一次实质调用」。否则 model_test
+// 审计日志会改动 LastInvocation → statusSignature → accounts-changed，
+// 令前端重建 Agent 弹层：测试模型后模型区折叠、结果消失。
+func TestLastInvocationIgnoresModelTestAndKeepalive(t *testing.T) {
+	st, svc := setup(t)
+	ctx := context.Background()
+	seed := func(op, ts string) {
+		t.Helper()
+		if _, err := st.DB().ExecContext(ctx,
+			`INSERT INTO logs (ts, target, account_id, operation, state, level, message)
+VALUES (?, 'qoder-cn', 'q_1', ?, 'completed', 'info', 'probe')`, ts, op); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 一次真实签到确立基线时间。
+	seed("checkin", "2026-10-29T10:00:00Z")
+	view, err := svc.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := view.LastInvocation
+	if base != "2026-10-29T10:00:00Z" {
+		t.Fatalf("初始 LastInvocation 错误: %q", base)
+	}
+
+	// 更晚的心跳与模型测试日志都不能改动它。
+	seed("keepalive", "2026-10-29T11:00:00Z")
+	seed("model_test", "2026-10-29T12:00:00Z")
+	view, err = svc.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.LastInvocation != base {
+		t.Fatalf("心跳/模型测试不应改动 LastInvocation，期望 %q，实际 %q",
+			base, view.LastInvocation)
+	}
+
+	// 更晚的真实调用仍应更新。
+	seed("checkin", "2026-10-29T13:00:00Z")
+	view, err = svc.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.LastInvocation != "2026-10-29T13:00:00Z" {
+		t.Fatalf("真实调用应更新 LastInvocation，实际 %q", view.LastInvocation)
+	}
+}

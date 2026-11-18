@@ -72,3 +72,33 @@ test("数字格式：千分位、最多两位小数、非法值给破折号", fu
   assert.equal(formatQuotaNumber(1016.9800001), "1,016.98");
   assert.equal(formatQuotaNumber("abc"), "—");
 });
+
+import { quotaClockText, lastRefreshClockText } from "../frontend/assets/account-quota.js";
+
+test("观测时刻按本地时区显示 HH:mm（后端存 UTC）", function () {
+  const utc = "2026-11-18T07:23:00Z";
+  const expected = String(new Date(utc).getHours()).padStart(2, "0") + ":" +
+    String(new Date(utc).getMinutes()).padStart(2, "0");
+  assert.equal(quotaClockText(utc), expected);
+});
+
+test("观测时刻解析不了就退回原文切片", function () {
+  assert.equal(quotaClockText("07:23"), "07:23");
+  assert.equal(quotaClockText(""), "");
+  assert.equal(quotaClockText(null), "");
+});
+
+test("手动刷新时刻比观测更新时，取手动时刻（后端 15s 去重未写新观测）", function () {
+  const observed = "2026-11-18T01:00:00Z";
+  const manual = new Date("2026-11-18T09:00:00Z").getTime();
+  const expected = String(new Date(manual).getHours()).padStart(2, "0") + ":" +
+    String(new Date(manual).getMinutes()).padStart(2, "0");
+  assert.equal(lastRefreshClockText(observed, manual), expected);
+});
+
+test("观测比手动刷新更新时，取观测时刻（自动刷新后）", function () {
+  const observed = "2026-11-18T10:00:00Z";
+  const manual = new Date("2026-11-18T09:00:00Z").getTime();
+  assert.equal(lastRefreshClockText(observed, manual),
+    quotaClockText(observed));
+});
