@@ -25,8 +25,3 @@ var barHoverCursor = func(bar *application.WebviewWindow) (rect wRect, mx, my in
 	}
 	return wRect{X: phys.X, Y: phys.Y, W: phys.Width, H: phys.Height}, mx, my, true
 }
-
-// wRect 是物理像素矩形（名避免与 w32.RECT 混淆）。
-type wRect struct {
-	X, Y, W, H int
-}

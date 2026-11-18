@@ -226,6 +226,13 @@ func resolveBarDrop(
 // 没反应」，太大则路过边缘就弹——8px 是两者平衡。
 const ballHoverSlack = 8
 
+// wRect 是物理像素矩形（名避免与 w32.RECT 混淆）。共享类型：windows 侧由
+// bar_hover_windows.go 从系统坐标填充；darwin 只为 pointInDockHitRect 的
+// 签名参与编译（hover 探测在 mac 上不会运行）。
+type wRect struct {
+	X, Y, W, H int
+}
+
 // pointInDockHitRect 判定物理坐标点是否落在贴边球的命中区内。rect 是窗口
 // 物理矩形（贴边态有一半越出屏幕，光标到不了屏外，等效于只判可见半圆），
 // 命中区整体外扩 ballHoverSlack。纯函数，表驱动单测覆盖边缘与角点。
