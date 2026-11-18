@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA · 账号卡 v2 原型（自动开关 / 状态行 / 执行日志 / 文字链操作）</title>
+<style>
+/* ============================================================
+   WorkBuddy 账号卡重做原型 · 第三轮（按用户反馈修订）：
+
+   1. 开关文字「已启用/已停用 自动」（自动 = 签到 + 每日活跃）；
+      字号整体下调一档（正文 11.5px 对齐主窗口阶梯），开关、
+      小圆圈、操作链同步缩小。
+   2. 删除两步确认：一击变红色「确认删除？」，3 秒内再点才删，
+      超时自动还原。
+   3. 手动签到/活跃完成后就地反馈：操作行尾部追加彩色结果
+      （成功绿 / 远端确认灰 / 失败红），几秒后淡出；底部提示条保留。
+   4. 执行日志链接去加粗、去「›」箭头；弹层美化：日期分组小标题、
+      细实线分隔、结果右对齐彩色。
+
+   保留：手动按钮永不置灰（远端判定，可反复补救）；小圆圈刷新
+   状态与额度且不进日志；30 分钟自动刷新；改备注不动账号名；
+   odometer 数字滚动；浅/深主题。
+   4 张卡演示：全部完成 / 可手动执行 / 已停用自动 / 登录异常。
+   ============================================================ */
+:root {
+  color-scheme: light;
+  --desk: #e7e7ec;
+  --bg: #f4f4f6;
+  --card: #ffffff;
+  --card-2: #f9f9fb;
+  --pill: #f1f1f4;
+  --line: #e3e3e8;
+  --line-2: #ececf0;
+  --fg: #1c1c21;
+  --fg-2: #4b4b53;
+  --muted: #707079;
+  --faint: #b9b9c2;
+  --accent: #4f46e5;
+  --accent-strong: #4338ca;
+  --accent-soft: #eeedfd;
+  --accent-fg: #fff;
+  --sw-on: #4f46e5;
+  --green: #137a48;
+  --green-soft: #e4f6ec;
+  --red: #c33b3b;
+  --red-soft: #fbe9e9;
+  --amber: #8a4c08;
+  --amber-soft: #fbf0df;
+  --shadow: 0 24px 60px rgba(20, 22, 30, .16), 0 2px 8px rgba(20, 22, 30, .08);
+  --wb: #13a97a;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+          "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei UI",
+          "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --code: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --desk: #0e0e11;
+  --bg: #141417;
+  --card: #232327;
+  --card-2: #1f1f23;
+  --pill: #2d2d33;
+  --line: #34343a;
+  --line-2: #2b2b30;
+  --fg: #ececef;
+  --fg-2: #c2c2c8;
+  --muted: #8e8e96;
+  --faint: #55555e;
+  --accent: #a5b4fc;
+  --accent-strong: #818cf8;
+  --accent-soft: #2c2e4a;
+  --accent-fg: #15152b;
+  --sw-on: #5b62d8;
+  --green: #3fce8f;
+  --green-soft: rgba(63, 206, 143, .13);
+  --red: #e57272;
+  --red-soft: rgba(229, 114, 114, .13);
+  --amber: #e0a35a;
+  --amber-soft: rgba(224, 163, 90, .13);
+  --shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  min-height: 100vh;
+  background: var(--desk);
+  color: var(--fg);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  padding: 28px 16px 40px;
+}
+button { font-family: inherit; }
+
+/* ---------- WorkBuddy 窗口 ---------- */
+.win {
+  width: 760px; margin: 0 auto;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+.titlebar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--card);
+}
+.wb-tile {
+  width: 30px; height: 30px; border-radius: 8px; flex: none;
+  background: var(--wb); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 800;
+}
+.wb-name { font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
+.wb-sub { color: var(--muted); font-size: 11px; margin-top: 1px; }
+.tb-space { flex: 1; }
+.tb-ctl {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: 0; padding: 2px 4px; cursor: pointer;
+  color: var(--fg-2); font-size: 12.5px; font-weight: 600;
+  border-radius: 8px;
+}
+.tb-ctl:hover { background: var(--pill); }
+.sw {
+  width: 32px; height: 18px; border-radius: 999px; flex: none;
+  background: var(--faint); position: relative;
+  transition: background .15s ease;
+}
+.sw::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  transition: transform .18s ease;
+}
+[aria-checked="true"] .sw { background: var(--sw-on); }
+[aria-checked="true"] .sw::after { transform: translateX(14px); }
+.tb-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.tb-close {
+  height: 28px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--fg-2); font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.tb-close:hover { color: var(--fg); background: var(--card-2); }
+
+/* ---------- 窗口内容 ---------- */
+.win-body { padding: 14px 16px 16px; }
+.sec-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 2px 2px 10px;
+}
+.sec-head b { font-size: 13px; font-weight: 700; }
+.sec-head span { color: var(--muted); font-size: 11.5px; }
+
+/* 账号列表：固定高度内滚动，细滚动条常驻 */
+.acct-scroll {
+  max-height: 532px; overflow-y: auto;
+  scrollbar-gutter: stable;
+  display: grid; gap: 10px; padding: 2px;
+}
+.acct-scroll::-webkit-scrollbar { width: 10px; }
+.acct-scroll::-webkit-scrollbar-track { background: transparent; }
+.acct-scroll::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+.acct-scroll::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: padding-box; }
+.acct-scroll { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+/* ---------- 账号卡 ---------- */
+.acct {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px 12px;
+  transition: opacity .2s ease;
+}
+.acct.removing { opacity: 0; }
+
+/* 行 1：状态点 + 账号名（永远保留）+ 备注 + 右侧「开关 + 已启用/已停用 自动签到」 */
+.acct-head {
+  display: grid;
+  grid-template-columns: 10px minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: center; gap: 8px;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.dot.ok { background: var(--green); }
+.dot.bad { background: var(--red); }
+.acct-name {
+  font-size: 12.5px; font-weight: 600; letter-spacing: -.005em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.acct-remark-wrap { min-width: 0; display: flex; align-items: center; }
+.acct-remark {
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 1px 8px; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  cursor: default;
+}
+.acct-remark:empty { display: none; }
+.auto-ctl {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: 0; padding: 3px 6px; cursor: pointer;
+  border-radius: 8px; color: var(--fg-2);
+  font-size: 11.5px; font-weight: 600; justify-self: end;
+}
+.auto-ctl:hover { background: var(--pill); }
+.auto-ctl .lbl-off { color: var(--muted); }
+
+/* 行 2：额度（剩余 X / 总量 Y）+ 自动刷新说明 + 小圆圈手动刷新 */
+.acct-quota {
+  display: flex; align-items: center; gap: 8px;
+  margin: 8px 0 0 18px;
+  color: var(--fg-2); font-size: 11.5px;
+  min-height: 18px;
+}
+.q-track {
+  width: 64px; height: 3px; border-radius: 999px;
+  background: var(--line); overflow: hidden; flex: none;
+}
+.q-track i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.q-track i.full { background: var(--red); }
+.q-refresh { color: var(--muted); font-size: 10.5px; }
+/* 小圆圈：刷新状态与额度（不进执行日志） */
+.refresh-btn {
+  margin-left: auto;
+  width: 18px; height: 18px; border-radius: 50%; flex: none;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.refresh-btn:hover { color: var(--fg); border-color: var(--faint); background: var(--card-2); }
+.refresh-btn svg { display: block; transition: transform .55s cubic-bezier(.3, .6, .3, 1); }
+.refresh-btn.spin svg { transform: rotate(360deg); }
+.refresh-btn:disabled { opacity: .5; cursor: default; }
+.acct-quota .noread { color: var(--muted); }
+
+/* odometer：数字逐位滚动，等宽不推挤 */
+.od {
+  display: inline-flex; align-items: baseline;
+  font-family: var(--code); font-weight: 650; color: var(--fg);
+  font-size: 12px;
+  height: 15px; line-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.od .d { display: inline-block; height: 15px; overflow: hidden; }
+.od .col { display: block; transition: transform .55s cubic-bezier(.2, .7, .2, 1); }
+.od .col i { display: block; height: 15px; font-style: normal; }
+
+/* 行 3：状态行 —— 今日签到 / 今日活跃 / 执行日志 */
+.acct-status {
+  display: grid;
+  grid-template-columns: 118px 118px auto;
+  align-items: center; gap: 12px;
+  margin: 9px 0 0 18px;
+}
+.st {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: var(--fg); /* 未完成=白（前景色） */
+  white-space: nowrap; min-width: 0;
+}
+.st i { font-style: normal; font-size: 11px; flex: none; width: 12px; text-align: center; }
+.st.ok { color: var(--green); }
+.st.ok b { color: var(--green); font-weight: 700; }
+.st.bad { color: var(--red); }
+.st.none { color: var(--muted); }
+.st b { font-weight: 700; }
+.st b.num { font-family: var(--code); font-variant-numeric: tabular-nums; }
+/* 执行日志链接：与状态项同权重，不加粗、无箭头，hover 下划线 */
+.st-link {
+  background: none; border: 0; padding: 2px 2px; cursor: pointer;
+  font-size: 11.5px; font-weight: 400; color: var(--fg-2);
+  display: inline-flex; align-items: center; justify-self: start;
+}
+.st-link:hover { color: var(--fg); text-decoration: underline; }
+
+/* 行 4：操作行 —— 与现有界面一致的文字链，无边框更克制 */
+.acct-actions {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 3px 12px;
+  margin: 9px 0 0 18px;
+}
+.act {
+  border: 0; background: transparent; padding: 0; margin: 0;
+  height: auto; border-radius: 0;
+  color: var(--fg-2); font: inherit; font-size: 11.5px;
+  line-height: 1.45; cursor: pointer; white-space: nowrap;
+}
+.act:hover:not(:disabled) { color: var(--fg); text-decoration: underline; }
+.act:disabled { opacity: .5; cursor: default; text-decoration: none; }
+.act.danger { color: var(--red); margin-left: 4px; }
+.act.arming { color: var(--red); text-decoration: underline; }
+/* 就地结果提示：手动执行完成后追加在操作行尾部，几秒后淡出 */
+.inline-result { font-size: 11.5px; white-space: nowrap; transition: opacity .5s ease; }
+.inline-result.fade { opacity: 0; }
+.inline-result.ok { color: var(--green); }
+.inline-result.info { color: var(--muted); }
+.inline-result.bad { color: var(--red); }
+
+/* 隐藏账号：打码身份 */
+body.mosaic .acct-name, body.mosaic .acct-remark { filter: blur(5px); }
+
+/* ---------- 运行方式 + 底部 ---------- */
+.win-foot { padding: 12px 18px 16px; border-top: 1px solid var(--line-2); margin-top: 14px; }
+.win-foot b { font-size: 13px; font-weight: 700; }
+.win-foot p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.foot-row { display: flex; justify-content: flex-end; margin-top: 12px; }
+.add-btn {
+  height: 32px; padding: 0 14px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--fg); font-size: 12.5px; font-weight: 650; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.add-btn:hover { background: var(--card-2); }
+
+/* ---------- 窗口内提示条 ---------- */
+.win-msg {
+  position: absolute; left: 50%; bottom: 18px; transform: translate(-50%, 6px);
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 7px 14px;
+  font-size: 12px; color: var(--fg);
+  box-shadow: 0 8px 24px rgba(20, 22, 30, .18);
+  opacity: 0; pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  max-width: 560px; z-index: 10;
+}
+.win-msg.show { opacity: 1; transform: translate(-50%, 0); }
+.win-msg.success { color: var(--green); border-color: var(--green); }
+.win-msg.error { color: var(--red); border-color: var(--red); }
+
+/* ---------- 居中弹层（执行日志 / 改备注） ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(12, 12, 16, .42);
+  display: none; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.overlay.open { display: flex; }
+.dialog {
+  width: 540px; max-width: 100%;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 14px; box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.dlg-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--line-2);
+}
+.dlg-head b { font-size: 13.5px; font-weight: 700; }
+.dlg-head .who { color: var(--muted); font-size: 12px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlg-x {
+  margin-left: auto; width: 26px; height: 26px; border-radius: 8px;
+  border: 0; background: none; color: var(--muted);
+  font-size: 15px; cursor: pointer; line-height: 1;
+}
+.dlg-x:hover { background: var(--pill); color: var(--fg); }
+.dlg-body { padding: 12px 16px; max-height: 420px; overflow-y: auto;
+  scrollbar-gutter: stable; }
+.dlg-body::-webkit-scrollbar { width: 10px; }
+.dlg-body::-webkit-scrollbar-track { background: transparent; }
+.dlg-body::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+.dlg-body::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: padding-box; }
+.dlg-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; border-top: 1px solid var(--line-2);
+}
+.dlg-foot .info { color: var(--muted); font-size: 11.5px; }
+.dlg-foot .grow { flex: 1; }
+.dlg-btn {
+  height: 28px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--fg-2); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.dlg-btn:hover:not(:disabled) { color: var(--fg); background: var(--card-2); }
+.dlg-btn.primary {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-fg);
+}
+.dlg-btn.primary:hover:not(:disabled) { background: var(--accent-strong); color: var(--accent-fg); }
+
+/* 弹层内容：执行日志（只记签到与每日活跃；按日期分组、细线分隔） */
+.log-day {
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+  letter-spacing: .03em; margin: 10px 0 2px;
+}
+.log-day:first-child { margin-top: 2px; }
+.log-line {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--line-2);
+  font-size: 12px; color: var(--fg-2);
+}
+.log-line:last-child { border-bottom: 0; }
+.log-line time { font-family: var(--code); font-size: 11px; color: var(--muted); flex: none; }
+.log-line .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-line .st { margin-left: auto; flex: none; font-size: 12px; }
+.log-empty { color: var(--muted); font-size: 12px; }
+
+/* 弹层内容：改备注（账号名只读展示 + 备注输入） */
+.rm-name-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card-2); margin-bottom: 10px;
+}
+.rm-name-row .k { color: var(--muted); font-size: 11.5px; flex: none; }
+.rm-name-row .v { font-size: 13px; font-weight: 650; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-name-row .lock { margin-left: auto; color: var(--faint); font-size: 10.5px; flex: none; }
+.rm-input {
+  width: 100%; height: 32px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--fg); font: 500 13px var(--font);
+  padding: 0 11px; outline: none;
+}
+.rm-input:focus { border-color: var(--accent); }
+.rm-hint { color: var(--muted); font-size: 11.5px; margin-top: 8px; }
+
+/* ---------- 设计说明 ---------- */
+.notes {
+  width: 760px; margin: 20px auto 0;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 18px 12px;
+}
+.notes h2 { font-size: 13px; font-weight: 700; margin: 0 0 8px; }
+.notes ol { margin: 0; padding-left: 20px; color: var(--fg-2); font-size: 12.5px; }
+.notes li { margin: 5px 0; }
+.notes li b { color: var(--fg); }
+.notes .q { color: var(--amber); font-weight: 600; }
+
+/* ---------- 原型控件 ---------- */
+.proto-bar {
+  position: fixed; right: 16px; bottom: 16px; z-index: 40;
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 8px 12px;
+  box-shadow: 0 8px 24px rgba(20, 22, 30, .14);
+  font-size: 12px; color: var(--muted);
+}
+.proto-bar .seg { display: inline-flex; background: var(--pill);
+  border-radius: 9px; padding: 2px; }
+.proto-bar .seg button {
+  appearance: none; border: 0; background: transparent;
+  color: var(--muted); font: 600 11.5px var(--font);
+  padding: 4px 10px; border-radius: 7px; cursor: pointer;
+}
+.proto-bar .seg button.on { background: var(--card); color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+@media (max-width: 820px) { .win, .notes { width: 100%; } }
+</style>
+</head>
+<body>
+
+<section class="win">
+  <header class="titlebar">
+    <span class="wb-tile">W</span>
+    <div>
+      <div class="wb-name">WorkBuddy</div>
+      <div class="wb-sub">已登录 · 4 个账号 · 16 个模型</div>
+    </div>
+    <div class="tb-space"></div>
+    <button class="tb-ctl" id="hide-accounts" role="switch" aria-checked="false" title="演示：给账号名与备注打码">
+      <span class="sw"></span>隐藏账号
+    </button>
+    <span class="tb-sep"></span>
+    <button class="tb-close">关闭</button>
+  </header>
+
+  <div class="win-body">
+    <div class="sec-head"><b>账号</b><span>4 个 · 原型演示 4 种状态</span></div>
+    <div class="acct-scroll" id="acct-list"></div>
+  </div>
+
+  <footer class="win-foot">
+    <b>运行方式</b>
+    <p>WorkBuddy 使用随包社区插件，沿用你在这里的账号；签到由 QKA 每天自动执行，不额外请求远端。</p>
+    <div class="foot-row">
+      <button class="add-btn">＋ 添加账号</button>
+    </div>
+  </footer>
+
+  <div class="win-msg" id="win-msg"></div>
+</section>
+
+<section class="notes">
+  <h2>设计说明（第三轮修订）</h2>
+  <ol>
+    <li><b>开关文案与字号</b>：开关旁文字改为「已启用 / 已停用 自动」（悬停说明自动 = 签到 + 每日活跃）；卡片字号整体下调一档（正文 11.5px，对齐主窗口字号阶梯），开关、小圆圈、操作链同步缩小。</li>
+    <li><b>删除两步确认</b>：第一次点击变成红色「确认删除？」，3 秒内再点一次才真删，超时自动还原为「删除」。</li>
+    <li><b>手动执行就地反馈</b>：完成后在操作行尾部追加一条彩色结果 —— 绿「✓ 签到成功，额度 +100」、灰「今日已签到（远端确认，未重复领取）」、红「✕ 失败原因」，几秒后自动消失；窗口底部提示条同时保留。</li>
+    <li><b>执行日志美化</b>：状态行里的「执行日志」链接去掉加粗和「›」箭头（与状态项同权重，hover 下划线）；弹层改为按日期分组的小标题 + 细实线分隔 + 结果右对齐彩色，数字时间不再抢眼。</li>
+    <li><b>保留不变</b>：手动按钮永不置灰（远端判定）；小圆圈刷新状态与额度、不进日志；30 分钟自动刷新；改备注不动账号名。<span class="q">待拍板：顶部一枚开关同时管「签到 + 每日活跃」，若要独立「账号停用」请说。</span></li>
+  </ol>
+</section>
+
+<div class="proto-bar">
+  <span>原型控件</span>
+  <span class="seg" id="theme-seg">
+    <button data-v="light" class="on">浅色</button>
+    <button data-v="dark">深色</button>
+  </span>
+</div>
+
+<!-- 执行日志弹层（只记签到与每日活跃） -->
+<div class="overlay" id="log-overlay">
+  <div class="dialog" role="dialog" aria-modal="true">
+    <div class="dlg-head">
+      <b>执行日志</b><span class="who" id="log-who"></span>
+      <button class="dlg-x" data-close>×</button>
+    </div>
+    <div class="dlg-body" id="log-body"></div>
+    <div class="dlg-foot">
+      <span class="info">仅记录签到与每日活跃</span>
+      <span class="grow"></span>
+      <button class="dlg-btn primary" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 改备注弹层 -->
+<div class="overlay" id="remark-overlay">
+  <div class="dialog" role="dialog" aria-modal="true" style="width:460px">
+    <div class="dlg-head">
+      <b>改备注</b><span class="who" id="rm-who"></span>
+      <button class="dlg-x" data-close>×</button>
+    </div>
+    <div class="dlg-body">
+      <div class="rm-name-row">
+        <span class="k">账号名</span>
+        <span class="v" id="rm-name"></span>
+        <span class="lock">不可修改</span>
+      </div>
+      <input class="rm-input" id="rm-input" maxlength="24" placeholder="给这个账号加个备注（可留空）">
+      <div class="rm-hint">备注只显示在 QKA 界面上，显示在账号名旁边；不影响账号本身，账号名始终保留。</div>
+    </div>
+    <div class="dlg-foot">
+      <span class="grow"></span>
+      <button class="dlg-btn" data-close>取消</button>
+      <button class="dlg-btn primary" id="rm-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- 演示数据：4 张卡 = 4 种状态 ---------- */
+const CARDS = [
+  {
+    id: "main", name: "跳舞的薛定谔", remark: "主号", state: "ok", auto: true,
+    quota: { remain: 2030.2, total: 3900, unit: "credits", pct: 52.1, last: "14:02" },
+    checkin: { kind: "ok", gain: "+100", tip: "今天 09:02 签到成功：额度 1,930.2 → 2,030.2（+100）" },
+    activity: { kind: "ok", tip: "今天 09:02 每日活跃已完成" },
+  },
+  {
+    id: "alt", name: "小号", remark: "", state: "ok", auto: true,
+    quota: { remain: 3788.7, total: 3907, unit: "credits", pct: 97.0, last: "14:02" },
+    checkin: { kind: "idle", tip: "今天还没签到；可点下方「手动签到」立即执行" },
+    activity: { kind: "idle", tip: "今天还没活跃；可点下方「手动活跃」立即执行" },
+  },
+  {
+    id: "off", name: "备用号", remark: "周末再跑", state: "ok", auto: false,
+    quota: { remain: 156.4, total: 2900, unit: "credits", pct: 5.4, last: "13:02" },
+    checkin: { kind: "ok", gain: "+100", tip: "今天 08:40 手动签到成功（自动已停用）" },
+    activity: { kind: "idle", tip: "自动活跃已停用；可点下方「手动活跃」立即执行" },
+  },
+  {
+    id: "bad", name: "测试号", remark: "", state: "bad", auto: true,
+    quota: null, /* 登录过期，读不到额度 */
+    checkin: { kind: "bad", tip: "今天 09:00 签到失败：登录已过期" },
+    activity: { kind: "idle", tip: "登录过期，活跃也未执行；手动执行会得到同样的错误提示" },
+  },
+];
+
+const CHECKIN_LABEL = { ok: "已签到", idle: "未完成", none: "无需签到", bad: "失败" };
+const ACTIVITY_LABEL = { ok: "已完成", idle: "未完成", none: "无需活跃", bad: "失败" };
+const KIND_ICON = { ok: "✓", idle: "○", none: "–", bad: "✕" };
+const $ = (sel, root) => (root || document).querySelector(sel);
+
+function statusNode(kind, label, gain, tip) {
+  const el = document.createElement("span");
+  el.className = "st " + (kind === "ok" ? "ok" : kind === "bad" ? "bad" : kind === "none" ? "none" : "");
+  const icon = document.createElement("i");
+  icon.textContent = KIND_ICON[kind] || "○";
+  el.appendChild(icon);
+  el.appendChild(document.createTextNode(label));
+  if (gain) {
+    const b = document.createElement("b");
+    b.className = "num";
+    b.textContent = gain;
+    el.appendChild(b);
+  }
+  if (tip) el.title = tip;
+  return el;
+}
+
+/* ---------- odometer：逐位滚动 ---------- */
+function renderOdometer(el, text) {
+  const prev = el.dataset.v || "";
+  el.dataset.v = text;
+  if (prev.length !== text.length || !el.childElementCount) {
+    el.textContent = "";
+    for (const ch of String(text)) {
+      if (/\d/.test(ch)) {
+        const d = document.createElement("span"); d.className = "d";
+        const col = document.createElement("span"); col.className = "col";
+        for (let i = 0; i <= 9; i++) { const r = document.createElement("i"); r.textContent = i; col.appendChild(r); }
+        col.style.transform = "translateY(-" + Number(ch) * 15 + "px)";
+        d.appendChild(col); el.appendChild(d);
+      } else {
+        const s = document.createElement("span"); s.textContent = ch; el.appendChild(s);
+      }
+    }
+    return;
+  }
+  const digits = el.querySelectorAll(".col");
+  let di = 0;
+  for (const ch of String(text)) {
+    if (/\d/.test(ch)) {
+      digits[di].style.transform = "translateY(-" + Number(ch) * 15 + "px)";
+      di += 1;
+    }
+  }
+}
+function fmtQuota(v) {
+  return Number.isInteger(v) ? v.toLocaleString("en-US") : v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+function nowHM() {
+  const t = new Date();
+  return String(t.getHours()).padStart(2, "0") + ":" + String(t.getMinutes()).padStart(2, "0");
+}
+function addHM(min) {
+  const t = new Date(Date.now() + min * 60000);
+  return String(t.getHours()).padStart(2, "0") + ":" + String(t.getMinutes()).padStart(2, "0");
+}
+
+/* ---------- 渲染账号卡 ---------- */
+function buildCard(data) {
+  const card = document.createElement("article");
+  card.className = "acct";
+  card.dataset.id = data.id;
+
+  /* 行 1：点 + 名称 + 备注 + 开关 */
+  const head = document.createElement("div"); head.className = "acct-head";
+  const dot = document.createElement("span"); dot.className = "dot " + (data.state === "bad" ? "bad" : "ok");
+  head.appendChild(dot);
+  const name = document.createElement("span"); name.className = "acct-name"; name.textContent = data.name;
+  head.appendChild(name);
+  const rmWrap = document.createElement("span"); rmWrap.className = "acct-remark-wrap";
+  const rm = document.createElement("span"); rm.className = "acct-remark"; rm.textContent = data.remark || "";
+  rm.title = "备注";
+  rmWrap.appendChild(rm); head.appendChild(rmWrap);
+  const auto = document.createElement("button");
+  auto.type = "button"; auto.className = "auto-ctl";
+  auto.setAttribute("role", "switch");
+  auto.setAttribute("aria-checked", data.auto ? "true" : "false");
+  const sw = document.createElement("span"); sw.className = "sw"; auto.appendChild(sw);
+  const lbl = document.createElement("span"); lbl.className = "lbl";
+  auto.appendChild(lbl);
+  const setAutoLabel = () => {
+    lbl.textContent = auto.getAttribute("aria-checked") === "true" ? "已启用 自动" : "已停用 自动";
+    lbl.classList.toggle("lbl-off", auto.getAttribute("aria-checked") !== "true");
+  };
+  setAutoLabel();
+  auto.title = "自动 = 签到 + 每日活跃；关闭后仍可在下方手动执行";
+  auto.onclick = () => {
+    auto.setAttribute("aria-checked", auto.getAttribute("aria-checked") === "true" ? "false" : "true");
+    setAutoLabel();
+    message(data.name + (auto.getAttribute("aria-checked") === "true" ? " 已启用自动（签到与活跃）" : " 已停用自动（手动仍可用）"), "success");
+  };
+  head.appendChild(auto);
+  card.appendChild(head);
+
+  /* 行 2：额度（剩余 X / 总量 Y）+ 自动刷新说明 + 小圆圈刷新 */
+  const quota = document.createElement("div"); quota.className = "acct-quota";
+  const remainEl = document.createElement("span"); remainEl.className = "od";
+  if (data.quota) {
+    const lab = document.createElement("span"); lab.textContent = "Credits · 剩余 ";
+    quota.appendChild(lab); quota.appendChild(remainEl);
+    const tot = document.createElement("span"); tot.textContent = " / 总量 " + fmtQuota(data.quota.total) + " " + data.quota.unit;
+    quota.appendChild(tot);
+    const track = document.createElement("span"); track.className = "q-track";
+    const bar = document.createElement("i"); bar.style.width = data.quota.pct + "%";
+    if (data.quota.pct >= 100) bar.className = "full";
+    track.appendChild(bar); quota.appendChild(track);
+    const refB = document.createElement("span"); refB.className = "q-refresh";
+    refB.textContent = "自动刷新 · 上次 " + data.quota.last;
+    refB.title = "额度每 30 分钟自动刷新";
+    quota.appendChild(refB);
+    renderOdometer(remainEl, fmtQuota(data.quota.remain));
+  } else {
+    const noread = document.createElement("span"); noread.className = "noread";
+    noread.textContent = "额度暂不可读 · 登录过期后重新登录即可恢复";
+    quota.appendChild(noread);
+  }
+  /* 小圆圈：点击刷新状态与额度（刷新结果不进执行日志） */
+  const refreshBtn = document.createElement("button");
+  refreshBtn.type = "button"; refreshBtn.className = "refresh-btn";
+  refreshBtn.title = "刷新状态与额度";
+  refreshBtn.setAttribute("aria-label", "刷新状态与额度");
+  refreshBtn.innerHTML =
+    '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">' +
+    '<path d="M13.2 8a5.2 5.2 0 1 1-1.52-3.68" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>' +
+    '<path d="M13.4 1.6v3.1h-3.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  refreshBtn.onclick = () => {
+    refreshBtn.disabled = true;
+    refreshBtn.classList.remove("spin");
+    void refreshBtn.offsetWidth; /* 重置一次性旋转 */
+    refreshBtn.classList.add("spin");
+    message("正在刷新状态与额度…");
+    setTimeout(() => {
+      refreshBtn.disabled = false;
+      if (data.quota) {
+        data.quota.remain = Math.max(0, data.quota.remain - 16.5);
+        data.quota.last = nowHM();
+        renderOdometer(remainEl, fmtQuota(data.quota.remain));
+        const bar = card.querySelector(".q-track i");
+        if (bar) bar.style.width = data.quota.pct + "%";
+        const ref = card.querySelector(".q-refresh");
+        if (ref) ref.textContent = "自动刷新 · 上次 " + data.quota.last;
+        message("已刷新（下次 " + addHM(30) + " 自动）", "success");
+      } else {
+        message("刷新失败：登录已过期，请重新登录", "error");
+      }
+    }, 600);
+  };
+  quota.appendChild(refreshBtn);
+  card.appendChild(quota);
+
+  /* 行 3：状态行（ok 态不再重复「已签到/已完成」二字，✓ + 绿色已说明） */
+  const status = document.createElement("div"); status.className = "acct-status";
+  status.appendChild(statusNode(data.checkin.kind, "今日签到 " + (data.checkin.kind === "ok" ? "" : CHECKIN_LABEL[data.checkin.kind]), data.checkin.gain, data.checkin.tip));
+  status.appendChild(statusNode(data.activity.kind, "今日活跃 " + (data.activity.kind === "ok" ? "" : ACTIVITY_LABEL[data.activity.kind]), data.activity.gain, data.activity.tip));
+  const logBtn = document.createElement("button");
+  logBtn.type = "button"; logBtn.className = "st-link";
+  logBtn.textContent = "执行日志";
+  logBtn.title = "查看签到与每日活跃的执行记录";
+  logBtn.onclick = () => openLog(data);
+  status.appendChild(logBtn);
+  card.appendChild(status);
+
+  /* 行 4：操作行（文字链；手动永不置灰，只在请求进行中短暂禁用） */
+  const acts = document.createElement("div"); acts.className = "acct-actions";
+  const link = (text, cls, title) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "act" + (cls ? " " + cls : "");
+    b.textContent = text;
+    if (title) b.title = title;
+    acts.appendChild(b);
+    return b;
+  };
+
+  link("手动签到", null, "点击执行一次；若今天已完成会向远端确认，不会重复领取")
+    .onclick = function () {
+      runRemote(this, data, "签到", () => {
+        if (data.checkin.kind === "bad") {
+          flashResult(card, "✕ 签到失败：登录已过期，请重新登录", "bad");
+          message("签到失败：登录已过期，请重新登录", "error");
+          return;
+        }
+        if (data.checkin.kind === "ok" || data.checkin.kind === "none") {
+          flashResult(card, "今日已签到（远端确认，未重复领取）", "info");
+          message("远端确认：今日已签到，无需重复", "success");
+          return;
+        }
+        data.checkin = { kind: "ok", gain: "+100", tip: "刚才手动签到成功：额度 +100" };
+        refreshStatusRow(card, data);
+        if (data.quota) {
+          data.quota.remain += 100;
+          data.quota.pct = Math.min(100, data.quota.pct + 100 / data.quota.total * 100);
+          const bar = card.querySelector(".q-track i");
+          if (bar) bar.style.width = data.quota.pct + "%";
+          renderOdometer(remainEl, fmtQuota(data.quota.remain));
+        }
+        flashResult(card, "✓ 签到成功，额度 +100", "ok");
+        message("签到成功，额度 +100", "success");
+      });
+    };
+
+  link("手动活跃", null, "点击执行一次；若今天已完成会向远端确认")
+    .onclick = function () {
+      runRemote(this, data, "活跃", () => {
+        if (data.activity.kind === "bad") {
+          flashResult(card, "✕ 活跃失败：登录已过期，请重新登录", "bad");
+          message("活跃失败：登录已过期，请重新登录", "error");
+          return;
+        }
+        if (data.activity.kind === "ok" || data.activity.kind === "none") {
+          flashResult(card, "今日活跃已完成（远端确认）", "info");
+          message("远端确认：今日活跃已完成", "success");
+          return;
+        }
+        data.activity = { kind: "ok", tip: "刚才手动活跃完成" };
+        refreshStatusRow(card, data);
+        flashResult(card, "✓ 每日活跃执行完成", "ok");
+        message("每日活跃执行完成", "success");
+      });
+    };
+
+  link("改备注", null, "账号名不变，只加一条备注").onclick = () => openRemark(data, rm);
+  link("重新登录", null, "打开官方授权页面，登录后账号自动恢复")
+    .onclick = () => message("原型：这里会打开官方登录窗口，完成后自动验证。");
+  /* 删除两步确认：第一次点击进入待确认态（3 秒），再点一次才真删 */
+  const delBtn = link("删除", "danger", "从 QKA 删除该账号；供应商侧数据不受影响");
+  let armed = false, armTimer = 0;
+  const revertDel = () => {
+    armed = false;
+    delBtn.textContent = "删除";
+    delBtn.classList.remove("arming");
+    delBtn.title = "从 QKA 删除该账号；供应商侧数据不受影响";
+  };
+  delBtn.onclick = function () {
+    if (!armed) {
+      armed = true;
+      this.textContent = "确认删除？";
+      this.classList.add("arming");
+      this.title = "再点一次确认删除；稍候不动会自动取消";
+      message("再点一次「确认删除？」才会删除 " + data.name);
+      armTimer = setTimeout(revertDel, 3200);
+      return;
+    }
+    clearTimeout(armTimer);
+    revertDel();
+    card.classList.add("removing");
+    setTimeout(() => card.remove(), 180);
+    message("已删除 " + data.name + "（原型演示，刷新页面恢复）", "success");
+  };
+
+  card.appendChild(acts);
+  return card;
+}
+
+/* 手动执行的统一流程：短暂禁用 → 远端判定 → 应用结果。
+   期间禁用只为防连点，结束后永远恢复可点。 */
+function runRemote(button, data, what, apply) {
+  button.disabled = true;
+  message("正在" + (what === "签到" ? "签到" : "执行每日活跃") + "（远端确认中）…");
+  setTimeout(() => {
+    button.disabled = false;
+    apply();
+  }, 700);
+}
+
+/* 就地结果提示：追加在操作行尾部，几秒后淡出移除（配合窗口底部提示条） */
+function flashResult(card, text, kind) {
+  const acts = card.querySelector(".acct-actions");
+  const old = acts.querySelector(".inline-result");
+  if (old) old.remove();
+  const el = document.createElement("span");
+  el.className = "inline-result " + (kind || "info");
+  el.textContent = text;
+  acts.appendChild(el);
+  setTimeout(() => el.classList.add("fade"), 3600);
+  setTimeout(() => el.remove(), 4300);
+}
+
+/* 状态行重绘（手动执行成功后） */
+function refreshStatusRow(card, data) {
+  const row = card.querySelector(".acct-status");
+  const checkin = statusNode(data.checkin.kind, "今日签到 " + (data.checkin.kind === "ok" ? "" : CHECKIN_LABEL[data.checkin.kind]), data.checkin.gain, data.checkin.tip);
+  const activity = statusNode(data.activity.kind, "今日活跃 " + (data.activity.kind === "ok" ? "" : ACTIVITY_LABEL[data.activity.kind]), data.activity.gain, data.activity.tip);
+  row.replaceChild(checkin, row.children[0]);
+  row.replaceChild(activity, row.children[1]);
+}
+
+/* ---------- 提示条 ---------- */
+let msgTimer = 0;
+function message(text, kind) {
+  const el = $("#win-msg");
+  el.textContent = text;
+  el.className = "win-msg show" + (kind ? " " + kind : "");
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => { el.className = "win-msg"; }, 2600);
+}
+
+/* ---------- 执行日志弹层（只记签到与每日活跃） ---------- */
+const LOG_ITEMS = [
+  { t: "11-16 09:02", action: "签到", what: "额度 1,930.2 → 2,030.2", kind: "ok", st: "+100" },
+  { t: "11-16 09:02", action: "每日活跃", what: "", kind: "ok", st: "完成" },
+  { t: "11-15 09:00", action: "签到", what: "额度 1,815.4 → 1,915.4", kind: "ok", st: "+100" },
+  { t: "11-15 09:00", action: "每日活跃", what: "", kind: "ok", st: "完成" },
+  { t: "11-14 09:01", action: "签到", what: "今天没有可领取的活动", kind: "none", st: "无需签到" },
+  { t: "11-13 09:00", action: "签到", what: "额度 1,715.6 → 1,815.4", kind: "ok", st: "+100" },
+];
+function openLog(data) {
+  $("#log-who").textContent = data.name;
+  const body = $("#log-body");
+  body.textContent = "";
+  if (!LOG_ITEMS.length) {
+    body.appendChild(Object.assign(document.createElement("div"), { className: "log-empty", textContent: "暂无执行记录" }));
+  }
+  let lastDay = "";
+  LOG_ITEMS.forEach((it) => {
+    /* 按日期分组：日期变化时插一枚小分组头 */
+    const day = (it.t || "").slice(0, 5);
+    if (day && day !== lastDay) {
+      lastDay = day;
+      const head = document.createElement("div");
+      head.className = "log-day";
+      head.textContent = day;
+      body.appendChild(head);
+    }
+    const line = document.createElement("div"); line.className = "log-line";
+    const t = document.createElement("time"); t.textContent = (it.t || "").slice(6);
+    const w = document.createElement("span"); w.className = "what";
+    w.textContent = it.action + (it.what ? " · " + it.what : "");
+    line.append(t, w);
+    line.appendChild(statusNode(it.kind, it.st, null, null));
+    body.appendChild(line);
+  });
+  openOverlay("#log-overlay");
+}
+
+/* ---------- 改备注弹层 ---------- */
+let rmTarget = null;
+function openRemark(data, pillEl) {
+  rmTarget = { data, pillEl };
+  $("#rm-who").textContent = data.name;
+  $("#rm-name").textContent = data.name;
+  $("#rm-input").value = data.remark || "";
+  openOverlay("#remark-overlay");
+  setTimeout(() => $("#rm-input").focus(), 60);
+}
+$("#rm-save").onclick = () => {
+  if (!rmTarget) return;
+  rmTarget.data.remark = $("#rm-input").value.trim();
+  rmTarget.pillEl.textContent = rmTarget.data.remark;
+  closeOverlays();
+  message("备注已保存（账号名保持不变）", "success");
+};
+$("#rm-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("#rm-save").click();
+});
+
+/* ---------- 弹层开关 ---------- */
+function openOverlay(sel) { $(sel).classList.add("open"); }
+function closeOverlays() {
+  document.querySelectorAll(".overlay.open").forEach((el) => el.classList.remove("open"));
+}
+document.querySelectorAll(".overlay").forEach((ov) => {
+  ov.addEventListener("click", (e) => { if (e.target === ov) closeOverlays(); });
+});
+document.querySelectorAll("[data-close]").forEach((b) => { b.onclick = closeOverlays; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlays(); });
+
+/* ---------- 顶栏 / 原型控件 ---------- */
+$("#hide-accounts").onclick = function () {
+  const on = this.getAttribute("aria-checked") !== "true";
+  this.setAttribute("aria-checked", on ? "true" : "false");
+  document.body.classList.toggle("mosaic", on);
+};
+$("#theme-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#theme-seg button").forEach((n) => n.classList.toggle("on", n === b));
+  document.documentElement.dataset.theme = b.dataset.v;
+});
+
+/* ---------- 挂载 ---------- */
+const list = $("#acct-list");
+CARDS.forEach((data) => list.appendChild(buildCard(data)));
+</script>
+</body>
+</html>

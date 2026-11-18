@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QKA · 执行日志 v2 原型（来源徽标 / 结果详情 / 双栏）</title>
+<style>
+/* ============================================================
+   执行日志 v2 原型（用户反馈：内容太简单，看不出自动还是手动）。
+
+   数据面（后端配套，落地时同步改）：
+   - runs 表加 source 列：auto（调度器 task-run）/ manual（GUI 手动）；
+     新行都会带；旧数据无来源，显示为不标注。
+   - run_items 已有 credits/balance：签到成功显示「+100 → 2,030.2」；
+   - message 字段带上失败原因，失败行可展开看详情。
+
+   展示面（本原型）：
+   1. 来源徽标：自动=灰「自动」、手动=蓝「手动」；无来源=不标（旧数据）。
+   2. 一行式升级：时间 · 来源徽标 · 动作 · 结果短语 · 右侧状态。
+      签到成功带「+100 · 剩余 2,030.2」；失败带「查看」展开原因。
+   3. 结果右侧统一彩色徽章（绿完成/绿已领取、灰无需、红失败）。
+   4. 失败行可展开：原因 + 建议（重新登录/稍后重试）。
+   5. 顶部摘要条：今天自动/手动各执行几次、成功几次。
+   6. 弹层 560px，内容区左右 20px 留白，日期分组保持。
+   ============================================================ */
+:root {
+  color-scheme: light;
+  --desk: #e7e7ec;
+  --card: #ffffff;
+  --card-2: #f9f9fb;
+  --pill: #f1f1f4;
+  --line: #e3e3e8;
+  --line-2: #ececf0;
+  --fg: #1c1c21;
+  --fg-2: #4b4b53;
+  --muted: #707079;
+  --faint: #b9b9c2;
+  --accent: #4f46e5;
+  --accent-soft: #eeedfd;
+  --green: #137a48;
+  --green-soft: #e4f6ec;
+  --red: #c33b3b;
+  --red-soft: #fbe9e9;
+  --amber: #8a4c08;
+  --amber-soft: #fbf0df;
+  --shadow: 0 24px 60px rgba(20, 22, 30, .16), 0 2px 8px rgba(20, 22, 30, .08);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text",
+          "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei UI",
+          "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --code: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --desk: #0e0e11;
+  --card: #232327;
+  --card-2: #1f1f23;
+  --pill: #2d2d33;
+  --line: #34343a;
+  --line-2: #2b2b30;
+  --fg: #ececef;
+  --fg-2: #c2c2c8;
+  --muted: #8e8e96;
+  --faint: #55555e;
+  --accent: #a5b4fc;
+  --accent-soft: #2c2e4a;
+  --green: #3fce8f;
+  --green-soft: rgba(63, 206, 143, .13);
+  --red: #e57272;
+  --red-soft: rgba(229, 114, 114, .13);
+  --amber: #e0a35a;
+  --amber-soft: rgba(224, 163, 90, .13);
+  --shadow: 0 24px 60px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .4);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  min-height: 100vh;
+  background: var(--desk);
+  color: var(--fg);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  padding: 28px 16px 40px;
+}
+button { font-family: inherit; }
+
+/* ---------- 弹层本体 ---------- */
+.win {
+  width: 560px; margin: 0 auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.dlg-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 20px; border-bottom: 1px solid var(--line-2);
+}
+.dlg-head b { font-size: 13.5px; font-weight: 700; }
+.dlg-head .who { color: var(--muted); font-size: 12px; }
+.dlg-x {
+  margin-left: auto; height: 27px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--fg-2); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.dlg-x:hover { color: var(--fg); background: var(--card-2); }
+
+/* 摘要条：今天自动/手动各几次、成功几次 */
+.dlg-summary {
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap;
+  padding: 9px 20px; border-bottom: 1px solid var(--line-2);
+  background: var(--card-2);
+  color: var(--fg-2); font-size: 11.5px;
+}
+.dlg-summary b { font-weight: 700; color: var(--fg); }
+.dlg-summary .sep { width: 1px; height: 12px; background: var(--line); }
+.dlg-summary .k { color: var(--muted); }
+
+.dlg-body {
+  max-height: 430px; overflow-y: auto;
+  padding: 2px 20px 14px;
+  scrollbar-gutter: stable;
+}
+.dlg-body::-webkit-scrollbar { width: 10px; }
+.dlg-body::-webkit-scrollbar-track { background: transparent; }
+.dlg-body::-webkit-scrollbar-thumb {
+  background: var(--line); border-radius: 999px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+.dlg-body::-webkit-scrollbar-thumb:hover { background: var(--faint); background-clip: padding-box; }
+
+/* 日期分组 */
+.log-day {
+  margin: 14px 0 4px; color: var(--muted);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+}
+.log-day:first-child { margin-top: 10px; }
+
+/* 日志行：时间 · 徽标 · 动作 · 详情 · 结果徽章 */
+.log-row { border-bottom: 1px solid var(--line-2); }
+.log-row:last-child { border-bottom: 0; }
+.log-line {
+  display: grid;
+  grid-template-columns: 38px auto minmax(0, 1fr) auto;
+  align-items: center; gap: 8px;
+  padding: 8px 0;
+  font-size: 12px; color: var(--fg-2);
+}
+.log-line time { font-family: var(--code); font-size: 11px; color: var(--muted); }
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 16px; padding: 0 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  flex: none; white-space: nowrap;
+}
+.badge.auto { color: var(--muted); background: var(--pill); }
+.badge.manual { color: var(--accent); background: var(--accent-soft); }
+.log-line .what { min-width: 0; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+.log-line .action { font-weight: 600; color: var(--fg); flex: none; }
+.log-line .detail { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-line .detail .gain { font-family: var(--code); color: var(--green); font-weight: 700; }
+.log-line .detail .after { font-family: var(--code); }
+:root[data-theme="dark"] .log-line .detail .gain { color: var(--green); }
+.state {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  height: 19px; padding: 0 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.state.good { color: var(--green); background: var(--green-soft); }
+.state.none { color: var(--muted); background: var(--pill); }
+.state.bad { color: var(--red); background: var(--red-soft); }
+.state.warn { color: var(--amber); background: var(--amber-soft); }
+
+/* 失败行展开：原因 + 建议 */
+.log-more { display: none; padding: 0 0 8px 46px; }
+.log-row.open .log-more { display: block; }
+.log-more .box {
+  border-left: 2px solid var(--red); background: var(--red-soft);
+  border-radius: 0 8px 8px 0; padding: 7px 10px;
+  font-size: 11.5px; color: var(--fg-2); line-height: 1.5;
+}
+.log-more .box b { color: var(--red); font-weight: 700; }
+.log-more .box .hint { display: block; margin-top: 3px; color: var(--muted); }
+
+/* 空态 */
+.log-empty { color: var(--muted); font-size: 12px; padding: 14px 0; }
+
+.dlg-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 20px; border-top: 1px solid var(--line-2);
+}
+.dlg-foot .info { color: var(--muted); font-size: 11.5px; }
+.dlg-foot .grow { flex: 1; }
+.dlg-btn {
+  height: 28px; padding: 0 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+  color: var(--fg-2); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.dlg-btn:hover { color: var(--fg); background: var(--card-2); }
+
+/* ---------- 设计说明 ---------- */
+.notes {
+  width: 560px; margin: 20px auto 0;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px 18px 12px;
+}
+.notes h2 { font-size: 13px; font-weight: 700; margin: 0 0 8px; }
+.notes ol { margin: 0; padding-left: 20px; color: var(--fg-2); font-size: 12.5px; }
+.notes li { margin: 5px 0; }
+.notes li b { color: var(--fg); }
+
+/* 原型控件 */
+.proto-bar {
+  position: fixed; right: 16px; bottom: 16px; z-index: 40;
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 8px 12px;
+  box-shadow: 0 8px 24px rgba(20, 22, 30, .14);
+  font-size: 12px; color: var(--muted);
+}
+.proto-bar .seg { display: inline-flex; background: var(--pill); border-radius: 9px; padding: 2px; }
+.proto-bar .seg button {
+  appearance: none; border: 0; background: transparent;
+  color: var(--muted); font: 600 11.5px var(--font);
+  padding: 4px 10px; border-radius: 7px; cursor: pointer;
+}
+.proto-bar .seg button.on { background: var(--card); color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+</style>
+</head>
+<body>
+
+<section class="win">
+  <div class="dlg-head">
+    <b>执行日志</b><span class="who">WorkBuddy · 跳舞的薛定谔</span>
+    <button class="dlg-x">关闭</button>
+  </div>
+  <div class="dlg-summary" id="summary"></div>
+  <div class="dlg-body" id="log-body"></div>
+  <div class="dlg-foot">
+    <span class="info">仅记录签到与每日活跃；额度自动刷新不进日志</span>
+    <span class="grow"></span>
+    <button class="dlg-btn">关闭</button>
+  </div>
+</section>
+
+<section class="notes">
+  <h2>设计说明（对照「内容太简单、分不清自动手动」）</h2>
+  <ol>
+    <li><b>来源徽标</b>：每行「自动」灰 /「手动」蓝。后端在 runs 表加 source 字段（调度器=auto，界面点按钮=manual），旧数据无来源就不标注。</li>
+    <li><b>签到结果带数字</b>：成功行显示「+100 · 剩余 2,030.2」，不再是光秃秃的「完成」；「已领取」和「完成」语义分开显示。</li>
+    <li><b>失败可展开</b>：失败行点「详情」展开原因与建议（如「登录已过期，请重新登录」），默认收起不打扰。</li>
+    <li><b>顶部摘要条</b>：今天自动 N 次（成功 M）/ 手动 K 次，一眼看出任务活着没。</li>
+    <li><b>展示</b>：日期分组保持；时间用等宽字；动作名加粗；左右 20px 留白与滚动条稳定槽位不变。</li>
+  </ol>
+</section>
+
+<div class="proto-bar">
+  <span>原型控件</span>
+  <span class="seg" id="theme-seg">
+    <button data-v="light" class="on">浅色</button>
+    <button data-v="dark">深色</button>
+  </span>
+</div>
+
+<script>
+/* 演示数据：覆盖 自动/手动 × 签到/活跃 × 成功/已领取/无需/失败/展开 */
+const DAYS = {
+  "11-16": [
+    { t: "15:12", src: "manual", action: "签到", state: "good", st: "已领取",
+      gain: "+100", after: "剩余 2,030.2" },
+    { t: "15:11", src: "manual", action: "每日活跃", state: "good", st: "完成",
+      detail: "免费模型" },
+    { t: "09:02", src: "auto", action: "签到", state: "good", st: "已领取",
+      gain: "+100", after: "剩余 1,930.2" },
+    { t: "09:02", src: "auto", action: "每日活跃", state: "good", st: "完成",
+      detail: "成本：不消耗模型额度" },
+    { t: "09:02", src: "auto", action: "签到", state: "none", st: "无需签到",
+      detail: "供应商今天没有可领取的活动" },
+    { t: "09:00", src: "auto", action: "签到", state: "bad", st: "失败",
+      reason: "网络或上游暂时失败（HTTP 502）",
+      hint: "10 分钟后会自动重试；也可点「手动签到」立即补救。" },
+    { t: "08:40", src: "manual", action: "签到", state: "bad", st: "失败",
+      reason: "登录已过期",
+      hint: "请点「重新登录」恢复后账号会自动继续签到。" },
+  ],
+  "11-15": [
+    { t: "09:00", src: "auto", action: "签到", state: "good", st: "已领取",
+      gain: "+100", after: "剩余 1,915.4" },
+    { t: "09:00", src: "auto", action: "每日活跃", state: "good", st: "完成" },
+  ],
+  "11-14": [
+    { t: "09:01", src: "auto", action: "签到", state: "none", st: "无需签到",
+      detail: "供应商今天没有可领取的活动" },
+  ],
+  "11-13": [
+    { t: "09:00", action: "签到", state: "good", st: "已领取",
+      gain: "+100", after: "剩余 1,815.4" },  // 旧数据：无来源徽标
+    { t: "09:00", action: "每日活跃", state: "good", st: "完成" },
+  ],
+};
+
+const $ = (s) => document.querySelector(s);
+
+/* 摘要条：今天 auto/manual 次数与成功数 */
+function renderSummary() {
+  const today = DAYS["11-16"];
+  const count = (src, ok) => today.filter((r) =>
+    (!src || r.src === src) && (ok ? r.state === "good" : true)).length;
+  const autoOk = today.filter((r) => r.src === "auto" && r.state === "good").length;
+  const manOk = today.filter((r) => r.src === "manual" && r.state === "good").length;
+  $("#summary").innerHTML =
+    '<span class="k">今天</span>' +
+    '<span>自动 <b>' + autoOk + '/' + count("auto") + '</b></span>' +
+    '<span class="sep"></span>' +
+    '<span>手动 <b>' + manOk + '/' + count("manual") + '</b></span>' +
+    '<span class="sep"></span>' +
+    '<span>获得 <b>+200</b> 积分</span>';
+}
+
+/* 徽标 / 状态 / 行渲染 */
+function badgeEl(src) {
+  if (!src) return null;
+  const b = document.createElement("span");
+  b.className = "badge " + src;
+  b.textContent = src === "auto" ? "自动" : "手动";
+  return b;
+}
+function stateEl(st, text) {
+  const s = document.createElement("span");
+  s.className = "state " + st;
+  s.textContent = text;
+  return s;
+}
+function renderLog() {
+  const body = $("#log-body");
+  body.textContent = "";
+  for (const [day, items] of Object.entries(DAYS)) {
+    const head = document.createElement("div");
+    head.className = "log-day";
+    head.textContent = day;
+    body.appendChild(head);
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "log-row";
+      const line = document.createElement("div");
+      line.className = "log-line";
+      const time = document.createElement("time");
+      time.textContent = item.t;
+      line.appendChild(time);
+      const badge = badgeEl(item.src);
+      if (badge) line.appendChild(badge);
+      const what = document.createElement("span");
+      what.className = "what";
+      const action = document.createElement("span");
+      action.className = "action";
+      action.textContent = item.action;
+      what.appendChild(action);
+      const detail = document.createElement("span");
+      detail.className = "detail";
+      const parts = [];
+      if (item.gain) {
+        const g = document.createElement("b");
+        g.className = "gain";
+        g.textContent = item.gain;
+        detail.appendChild(g);
+        if (item.after) {
+          const a = document.createElement("span");
+          a.className = "after";
+          a.textContent = " · " + item.after;
+          detail.appendChild(a);
+        }
+      } else if (item.detail) {
+        detail.textContent = item.detail;
+      } else if (item.state === "bad") {
+        detail.textContent = "详情";
+        detail.style.cursor = "pointer";
+        detail.style.textDecoration = "underline";
+        detail.onclick = () => row.classList.toggle("open");
+      }
+      what.appendChild(detail);
+      line.appendChild(what);
+      line.appendChild(stateEl(item.state, item.st));
+      row.appendChild(line);
+      if (item.state === "bad") {
+        const more = document.createElement("div");
+        more.className = "log-more";
+        const box = document.createElement("div");
+        box.className = "box";
+        const b = document.createElement("b");
+        b.textContent = item.reason;
+        box.appendChild(b);
+        if (item.hint) {
+          const hint = document.createElement("span");
+          hint.className = "hint";
+          hint.textContent = item.hint;
+          box.appendChild(hint);
+        }
+        more.appendChild(box);
+        row.appendChild(more);
+      }
+      body.appendChild(row);
+    });
+  }
+}
+renderSummary();
+renderLog();
+
+$("#theme-seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#theme-seg button").forEach((n) => n.classList.toggle("on", n === b));
+  document.documentElement.dataset.theme = b.dataset.v;
+});
+</script>
+</body>
+</html>
