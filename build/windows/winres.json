@@ -15,7 +15,7 @@
     "#1": {
       "0409": {
         "identity": { "name": "com.qka.agent", "version": "" },
-        "description": "QKA",
+        "description": "Quota Keepalive",
         "minimum-os": "win10",
         "execution-level": "as invoker",
         "ui-access": false,
@@ -39,11 +39,11 @@
         "fixed": { "file_version": "0.0.0.0", "product_version": "0.0.0.0" },
         "info": {
           "0409": {
-            "CompanyName": "QKA",
-            "FileDescription": "QKA - Quota KeepAlive Agent",
-            "LegalCopyright": "Copyright QKA",
+            "CompanyName": "Quota Keepalive",
+            "FileDescription": "Quota Keepalive",
+            "LegalCopyright": "Copyright Quota Keepalive",
             "OriginalFilename": "QKA.exe",
-            "ProductName": "QKA"
+            "ProductName": "Quota Keepalive"
           }
         }
       }

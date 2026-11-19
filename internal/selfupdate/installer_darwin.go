@@ -27,7 +27,14 @@ cleanup() {
 trap cleanup EXIT
 if [ "${PKG##*.}" = "dmg" ]; then
   MOUNT=$(hdiutil attach "$PKG" -nobrowse -readonly | tail -1 | awk -F '\t' '{print $NF}')
-  SRC="$MOUNT/QKA.app"
+  SRC="$MOUNT/Quota Keepalive.app"
+  if [ ! -d "$SRC" ]; then
+    # 旧发行物里 bundle 叫 QKA.app；不写死名字，取镜像里的第一个 .app。
+    SRC=""
+    for candidate in "$MOUNT"/*.app; do
+      if [ -d "$candidate" ]; then SRC="$candidate"; break; fi
+    done
+  fi
 else
   SRC="$PKG"
 fi

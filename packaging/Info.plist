@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- Dock 悬停名称、⌘-Tab 与 Finder 显示的是 .app 的目录名（scripts/build-dmg.sh
+       的 APP_NAME），这里只管应用菜单 / 关于窗口。两处都必须是产品名。 -->
   <key>CFBundleName</key>
   <string>Quota Keepalive</string>
   <key>CFBundleDisplayName</key>

@@ -207,7 +207,7 @@
     <!-- 第一步：选择安装位置 -->
     <section id="setup" class="panel">
       <p id="intro" class="lede">
-        选择安装位置后点击「开始安装」。QKA 会复制程序、解压内置运行时，并创建开始菜单快捷方式；
+        选择安装位置后点击「开始安装」。Quota Keepalive 会复制程序、解压内置运行时，并创建开始菜单快捷方式；
         全部在当前用户下完成，不需要管理员权限。
       </p>
       <div id="dir-field" class="field">
@@ -220,7 +220,7 @@
         <p id="dir-hint" class="hint"></p>
       </div>
       <ul class="checks">
-        <li id="check-copy">复制 QKA 程序到安装目录</li>
+        <li id="check-copy">复制 Quota Keepalive 程序到安装目录</li>
         <li>解压内置运行时（Bun、适配器、供应商插件）</li>
         <li>创建开始菜单快捷方式并注册 App Paths</li>
       </ul>
@@ -247,13 +247,13 @@
       <div class="result">
         <span class="result-icon ok" aria-hidden="true">✓</span>
         <h2 id="done-title">安装完成</h2>
-        <p id="done-text">QKA 已安装到下面的位置，开始菜单和「运行」里都能找到它。</p>
+        <p id="done-text">Quota Keepalive 已安装到下面的位置，开始菜单和「运行」里都能找到它。</p>
         <div class="path" id="done-path"></div>
         <p class="footnote" id="launch-hint"></p>
       </div>
       <div class="actions">
         <button id="close" class="btn ghost" type="button">仅完成</button>
-        <button id="launch" class="btn" type="button">完成并启动 QKA</button>
+        <button id="launch" class="btn" type="button">完成并启动 Quota Keepalive</button>
       </div>
     </section>
 
@@ -326,13 +326,13 @@
     headSub.textContent = "升级程序 · 无需管理员权限";
     introText.textContent =
       `检测到已安装版本 ${fromVersion}（${status.install_dir || "未知路径"}）。` +
-      `将升级到 ${targetVersion}，安装目录保持不变；升级前请先退出正在运行的 QKA。`;
+      `将升级到 ${targetVersion}，安装目录保持不变；升级前请先退出正在运行的 Quota Keepalive。`;
     dirField.hidden = true;
     startButton.textContent = "开始升级";
     checkCopy.textContent = "用新版程序替换安装目录里的 QKA.exe";
     doneTitle.textContent = "升级完成";
     doneText.textContent =
-      `已升级到 ${targetVersion}。下载目录里的这个 exe 可以删除了，以后请从开始菜单启动 QKA。`;
+      `已升级到 ${targetVersion}。下载目录里的这个 exe 可以删除了，以后请从开始菜单启动 Quota Keepalive。`;
     errorTitle.textContent = "升级失败";
   }
 
@@ -494,7 +494,7 @@
 
   launchButton.addEventListener("click", async () => {
     launchButton.disabled = true;
-    launchHint.textContent = "正在启动 QKA…";
+    launchHint.textContent = "正在启动 Quota Keepalive…";
     try {
       await Installer.LaunchInstalled();
     } catch (err) {

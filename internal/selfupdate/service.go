@@ -336,7 +336,7 @@ func (s *Service) applyDownloaded(
 	}
 	status.Downloaded = true
 	status.Ready = true
-	status.Message = "更新已就绪；QKA 退出后会自动替换并重新启动"
+	status.Message = "更新已就绪；Quota Keepalive 退出后会自动替换并重新启动"
 	return status, nil
 }
 

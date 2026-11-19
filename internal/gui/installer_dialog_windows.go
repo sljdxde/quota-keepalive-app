@@ -39,7 +39,7 @@ func isDialogCancel(err error) bool {
 // folder 传给 cfd），设了也不会生效，所以这里不设。
 func wailsFolderDialog(app *application.App, window *application.WebviewWindow, startDir string) (string, error) {
 	dialog := app.Dialog.OpenFile().
-		SetTitle("选择 QKA 的安装位置").
+		SetTitle("选择 Quota Keepalive 的安装位置").
 		CanChooseFiles(false).
 		CanChooseDirectories(true).
 		CanCreateDirectories(true).
@@ -126,7 +126,7 @@ func browseNativeFolder(window *application.WebviewWindow) (string, error) {
 	if application.Get() == nil {
 		return "", errors.New("应用尚未启动，无法打开目录选择框")
 	}
-	title, err := windows.UTF16PtrFromString("选择 QKA 的安装位置")
+	title, err := windows.UTF16PtrFromString("选择 Quota Keepalive 的安装位置")
 	if err != nil {
 		return "", err
 	}

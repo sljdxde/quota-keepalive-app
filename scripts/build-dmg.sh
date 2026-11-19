@@ -60,7 +60,10 @@ case "$ARCH" in
   arm64|amd64|universal) ;;
   *) die "unsupported ARCH=$ARCH" ;;
 esac
-APP_NAME="QKA"
+# .app 的目录名就是 macOS 上用户看到的名称：Dock 悬停提示、⌘-Tab 切换器和
+# Finder 都直接取 bundle 的文件名，不读 CFBundleDisplayName。所以这里必须是
+# 产品名；发行制品文件名仍用 QKA-<version>-<arch>.dmg（更新 feed 的契约）。
+APP_NAME="Quota Keepalive"
 DIST="$ROOT/dist"
 WORK="$DIST/app"
 APP_BUNDLE="$WORK/$APP_NAME.app"
@@ -266,6 +269,16 @@ if [[ "$plist_version" != "$VERSION" ]]; then
   die "Info.plist CFBundleShortVersionString=$plist_version 与构建版本 $VERSION 不一致"
 fi
 
+# 打包自检：Dock/⌘-Tab 显示的是 bundle 目录名，应用菜单显示 CFBundleDisplayName。
+# 两者不一致时用户在同一个 App 上会看到两个名字，因此必须相等。
+plist_display_name() {
+  awk '/CFBundleDisplayName/ { getline; sub(/.*<string>/, ""); sub(/<\/string>.*/, ""); print; exit }' "$1"
+}
+plist_name="$(plist_display_name "$APP_BUNDLE/Contents/Info.plist")"
+if [[ "$plist_name" != "$APP_NAME" ]]; then
+  die "Info.plist CFBundleDisplayName=$plist_name 与 .app 目录名 $APP_NAME 不一致（Dock 显示目录名）"
+fi
+
 # 适配器与 Bun 运行时放在可执行文件同级（与 cli 的 sibling 解析一致）
 cp -R adapters "$MACOS_DIR/adapters"
 rm -rf "$MACOS_DIR/adapters/_template"
@@ -317,7 +330,7 @@ DMG_FILE="$DMG_OUT/$DMG_NAME.dmg"
 rm -f "$DMG_FILE"
 
 # 先建可读写镜像，设置窗口布局，再转换为压缩只读镜像
-hdiutil create -volname "QKA" -srcfolder "$DMG_STAGE" \
+hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" \
   -ov -format UDRW "$DIST/dmg-rw.dmg" >/dev/null
 
 # 挂载并美化（拖拽布局）。只解析并卸载本次创建的卷，绝不按固定名称
@@ -325,7 +338,7 @@ hdiutil create -volname "QKA" -srcfolder "$DMG_STAGE" \
 ATTACH_OUTPUT="$(hdiutil attach "$DIST/dmg-rw.dmg" -nobrowse -readwrite)"
 MOUNT_DIR="$(printf '%s\n' "$ATTACH_OUTPUT" | awk -F '\t' 'END {print $NF}')"
 if [[ -z "$MOUNT_DIR" || ! -d "$MOUNT_DIR" ]]; then
-  echo "failed to resolve QKA DMG mount point" >&2
+  echo "failed to resolve DMG mount point" >&2
   exit 1
 fi
 DISK_NAME="$(basename "$MOUNT_DIR")"
@@ -355,7 +368,7 @@ tell application "Finder"
   set viewOptions to icon view options of container window of diskContainer
   set arrangement of viewOptions to not arranged
   set iconSize of viewOptions to 96
-  set position of item "QKA" of diskContainer to {120, 130}
+  set position of item "$APP_NAME" of diskContainer to {120, 130}
   set position of item "Applications" of diskContainer to {360, 130}
 end tell
 APPLESCRIPT

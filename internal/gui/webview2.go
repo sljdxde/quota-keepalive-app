@@ -157,18 +157,18 @@ func parseWebView2Version(raw string) (webView2Version, bool) {
 // 地址和 winget 命令；用户点「是」时打开下载页。
 func webView2Notice() (title, body string) {
 	title = "Quota Keepalive"
-	body = "QKA 需要 Microsoft Edge WebView2 运行时（Windows 10/11 均需要）。\r\n" +
+	body = "Quota Keepalive 需要 Microsoft Edge WebView2 运行时（Windows 10/11 均需要）。\r\n" +
 		"\r\n" +
-		"这台电脑上没有检测到 WebView2 运行时，所以 QKA 的窗口无法启动。\r\n" +
+		"这台电脑上没有检测到 WebView2 运行时，所以 Quota Keepalive 的窗口无法启动。\r\n" +
 		"请先安装 WebView2 Runtime（官方下载地址）：\r\n" +
 		webView2DownloadURL + "\r\n" +
-		"安装完成后重新启动 QKA 即可。\r\n" +
+		"安装完成后重新启动 Quota Keepalive 即可。\r\n" +
 		"\r\n" +
 		"也可以在命令提示符或 PowerShell 中运行：\r\n" +
 		"winget install Microsoft.EdgeWebView2Runtime\r\n" +
 		"\r\n" +
-		"QKA requires the Microsoft Edge WebView2 Runtime, which is not installed\r\n" +
-		"on this computer. Install it from the URL above, then start QKA again.\r\n" +
+		"Quota Keepalive requires the Microsoft Edge WebView2 Runtime, which is not installed\r\n" +
+		"on this computer. Install it from the URL above, then start Quota Keepalive again.\r\n" +
 		"\r\n" +
 		"现在打开下载页面吗？ / Open the download page now?"
 	return title, body

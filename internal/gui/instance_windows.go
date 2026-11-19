@@ -105,7 +105,7 @@ func signalExistingInstance() bool {
 // warnAlreadyRunning 在唤醒通道不可用时给用户明确提示，而不是「双击毫无反应」。
 func warnAlreadyRunning() {
 	title := windows.StringToUTF16Ptr("Quota Keepalive")
-	text := windows.StringToUTF16Ptr("Quota Keepalive 已在运行，请从系统托盘的 QKA 图标打开主窗口。")
+	text := windows.StringToUTF16Ptr("Quota Keepalive 已在运行，请从系统托盘的 Quota Keepalive 图标打开主窗口。")
 	_, _ = windows.MessageBox(0, text, title,
 		windows.MB_OK|windows.MB_ICONINFORMATION|windows.MB_SETFOREGROUND)
 }

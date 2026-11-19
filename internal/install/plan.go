@@ -37,7 +37,7 @@ func Preview(hostID string) (Plan, error) {
 	return Plan{
 		HostID:           hostID,
 		DownloadURL:      "https://official.example/qka/qka-darwin-arm64",
-		InstallPath:      "/Applications/QKA.app",
+		InstallPath:      "/Applications/Quota Keepalive.app",
 		HostConfigChange: profile.ConfigLocation + "（" + profile.Transport + "）",
 		BackupPath:       profile.ConfigLocation + ".bak",
 		Verify:           "首启后验证 loopback 连通并完成配对",

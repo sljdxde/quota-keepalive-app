@@ -362,7 +362,7 @@ func Install(ctx context.Context, opts Options) (Result, error) {
 	// 安装目录里可能已经有一份**正在运行**的旧程序（例如用户删掉了
 	// install.json 后重装）：Windows 不允许覆盖运行中的 exe，先请它退出。
 	if !samePath(opts.SelfPath, installedExe) && dirExistsFile(installedExe) {
-		report(StepCopy, "正在退出该目录里正在运行的 QKA…")
+		report(StepCopy, "正在退出该目录里正在运行的 Quota Keepalive…")
 		if _, err := requestQuit(installedExe); err != nil {
 			applog.Warnf("installer", "请旧版本退出失败：%v", err)
 		}
@@ -533,7 +533,7 @@ func checkReplaceable(path string) error {
 	}
 	file, err := os.OpenFile(path, os.O_WRONLY, 0)
 	if err != nil {
-		return errors.New("无法替换已安装的程序（旧版本仍在运行且未能自动退出）；请手动退出 QKA（托盘图标 → 退出）后点「重试」")
+		return errors.New("无法替换已安装的程序（旧版本仍在运行且未能自动退出）；请手动退出 Quota Keepalive（托盘图标 → 退出）后点「重试」")
 	}
 	// 探针文件只用来验证能否拿到写句柄；关闭失败不影响替换判断。
 	_ = file.Close()
@@ -551,7 +551,7 @@ func prepareInstallDir(raw string) (string, error) {
 	}
 	dir = filepath.Clean(dir)
 	if isVolumeRoot(dir) {
-		return "", errors.New("不能把 QKA 安装到磁盘根目录，请选择一个子目录")
+		return "", errors.New("不能把 Quota Keepalive 安装到磁盘根目录，请选择一个子目录")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("无法创建安装目录 %s：%w", dir, err)
