@@ -115,7 +115,7 @@ in vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }`;
 precision highp float;
 out vec4 outColor;
 uniform vec2 uRes; uniform float uS, uTime, uH, uO, uDark, uNew, uLevel, uFlash, uPeak, uSweep, uTier;
-uniform float uComet, uFlow, uPhase, uPhase2, uWarp, uCorona;
+uniform float uComet, uFlow, uPhase, uPhase2, uWarp, uCorona, uClip;
 uniform vec4 uWaves[4];
 uniform vec4 uTicks;
 
@@ -352,6 +352,56 @@ void main(){
     paint(vec3(1.), rim * (dark ? .18 : .55));
   }
 
+  // clip 模式（窗口=球面）：原型的球外特效没有生存空间，收进球面内重绘——
+  // 内环柔光（呼吸）+ 从球缘向内舔的火焰 + 从球缘向球心冲的流光条纹。
+  // 画在 body 之后、gauge 之前：垫在 LED 环下面，刻度保持清晰。
+  if (uClip > .5) {
+    float cbreathe = 1. + .15 * sin(uTime * mix(1.57, 9., h));
+    // 内环柔光：紧贴球缘、向内渐隐，随热度呼吸
+    float halo = smoothstep(.5, .40, r) * (dark ? .55 : .32) * h * cbreathe;
+    glow(fresh ? mix(hcI, HOT, .25 * o) : hcI, halo * (1. + .6 * uFlash) * (fresh ? .8 : 1.));
+
+    // 内侧火焰：原 corona 的几何原样镜像到球缘内侧（r .31-.50）
+    float cAmt = smoothstep(.45, .85, h) * (.45 + .55 * o) * lvl;
+    if (cAmt > .001 && r > .30 && r < .503) {
+      vec2 idir = p / max(r, 1e-4);
+      float irise = (.5 - r) * 9. - uCorona;
+      float iwarpN = snoise(vec3(idir * 3., irise * .5));
+      float iridge = 1. - abs(snoise(vec3(idir * 7. + iwarpN * .35, irise)));
+      iridge = pow(iridge, 5.);
+      float ibody = .5 + .5 * snoise(vec3(idir * 2.2, uCorona * .35));
+      float ireach = .02 + (.06 * h + .12 * o) * pow(ibody, 1.4) * 1.7;
+      float id = (.499 - r) / ireach;
+      float ifall = exp(-id * 2.4) * smoothstep(.503, .49, r) * smoothstep(.31, .42, r);
+      float itongues = smoothstep(.45, .8, .5 + .5 * snoise(vec3(idir * 4.5, irise * .35)));
+      float iflame = iridge * ifall * mix(.12, 1.25, itongues) * (.45 + .7 * ibody);
+      float ibase = exp(-max(.5 - r, 0.) / .012) * smoothstep(.503, .49, r) * .35;
+      vec3 ifc = mix(HOT, hc, clamp(id * .9, 0., 1.));
+      glow(dark ? ifc : ink(hc), (iflame + ibase) * cAmt * .95);
+    }
+
+    // 内冲流光：原 warp streaks 镜像——条纹头从球缘（.49）冲向球心（.31）
+    float wAmt = smoothstep(.32, .62, h) * lvl;
+    if (wAmt > .001 && r > .30 && r < .503) {
+      float ibins = 96.;
+      float ibi = floor(ang / 360. * ibins);
+      float iseed = hash11(ibi + 3.);
+      if (iseed < .18 + .42 * h) {
+        float isp = .55 + iseed * .9;
+        float ihead = fract(iseed * 7.3 + uWarp * isp);
+        float irh = mix(.49, .31, ihead);
+        float ilen = (.02 + .08 * h + .07 * o) * (.55 + iseed);
+        float ialong = (r - irh) / ilen;
+        float iacrossDeg = abs(fract(ang / 360. * ibins) - .5) * 360. / ibins;
+        float iacross = radians(iacrossDeg) * r;
+        float iline = smoothstep(.0018 + .001 * h, 0., iacross) * pow(smoothstep(1., 0., ialong), 1.6) * step(0., ialong);
+        float ifade = smoothstep(0., .3, ihead) * smoothstep(1., .82, ihead);
+        vec3 iwc = mix(hc, HOT, .45);
+        glow(dark ? iwc : ink(hc), iline * ifade * wAmt * (dark ? .8 : .75));
+      }
+    }
+  }
+
   // gauge
   // 36 段 LED 环是这颗球唯一的「进度条」，64px 球上原来每段只有 2.9×2.4px、
   // 未点亮处 7% 白，肉眼几乎看不见。这里把段加长加粗（.03/.062 半径）并把
@@ -491,13 +541,16 @@ void main(){
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     for (const n of ["uRes", "uS", "uTime", "uH", "uO", "uDark", "uNew", "uLevel", "uFlash", "uPeak", "uSweep", "uTier",
-      "uComet", "uFlow", "uPhase", "uPhase2", "uWarp", "uCorona", "uWaves", "uTicks"]) loc[n] = gl.getUniformLocation(prog, n);
+      "uComet", "uFlow", "uPhase", "uPhase2", "uWarp", "uCorona", "uClip", "uWaves", "uTicks"]) loc[n] = gl.getUniformLocation(prog, n);
     gl.uniform4f(loc.uTicks, Math.pow(.5 / R, .6), Math.pow(.15, .6), Math.pow(.375, .6), Math.pow(.75, .6));
   }
   const fx = fxCanvas.getContext("2d");
 
   // ---------- sizing ----------
   let dpr = 1, W = 0;
+  // painted 记录画布是否已经画过至少一帧。速度为 0 时帧循环会自停，此时
+  // resize 重设 canvas.width/height 会清空画布却没人重绘（见下方补画）。
+  let painted = false;
   function resize() {
     // clip 模式：画布就是圆本身（QKA 悬浮球窗口是圆形区域，外部看不见）。
     // 非 clip 模式画布 = 1.9S，与 agent-speed 原型完全一致：外圈光环到
@@ -534,6 +587,10 @@ void main(){
       pillEl.style.padding = `${.012 * S}px ${.04 * S}px`;
       pillEl.style.top = `${-.232 * S}px`;
     }
+    // 重设画布尺寸会清空内容。速度为 0 时帧循环已自停（started=false），
+    // 没有下一帧把球画回来，贴边缩小 / 弹回放大后球面就是一片透明。这里
+    // 在尺寸落定后补画一帧（已画过才补：首次 resize 时尚未渲染）。
+    if (!started && painted) render();
   }
   if (typeof ResizeObserver === "function" && stage) new ResizeObserver(resize).observe(stage);
 
@@ -575,7 +632,7 @@ void main(){
     const S = st.S;
     const a0 = (135 + Math.random() * st.h * 270) * Math.PI / 180;
     const a1 = a0 + (Math.random() - .5) * .9;
-    const r0 = .41 * S, r1 = (.5 + Math.random() * .1) * S;
+    const r0 = .41 * S, r1 = (clip ? .43 + Math.random() * .05 : .5 + Math.random() * .1) * S;
     arcs.push({ a0, a1, r0, r1, age: 0, life: .09 + Math.random() * .1, seed: Math.random() * 1000 });
   }
   function drawArc(ctx, arc, color) {
@@ -734,6 +791,18 @@ void main(){
       const k = Math.exp(-p.drag * dt);
       p.vx *= k; p.vy *= k;
       p.x += p.vx * dt; p.y += p.vy * dt;
+      // clip 模式球外不存在：火花/余烬撞到球缘内侧即镜面折返（略损耗），
+      // 能量困在球里蹦跳，而不是飞出球被裁掉。
+      if (clip) {
+        const dist = Math.hypot(p.x, p.y);
+        const rim = .48 * S;
+        if (dist > rim) {
+          const nx = p.x / dist, ny = p.y / dist;
+          const vd = p.vx * nx + p.vy * ny;
+          if (vd > 0) { p.vx = (p.vx - 2 * vd * nx) * .92; p.vy = (p.vy - 2 * vd * ny) * .92; }
+          p.x = nx * rim; p.y = ny * rim;
+        }
+      }
     }
     for (let i = parts.length - 1; i >= 0; i--) if (parts[i].age >= parts[i].life) parts.splice(i, 1);
 
@@ -789,6 +858,7 @@ void main(){
       gl.uniform1f(loc.uTier, st.tier);
       gl.uniform1f(loc.uComet, st.comet); gl.uniform1f(loc.uFlow, st.flow); gl.uniform1f(loc.uPhase, st.phase); gl.uniform1f(loc.uPhase2, st.phase2);
       gl.uniform1f(loc.uWarp, st.warp); gl.uniform1f(loc.uCorona, st.corona);
+      gl.uniform1f(loc.uClip, clip ? 1. : 0.);
       const w = new Float32Array(16).fill(-1);
       st.waves.slice(-4).forEach((wv, i) => { w[i * 4] = wv.age; w[i * 4 + 1] = wv.strength; w[i * 4 + 2] = wv.heat; w[i * 4 + 3] = 0; });
       gl.uniform4fv(loc.uWaves, w);
@@ -802,8 +872,10 @@ void main(){
     fx.globalCompositeOperation = dark ? "lighter" : "source-over";
     if (st.peakAge < 1.3) {
       const k = st.peakAge / 1.3, rot = st.peakAge * .4;
+      // clip 模式球外不存在：金光从球缘向内爆发（非 clip 保持原型向外）
       for (let i = 0; i < 24; i++) {
-        const a = rot + i / 24 * Math.PI * 2, r0 = .5 * S, r1 = (.55 + .35 * ease(k * 1.4)) * S;
+        const a = rot + i / 24 * Math.PI * 2, r0 = .5 * S;
+        const r1 = (clip ? .5 - .35 * ease(k * 1.4) : .55 + .35 * ease(k * 1.4)) * S;
         const g = fx.createLinearGradient(Math.cos(a) * r0, Math.sin(a) * r0, Math.cos(a) * r1, Math.sin(a) * r1);
         g.addColorStop(0, rgba([1, .85, .35], .0));
         g.addColorStop(.3, rgba([1, .8, .3], .75 * (1 - k)));
@@ -902,6 +974,7 @@ void main(){
     }
     if (readout) readout.style.transform = `translate(-50%, ${opts.readoutOffset || -43}%)`;
     if (opts.onFrame) opts.onFrame({ value: st.v, heat: h, overdrive: o, tier: tierNow, text });
+    painted = true;
   }
 
   // ---------- 对外 API ----------
@@ -961,11 +1034,14 @@ void main(){
 
   // ---------- 可见性 ----------
   // 隐藏窗口不跑帧；回到前台时只有未静止才重启（静止画面已经画好）。
+  // 但速度为 0 的静止态若画布被系统清空（隐藏/切显示器），只 start 挡不住
+  // 透明：静止时补画一帧把已经画好的画面重新落回画布。
   const doc = typeof document !== "undefined" ? document : null;
   function onVisibilityChange() {
     if (!doc) return;
     if (doc.hidden) stop();
     else if (!orbSettled(st)) start();
+    else if (painted) render();
   }
   if (doc && typeof doc.addEventListener === "function") {
     doc.addEventListener("visibilitychange", onVisibilityChange);
