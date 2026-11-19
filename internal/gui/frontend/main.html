@@ -2020,18 +2020,13 @@
     min-height: 36px;
   }
   .speed-title-badge {
+    position: relative; overflow: hidden;
     min-height: 40px; padding: 5px 11px 5px 7px; border-radius: 11px;
     display: inline-flex; align-items: center; gap: 9px;
     color: var(--title-accent);
-    background: color-mix(in srgb, var(--title-accent-soft) 50%, var(--card));
-    box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--title-accent) 18%, transparent);
-    transition: background .24s ease, box-shadow .24s ease, transform .24s ease;
-  }
-  .speed-title-badge.is-changing {
-    animation: title-badge-settle .48s cubic-bezier(.2,.85,.25,1.15);
-  }
-  @keyframes title-badge-settle {
-    45% { transform: translateY(-2px); }
+    background: transparent;
+    box-shadow: none;
+    transition: transform .24s ease;
   }
   .speed-title-badge b { color: var(--title-accent-strong); font-size: var(--fs-3xl); line-height: 1.1; font-weight: 700; letter-spacing: -.025em; }
   .speed-title-badge small {
@@ -2049,30 +2044,6 @@
   .speed-title-picker:hover { color: var(--fg); background: var(--pill-hover); }
   .speed-title-picker svg { width: 12px; height: 12px; }
   .speed-sub { margin-top: 10px; color: var(--fg-2); font-size: var(--fs-sm); line-height: 1.5; }
-  /* 速度页的显示设置条：采样频率 / 数字动效 / 菜单栏样式。
-     放在速度主卡与指标卡之间，用户调完立刻能在上面看到效果。 */
-  .speed-settings {
-    display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
-    margin: 0 0 12px; padding: 8px 12px;
-    border-radius: 11px;
-    background: color-mix(in srgb, var(--card-2) 72%, transparent);
-    box-shadow: inset 0 0 0 .5px var(--line-2);
-  }
-  .speed-setting { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
-  .speed-setting[hidden] { display: none; }
-  .speed-setting-label { color: var(--muted); font-size: var(--fs-2xs); font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
-  .speed-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--pill); }
-  .speed-seg button {
-    height: 22px; padding: 0 8px; border: 0; border-radius: 5px;
-    color: var(--fg-2); background: transparent;
-    font-size: var(--fs-xs); font-weight: 500; white-space: nowrap;
-    transition: background .14s ease, color .14s ease, box-shadow .14s ease;
-  }
-  .speed-seg button:hover { color: var(--fg); }
-  .speed-seg button.active {
-    color: var(--fg); background: var(--seg-thumb); box-shadow: var(--seg-edge);
-  }
-  .speed-seg button:disabled { opacity: .5; }
   /* 主窗口大数字的滚轮：字号由 .speed-number 决定。letter-spacing 与
      line-height 必须归零/归 1，否则每列宽度和字形推进对不上、滚不到位。 */
   .speed-number.roll {
@@ -2082,18 +2053,15 @@
     letter-spacing: 0;
     font-variant-numeric: tabular-nums;
   }
-  @media (max-width: 720px) {
-    .speed-settings { gap: 6px 10px; }
-    .speed-setting-label { display: none; }
-  }
 
   .speed-rank-panel {
     position: relative; z-index: 1; min-width: 0;
     display: grid; align-content: center; justify-items: stretch; gap: 8px;
-    padding: 13px 14px 12px;
+    padding: 0;
     border-radius: 12px;
-    background: color-mix(in srgb, var(--card-2) 62%, transparent);
-    box-shadow: inset 0 0 0 .5px var(--line-2);
+    background: transparent;
+    box-shadow: none;
+    overflow: hidden;
   }
   .speed-rank-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -2105,12 +2073,17 @@
     letter-spacing: .02em;
   }
   .speed-rank-icon {
+    position: relative;
     min-height: 62px;
     display: grid; place-items: center;
     border-radius: 10px;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--card) 72%, transparent), transparent);
-    box-shadow: inset 0 .5px 0 color-mix(in srgb, var(--glass-border) 70%, transparent);
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+  #speed-orb-icon {
+    position: relative; z-index: 1;
+    display: grid; place-items: center;
   }
   .speed-rank-icon .title-rank-mark {
     --title-rank-size: 40px;
@@ -2601,9 +2574,150 @@
   .speed-rank-caption b { color: var(--fg); font-size: var(--fs-xl); line-height: 1.2; font-weight: 600; }
   .speed-rank-caption span { color: var(--muted); font-size: var(--fs-2xs); }
   .speed-rank-caption #speed-rank-theme { color: var(--title-accent); font-size: var(--fs-xs); font-weight: 600; }
+  /* ===== 称号展示动效 =====
+     常驻动画只动 transform/opacity；升级瞬间的进度环渐变、称号卡扫光、
+     等级数字上浮、图标弹入、火花扩散都是一次性，1.2s 内结束。
+     没有 rAF 循环；窗口隐藏时暂停常驻动画。 */
+  .speed-rank-icon::before {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 78px; height: 78px; margin: -39px 0 0 -39px; border-radius: 50%;
+    background: radial-gradient(circle,
+      color-mix(in srgb, var(--title-accent) 22%, transparent),
+      transparent 68%);
+    animation: speed-rank-glow 4.6s ease-in-out infinite;
+    pointer-events: none; z-index: 0;
+  }
+  .speed-rank-icon .title-rank-mark::after {
+    content: ""; position: absolute; inset: -7px; border-radius: 50%;
+    background: radial-gradient(circle at 50% 0,
+      var(--title-accent) 0 2.1px,
+      color-mix(in srgb, var(--title-accent) 42%, transparent) 2.6px,
+      transparent 3.6px);
+    animation: speed-rank-orbit 5.8s linear infinite;
+    pointer-events: none;
+  }
+  .speed-rank-icon .title-rank-mark { animation: speed-rank-float 4.8s ease-in-out infinite; }
+  .speed-title-badge { animation: speed-badge-float 5.6s ease-in-out infinite; }
+  .speed-title-badge::after {
+    content: ""; position: absolute; top: -70%; bottom: -70%; left: -55%; width: 38%;
+    background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent);
+    transform: skewX(-18deg) translateX(0);
+    opacity: 0; pointer-events: none;
+    animation: speed-badge-sheen 5.2s ease-in-out infinite;
+  }
+  .speed-title-icon .title-rank-mark { animation: speed-title-breathe 4.2s ease-in-out infinite; }
+
+  /* 升级瞬间：面板柔光 + 扫光、双层扩散环、10 颗火花、等级/图标弹入 */
+  .speed-rank-panel::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+    background: radial-gradient(circle at 50% 38%,
+      color-mix(in srgb, var(--title-accent) 24%, transparent),
+      transparent 62%);
+    opacity: 0;
+  }
+  .speed-rank-panel::after {
+    content: ""; position: absolute; inset: -25%; pointer-events: none; z-index: 3;
+    background: linear-gradient(100deg, transparent 38%, rgba(255,255,255,.34) 50%, transparent 62%);
+    transform: translateX(-135%) skewX(-12deg);
+    opacity: 0;
+  }
+  .speed-rank-panel.is-levelup::before { animation: speed-panel-glow 1s ease-out; }
+  .speed-rank-panel.is-levelup::after { animation: speed-panel-sheen .85s ease-out; }
+
+  .rank-burst { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+  .rank-burst .ring {
+    position: absolute; left: 50%; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px;
+    border-radius: 50%;
+    border: 2px solid color-mix(in srgb, var(--title-accent) 72%, transparent);
+    opacity: 0;
+  }
+  .rank-burst .ring.r2 {
+    border-width: 1px;
+    border-color: color-mix(in srgb, var(--title-accent) 42%, transparent);
+  }
+  .rank-burst .spark {
+    position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%; background: var(--title-accent);
+    opacity: 0; transform: rotate(var(--a)) translateY(-6px) scale(.7);
+  }
+  .speed-rank-panel.is-levelup .rank-burst .ring.r1 { animation: speed-rank-burst .95s cubic-bezier(.2,.7,.2,1); }
+  .speed-rank-panel.is-levelup .rank-burst .ring.r2 { animation: speed-rank-burst .95s cubic-bezier(.2,.7,.2,1) .1s; }
+  .speed-rank-panel.is-levelup .rank-burst .spark { animation: speed-rank-spark .9s ease-out; animation-delay: var(--d, 0ms); }
+  .speed-title-badge.is-levelup { animation: speed-badge-pop .7s cubic-bezier(.2,.8,.2,1); }
+  .speed-rank-panel.is-levelup .title-rank-sigil { animation: speed-sigil-pop .62s cubic-bezier(.2,.8,.2,1); }
+  .speed-rank-panel.is-levelup .speed-rank-head b { animation: speed-level-rise .58s cubic-bezier(.2,.8,.2,1); }
+
+  @keyframes speed-rank-glow {
+    0%, 100% { opacity: .35; transform: scale(.92); }
+    50% { opacity: .8; transform: scale(1.06); }
+  }
+  @keyframes speed-rank-orbit { to { transform: rotate(360deg); } }
+  @keyframes speed-rank-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5px); } }
+  @keyframes speed-badge-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+  @keyframes speed-title-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.09); } }
+  @keyframes speed-badge-sheen {
+    0%, 70% { opacity: 0; transform: skewX(-18deg) translateX(0); }
+    74% { opacity: .55; }
+    90%, 100% { opacity: 0; transform: skewX(-18deg) translateX(460%); }
+  }
+  @keyframes speed-rank-burst {
+    0% { opacity: .95; transform: scale(.6); }
+    65% { opacity: .3; }
+    100% { opacity: 0; transform: scale(2.2); }
+  }
+  @keyframes speed-rank-spark {
+    0% { opacity: 0; transform: rotate(var(--a)) translateY(-6px) scale(.5); }
+    20% { opacity: 1; }
+    100% { opacity: 0; transform: rotate(var(--a)) translateY(-56px) scale(.15); }
+  }
+  @keyframes speed-badge-pop {
+    0% { transform: translateY(-2px) scale(1); }
+    36% { transform: translateY(-3px) scale(1.09); }
+    100% { transform: translateY(-2px) scale(1); }
+  }
+  @keyframes speed-sigil-pop {
+    0% { opacity: .2; transform: scale(.55) rotate(-14deg); }
+    58% { opacity: 1; transform: scale(1.16) rotate(5deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); }
+  }
+  @keyframes speed-level-rise {
+    0% { opacity: 0; transform: translateY(9px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes speed-panel-glow {
+    0% { opacity: .85; transform: scale(.7); }
+    70% { opacity: .35; }
+    100% { opacity: 0; transform: scale(1.25); }
+  }
+  @keyframes speed-panel-sheen {
+    0% { opacity: 0; transform: translateX(-135%) skewX(-12deg); }
+    18% { opacity: .85; }
+    100% { opacity: 0; transform: translateX(135%) skewX(-12deg); }
+  }
+  body.app-hidden .speed-title-badge,
+  body.app-hidden .speed-title-badge::after,
+  body.app-hidden .speed-title-icon .title-rank-mark,
+  body.app-hidden .speed-rank-icon::before,
+  body.app-hidden .speed-rank-icon .title-rank-mark,
+  body.app-hidden .speed-rank-icon .title-rank-mark::after {
+    animation-play-state: paused;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .speed-number.is-ticking,
-    .speed-title-badge.is-changing { animation: none; }
+    .speed-title-badge,
+    .speed-title-badge::after,
+    .speed-title-badge.is-levelup,
+    .speed-title-icon .title-rank-mark,
+    .speed-rank-icon::before,
+    .speed-rank-icon .title-rank-mark,
+    .speed-rank-icon .title-rank-mark::after,
+    .speed-rank-panel.is-levelup::before,
+    .speed-rank-panel.is-levelup::after,
+    .speed-rank-panel.is-levelup .rank-burst .ring,
+    .speed-rank-panel.is-levelup .rank-burst .spark,
+    .speed-rank-panel.is-levelup .title-rank-sigil,
+    .speed-rank-panel.is-levelup .speed-rank-head b { animation: none; }
     .speed-gauge-fill,
     .speed-gauge-marker { transition: none; }
   }
@@ -3060,49 +3174,28 @@
               <span>速度等级</span>
               <b id="speed-rank-level">00</b>
             </div>
-            <div class="speed-rank-icon" id="speed-orb-icon" aria-hidden="true"></div>
+            <div class="speed-rank-icon" aria-hidden="true">
+              <div id="speed-orb-icon"></div>
+              <span class="rank-burst">
+                <i class="ring r1"></i><i class="ring r2"></i>
+                <i class="spark" style="--a:0deg;--d:0ms"></i>
+                <i class="spark" style="--a:36deg;--d:18ms"></i>
+                <i class="spark" style="--a:72deg;--d:36ms"></i>
+                <i class="spark" style="--a:108deg;--d:54ms"></i>
+                <i class="spark" style="--a:144deg;--d:72ms"></i>
+                <i class="spark" style="--a:180deg;--d:90ms"></i>
+                <i class="spark" style="--a:216deg;--d:108ms"></i>
+                <i class="spark" style="--a:252deg;--d:126ms"></i>
+                <i class="spark" style="--a:288deg;--d:144ms"></i>
+                <i class="spark" style="--a:324deg;--d:162ms"></i>
+              </span>
+            </div>
             <div class="speed-rank-caption">
               <b id="speed-rank-title">待机</b>
               <span id="speed-rank-theme">交通工具</span>
               <span id="speed-rank-progress">等待测速</span>
             </div>
           </aside>
-        </div>
-        <div class="speed-settings" id="speed-settings" aria-label="速度显示设置">
-          <div class="speed-setting">
-            <span class="speed-setting-label">采样</span>
-            <div class="speed-seg" id="speed-poll-seg" role="radiogroup" aria-label="采样频率">
-              <button type="button" data-value="200" role="radio" aria-checked="false">200ms</button>
-              <button type="button" data-value="300" role="radio" aria-checked="false">300ms</button>
-              <button type="button" data-value="500" role="radio" aria-checked="true" class="active">500ms</button>
-              <button type="button" data-value="750" role="radio" aria-checked="false">750ms</button>
-            </div>
-          </div>
-          <div class="speed-setting">
-            <span class="speed-setting-label">扫描</span>
-            <div class="speed-seg" id="speed-walk-seg" role="radiogroup" aria-label="会话目录扫描间隔">
-              <button type="button" data-value="3000" role="radio" aria-checked="false">3s</button>
-              <button type="button" data-value="8000" role="radio" aria-checked="false">8s</button>
-              <button type="button" data-value="15000" role="radio" aria-checked="true" class="active">15s</button>
-              <button type="button" data-value="30000" role="radio" aria-checked="false">30s</button>
-            </div>
-          </div>
-          <div class="speed-setting">
-            <span class="speed-setting-label">数字</span>
-            <div class="speed-seg" id="speed-display-seg" role="radiogroup" aria-label="数字显示方式">
-              <button type="button" data-value="roll" role="radio" aria-checked="true" class="active">逐位滚轮</button>
-              <button type="button" data-value="fade" role="radio" aria-checked="false">平滑缓动</button>
-              <button type="button" data-value="direct" role="radio" aria-checked="false">直接替换</button>
-            </div>
-          </div>
-          <div class="speed-setting" id="speed-menubar-setting" hidden>
-            <span class="speed-setting-label">菜单栏</span>
-            <div class="speed-seg" id="speed-menubar-seg" role="radiogroup" aria-label="菜单栏速度样式">
-              <button type="button" data-value="label" role="radio" aria-checked="true" class="active">纯文本</button>
-              <button type="button" data-value="tinted" role="radio" aria-checked="false">分段彩色</button>
-              <button type="button" data-value="compact" role="radio" aria-checked="false">只显示数字</button>
-            </div>
-          </div>
         </div>
         <div class="metric-grid">
           <div class="metric-card">
@@ -3562,6 +3655,7 @@ import {
   DEFAULT_REDLINE,
   createSpeedThrottle,
   drawLedStrip,
+  clampPeakFlagPercent,
   formatSpeed,
   heatColor,
   heatForSpeed,
@@ -5284,17 +5378,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   let latestTitleSpeed = 0;
   let latestTitleActive = false;
   let lastTitleLabel = "";
+  let titleLevelUpTimer = 0;
   let lastSpeedReadout = 0;
-  // 速度显示设置：采样频率、数字动效、菜单栏样式。三个窗口共用同一份设置，
-  // 保存后由 token-speed-settings-changed 事件同步过来。
+  // 速度显示设置只保留读取：采样频率与数字动效仍从 settings.json 生效，
+  // 速度页不再提供采样/扫描/数字/菜单栏的调节条。
   const SPEED_POLL_KEY = "token_speed_poll";
-  const SPEED_WALK_KEY = "token_speed_walk";
   const SPEED_DISPLAY_KEY = "token_speed_display";
-  const SPEED_MENUBAR_KEY = "token_speed_menubar";
   let speedPollMillis = 500;
-  let speedWalkMillis = 15000;
   let speedDisplayMode = "roll";
-  let speedMenubarStyle = "label";
   let speedFadeFrame = 0;
   let speedFadeValue = 0;
   let speedSeenOnce = false;
@@ -5421,6 +5512,25 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       "当前 " + compactTokenRate(latestTitleSpeed) + " tok/s · " + currentTitle;
   }
 
+  // triggerTitleLevelUp 在称号/主题变化时播一次升级动效：面板柔光+扫光、
+  // 扩散环+火花、等级数字上浮、图标弹入。动画全部是 transform/opacity，
+  // 1.2s 后摘掉 class，下一次升级还能重播。
+  function triggerTitleLevelUp() {
+    const panel = document.querySelector(".speed-rank-panel");
+    const badge = document.querySelector(".speed-title-badge");
+    if (!panel || !badge) return;
+    [panel, badge].forEach(function (el) {
+      el.classList.remove("is-levelup");
+      void el.offsetWidth;
+      el.classList.add("is-levelup");
+    });
+    clearTimeout(titleLevelUpTimer);
+    titleLevelUpTimer = setTimeout(function () {
+      panel.classList.remove("is-levelup");
+      badge.classList.remove("is-levelup");
+    }, 1200);
+  }
+
   function applyTitlePresentation(titleOverride) {
     const themeId = normalizeTitleTheme(currentTitleTheme);
     const level = titleLevelForSpeed(latestTitleSpeed, latestTitleActive);
@@ -5447,10 +5557,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
         "下一等级 · " + compactTokenRate(nextThreshold) + " tok/s";
     const identity = themeId + ":" + title;
     if (lastTitleLabel && identity !== lastTitleLabel) {
-      const badge = document.querySelector(".speed-title-badge");
-      badge.classList.remove("is-changing");
-      void badge.offsetWidth;
-      badge.classList.add("is-changing");
+      triggerTitleLevelUp();
     }
     lastTitleLabel = identity;
   }
@@ -5504,86 +5611,28 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
   };
 
-  // ---------- 速度显示设置条 ----------
-  // 三个设置项都写回 settings.json：采样频率由 Go 侧立即应用到轮询，
-  // 数字动效与菜单栏样式由本页与面板各自读取。改完立即重渲染一次，
-  // 用户不用等下一轮速度事件就能看到效果。
-  function speedSegButtons(id) {
-    const group = document.getElementById(id);
-    return group ? Array.from(group.querySelectorAll("button")) : [];
-  }
-
-  function paintSpeedSeg(id, value) {
-    speedSegButtons(id).forEach(function (button) {
-      const active = button.dataset.value === String(value);
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-checked", active ? "true" : "false");
-    });
-  }
-
-  async function applySpeedSetting(key, value, segId) {
-    const buttons = speedSegButtons(segId);
-    buttons.forEach(function (button) { button.disabled = true; });
-    paintSpeedSeg(segId, value);
-    try {
-      await Bound.SettingsSetString(key, value);
-      if (key === SPEED_POLL_KEY) {
-        speedPollMillis = Number(value) || speedPollMillis;
-        document.documentElement.style.setProperty(
-          "--roll-duration", rollDurationFor(speedPollMillis) + "ms");
-      }
-      if (key === SPEED_DISPLAY_KEY) {
-        speedDisplayMode = normalizeSpeedDisplay(value);
-        speedSeenOnce = false;
-        renderSpeedNumber(latestTitleSpeed);
-      }
-      if (key === SPEED_MENUBAR_KEY) speedMenubarStyle = value;
-    } catch (_) {
-      // 保存失败就回滚到设置里的值，别让界面显示一个没生效的选择。
-      await loadSpeedSettings();
-    } finally {
-      buttons.forEach(function (button) { button.disabled = false; });
-    }
-  }
-
-  function bindSpeedSeg(id, key) {
-    speedSegButtons(id).forEach(function (button) {
-      button.addEventListener("click", function () {
-        if (button.classList.contains("active")) return;
-        applySpeedSetting(key, button.dataset.value, id);
-      });
-    });
-  }
-
+  // ---------- 速度显示设置（仅读取，不再渲染调节条） ----------
   async function loadSpeedSettings() {
     try {
       const values = asJSON(await Bound.SettingsGet());
       speedPollMillis = Number(values[SPEED_POLL_KEY]) || 500;
-      speedWalkMillis = Number(values[SPEED_WALK_KEY]) || 15000;
       speedDisplayMode = normalizeSpeedDisplay(values[SPEED_DISPLAY_KEY]);
-      speedMenubarStyle = values[SPEED_MENUBAR_KEY] || "label";
-      paintSpeedSeg("speed-poll-seg", speedPollMillis);
-      paintSpeedSeg("speed-walk-seg", speedWalkMillis);
-      paintSpeedSeg("speed-display-seg", speedDisplayMode);
-      paintSpeedSeg("speed-menubar-seg", speedMenubarStyle);
-      // 菜单栏样式只在 macOS 有意义；其它平台隐藏这一行。
-      const menuSetting = document.getElementById("speed-menubar-setting");
-      if (menuSetting) menuSetting.hidden = !isMac;
       document.documentElement.style.setProperty(
         "--roll-duration", rollDurationFor(speedPollMillis) + "ms");
     } catch (_) {
-      // 读取失败保留默认值：设置条仍可点击，保存时会再校验一次。
+      // 读取失败保留默认值：轮询与数字动效都有默认档。
     }
   }
 
-  bindSpeedSeg("speed-poll-seg", SPEED_POLL_KEY);
-  bindSpeedSeg("speed-walk-seg", SPEED_WALK_KEY);
-  bindSpeedSeg("speed-display-seg", SPEED_DISPLAY_KEY);
-  bindSpeedSeg("speed-menubar-seg", SPEED_MENUBAR_KEY);
   Events.On("token-speed-settings-changed", function () {
     loadSpeedSettings();
   });
   loadSpeedSettings();
+
+  document.addEventListener("visibilitychange", function () {
+    document.body.classList.toggle("app-hidden", document.hidden);
+  });
+  document.body.classList.toggle("app-hidden", document.hidden);
 
   Events.On("title-theme-changed", function (event) {
     currentTitleTheme = normalizeTitleTheme(event && event.data);
@@ -5647,6 +5696,28 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   const speedPeakFlag = document.getElementById("speed-peak-flag");
   const speedNumberEl = document.getElementById("speed-output");
   speedHeroOrb.setState({ value: 0, immediate: true });
+
+  // 今日峰值标签：按真实峰值百分比定位，但把标签中心钳在轨道内。
+  // 100% 峰值时旧实现会让标签越出轨道、被右侧「速度等级」卡盖住。
+  let lastSpeedPeakPct = 0;
+  function layoutSpeedPeakFlag(peakPct) {
+    lastSpeedPeakPct = Number(peakPct) || 0;
+    const track = speedPeakFlag.parentElement;
+    const left = clampPeakFlagPercent(
+      lastSpeedPeakPct,
+      speedPeakFlag.offsetWidth,
+      track ? track.clientWidth : 0
+    );
+    speedPeakFlag.style.left = left.toFixed(2) + "%";
+  }
+  window.addEventListener("resize", function () {
+    layoutSpeedPeakFlag(lastSpeedPeakPct);
+  });
+  if (typeof ResizeObserver !== "undefined" && speedPeakFlag.parentElement) {
+    new ResizeObserver(function () {
+      layoutSpeedPeakFlag(lastSpeedPeakPct);
+    }).observe(speedPeakFlag.parentElement);
+  }
 
   // ---------- 速度数字渲染（三种显示方式） ----------
   function speedReducedMotion() {
@@ -5756,16 +5827,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     // LED 横条：段色同热谱，金线标今日峰值。
     const peakToday = Number(view.peak_today_tokens_per_second) || 0;
     drawLedStrip(speedStrip, { value: output, redline: redline, peak: peakToday });
-    // 今日峰值标记：换算成百分比定位在条上。
+    // 今日峰值标记：换算成百分比定位在条上，标签中心钳在轨道内。
     const peakPct = Math.max(0, Math.min(100, heatForSpeed(peakToday, redline) * 100));
-    speedPeakFlag.style.left = peakPct.toFixed(1) + "%";
+    layoutSpeedPeakFlag(peakPct);
     speedPeakFlag.classList.toggle("show", peakToday > 0 && active);
-    // 热谱着色：加速档之后大数字与称号一起染色，红线时更亮。
+    // 热谱着色：只给数字与称号图标上色，不再在数字背后叠红色光晕。
     const heatCss = heatColor(heat);
     speedNumberEl.style.color = heat >= 0.25 ? heatCss : "";
-    speedNumberEl.style.textShadow = heat >= 0.55
-      ? "0 0 " + (18 + 22 * heat).toFixed(0) + "px " + heatColor(heat, 0.55)
-      : "";
+    speedNumberEl.style.textShadow = "";
     renderSpeedNumber(output);
     lastSpeedReadout = output;
     document.getElementById("speed-input").textContent =
@@ -5774,19 +5843,16 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       compactTokenRate(view.total_tokens_per_second);
     document.getElementById("speed-agents").textContent = String(generating);
     applyTitlePresentation(view.title);
-    // 称号与徽章用热谱色（与球体/仪表同一套），不再用主题色，
-    // 这样「越快越热」在三处读起来是同一件事。
+    // 称号图标用热谱色；徽章底色保持透明，不再把整块背景染成红色。
     if (heat >= 0.25) {
       const badge = document.querySelector(".speed-title-badge");
       if (badge) {
         badge.style.setProperty("--title-accent", heatCss);
-        badge.style.setProperty("--title-accent-soft", heatColor(heat, 0.12));
       }
     } else {
       const badge = document.querySelector(".speed-title-badge");
       if (badge) {
         badge.style.removeProperty("--title-accent");
-        badge.style.removeProperty("--title-accent-soft");
       }
     }
     document.getElementById("speed-state").textContent =

@@ -99,6 +99,22 @@ export function heatForSpeed(value, redline) {
   return Math.min(1, Math.pow(v / r, 0.6));
 }
 
+// clampPeakFlagPercent 把「今日峰值」标签的中心钳在仪表轨道内：
+// 标签宽 flagWidth、轨道宽 trackWidth 时，中心至少留半个标签宽，最多留到
+// 轨道右端减去半个标签宽；100% 峰值时标签不会溢出到右侧等级卡下面。
+// 轨道宽度无效（未布局/隐藏）时按 0-100 原样钳制，不强行改位置。
+export function clampPeakFlagPercent(peakPct, flagWidth, trackWidth) {
+  const pct = Number(peakPct);
+  const flag = Number(flagWidth);
+  const track = Number(trackWidth);
+  if (!Number.isFinite(pct)) return 0;
+  const clamped = Math.max(0, Math.min(100, pct));
+  if (!(track > 0) || !(flag > 0)) return clamped;
+  const halfPct = (flag / 2 / track) * 100;
+  if (halfPct >= 50) return 50;
+  return Math.max(halfPct, Math.min(100 - halfPct, clamped));
+}
+
 // titleThresholdsFor 返回按红线缩放的 13 档称号阈值（与 Go 侧同源）。
 export function titleThresholdsFor(redline) {
   const r = Number(redline) > 0 ? Number(redline) : DEFAULT_REDLINE;
