@@ -60,3 +60,21 @@ test("模块导出工厂函数，且 node 下可安全 import", function () {
   assert.equal(typeof createAgentSpeedOrb, "function");
   assert.equal(typeof orbSettled, "function");
 });
+
+// 速度为 0 时帧循环自停（started=false），此时 resize 重设 canvas.width
+// 会清空画布却没人重绘——贴边缩小/弹回放大后球面变透明。锁定修复：
+// resize 在尺寸落定后、若已画过且未在跑帧，补画一帧。
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+test("resize 在静止态补画一帧，避免贴边/弹回后球面透明", function () {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const src = readFileSync(join(here, "..", "frontend", "assets", "orb-agent-speed.js"), "utf8");
+  // resize 末尾要有「未在跑帧且已画过 → render()」的保护。
+  assert.match(src, /if \(!started && painted\) render\(\);/);
+  // render 必须设置 painted，否则上述保护永远不成立。
+  assert.match(src, /painted = true;/);
+  // painted 需初始化。
+  assert.match(src, /let painted = false;/);
+});

@@ -370,14 +370,14 @@ html, body {
   .ball .core .pet-icon.running { animation: none; }
 }
 
-/* 贴边态：窗口 36px、一半在屏幕外，只留 16px 宠物/精灵球。
+/* 贴边态：窗口 40px（贴边球径）、一半在屏幕外，只留半个球。
    主体往屏幕内偏移半宽（--dock-x/--dock-y 由 bar.html 依窗口与工作区推断），
    否则内容正好被窗口边界切成一半。 */
 .ball.docked .core {
   transform: translate(var(--dock-x, 0px), var(--dock-y, 0px));
 }
 .ball.docked .core b { display: none; }
-/* 36px 半圆装不下特效粒子：贴边时只保留 16px 主体。 */
+/* 40px 半圆装不下特效粒子：贴边时只保留主体。 */
 .ball.docked .fx { display: none; }
 .ball.docked .core .pet-icon,
 .ball.docked .core .ball-icon { width: 16px; height: 16px; }

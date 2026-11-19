@@ -96,9 +96,9 @@ func TestResolveBarDropLeavesDockWhenDraggedAway(t *testing.T) {
 	if drop.Docked != "" {
 		t.Fatalf("恢复后不应带贴边侧，实际 %q", drop.Docked)
 	}
-	// 76 → 122 时多出的一圈平均分到两侧：偏移 (122-76)/2 = 23。
-	if drop.X != 377 || drop.Y != 277 {
-		t.Fatalf("恢复落点应为 377,277，实际 %d,%d", drop.X, drop.Y)
+	// 40 → 64 时多出的一圈平均分到两侧：偏移 (64-40)/2 = 12。
+	if drop.X != 388 || drop.Y != 288 {
+		t.Fatalf("恢复落点应为 388,288，实际 %d,%d", drop.X, drop.Y)
 	}
 }
 

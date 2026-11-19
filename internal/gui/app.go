@@ -333,8 +333,14 @@ func (a *App) ensureBar() *application.WebviewWindow {
 		event.Cancel()
 	})
 	// DPI 变化（拖到不同缩放比例的显示器）后窗口物理尺寸会变，圆形区域是按
-	// 物理像素算的，必须重新裁一次。
+	// 物理像素算的，必须重新裁一次。DIP 尺寸不变会被 shapeBall 的同尺寸去重
+	// 跳过，所以先清掉缓存强制重裁。
 	bar.OnWindowEvent(events.Common.WindowDPIChanged, func(*application.WindowEvent) {
+		a.barStateMu.Lock()
+		a.barShapedW = 0
+		a.barShapedH = 0
+		a.barShapedSide = ""
+		a.barStateMu.Unlock()
 		a.shapeBall(bar)
 	})
 	// SetSize（贴边 44 / 弹回 64）也会改窗口尺寸，尺寸落定后重裁。
@@ -609,6 +615,9 @@ func (a *App) onBarMoveEnd(bar *application.WebviewWindow) {
 		return
 	}
 	docked, restoreX, restoreY := a.barDockState()
+	// 拖动结束是用户明确的落位：清掉任何残留的「待收起」登记，避免落成
+	// 浮动态后失焦又被吸回侧边（hover 轮询/点击弹回都可能留下登记）。
+	a.clearBarRedock()
 	// 落点判定在 resolveBarDrop（纯函数、表驱动单测覆盖），这里只把结果
 	// 落到窗口上并记忆。
 	drop := resolveBarDrop(area, x, y, width, docked, restoreX, restoreY)
@@ -860,6 +869,12 @@ func (a *App) BarStartDrag() {
 	// 拖动是对球的正式操作：取消「点空白收回贴边」的一次性登记，
 	// 否则拖到半路失焦会被强行吸回原来的边。
 	a.clearBarRedock()
+	// 同时停掉贴边态的 hover 轮询。贴边球被直接拖出时轮询仍在跑，拖动中
+	// 光标始终压在球上，轮询会每 120ms 命中一次、重新登记待收起并调用
+	// undockBar 抢改几何——用户松手落成浮动态后，残留登记会在球窗失焦
+	// 时把球又吸回侧边（「拖出来又自动收回」）。拖完 onBarMoveEnd 会按落点
+	// 决定是否重新 startBarHover。
+	a.stopBarHover()
 	bar.HandleMessage("wails:drag")
 }
 

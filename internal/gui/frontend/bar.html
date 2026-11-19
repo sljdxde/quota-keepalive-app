@@ -21,10 +21,9 @@
 <style>
   /* 拖动区域必须写在页面里（Wails 读取计算样式）：球体可拖，内容不参与
      拖动，点击仍冒泡到 #ball。 */
-  /* 方形窗口（1.9 × 球径）里，除球与光晕外的部分必须全透明，
-     否则会露出一块页面底色。qka-ui.css 给 body 设了 --bg，这里覆盖掉。 */
+  /* 窗口裁成正圆，球面即窗口；除球面外的部分一律不可见。 */
   html, body { background: transparent !important; }
-  /* 画布尺寸由渲染核按 1.9×球径写（等于窗口大小），居中铺满即可。 */
+  /* 画布尺寸由渲染核按球径写（等于窗口大小），居中铺满即可。 */
   #ball { width: 100%; height: 100%; }
 
   #ball { --wails-draggable: drag; }
@@ -82,7 +81,7 @@
     white-space: nowrap;
   }
   .ball.idle .core b.roll { color: #fff; }
-  /* 贴边 36px 只放得下一个数：单位收起。 */
+  /* 贴边 40px 只放得下一个数：单位收起。 */
   .ball.docked .core .unit { display: none; }
 </style>
 </head>
@@ -129,10 +128,10 @@
   const unitNode = document.getElementById("speed-unit");
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // 球径 = 容器（= 窗口）/ 1.9。用元素尺寸而不是 innerWidth，页面有
-  // 内边距时也不会算错；贴边态窗口变窄时跟着缩。
+  // 球径 = 窗口尺寸。窗口裁成正圆后窗口即球面（浮动 64 / 贴边 40），
+  // 用元素尺寸而不是 innerWidth，页面有内边距时也不会算错。
   function ballDiameter() {
-    return Math.round((ball.clientWidth || window.innerWidth || 122) / 1.9);
+    return Math.round(ball.clientWidth || window.innerWidth || 64);
   }
 
   // 读数只排两行：数值 + tok/s（不放称号，长称号会顶出球外，而且称号色
@@ -180,8 +179,8 @@
   loadSpeedSettings();
 
   // 渲染核：逐字移植自 agent-speed 的规范参考原型，负责丝绸核心、36 段
-  // LED 热谱环、彗星、火花/余烬、冲击波与破纪录金光。窗口 = 1.5 × 球径，
-  // 球外的光晕与粒子才有地方画（clip=false）。
+  // LED 热谱环、彗星、火花/余烬、冲击波与破纪录金光。窗口=球径、裁成正圆，
+  // 画布就是球面本身（clip=true），球外不占位、不抢点击；球面内动效完整保留。
   const orb = createAgentSpeedOrb({
     stage: ball,
     glCanvas: document.getElementById("ball-gl"),
@@ -189,10 +188,9 @@
     readout: ball.querySelector(".core"),
     valueEl: valueNode,
     unitEl: unitNode,
-    // 球径 = 容器（= 窗口）/ 1.9。用元素尺寸而不是 innerWidth，
-    // 页面有内边距时也不会算错。
+    // 球径 = 窗口尺寸（裁圆后窗口即球面）。
     size: ballDiameter(),
-    clip: false,
+    clip: true,
     redline: DEFAULT_REDLINE,
     readoutOffset: -50,
     reduceMotion: reducedMotion,
@@ -234,13 +232,13 @@
     lastPeakSeq = peakSeq;
   }
 
-  // 贴边态：Go 把窗口缩到 36px 并有一半放到屏幕外；页面按视口宽度切内容，
-  // 再用「窗口矩形 vs 工作区」推断贴的是哪条边，把内容往屏幕内移。
+  // 贴边态：Go 把窗口缩到贴边球径（40）并有一半放到屏幕外；页面按视口宽度
+  // 切内容，再用「窗口矩形 vs 工作区」推断贴的是哪条边，把内容往屏幕内移。
   let dockTimer = 0;
   let dockPoll = 0;
   function syncDocked() {
-    // 浮动窗口 122、贴边窗口 76：以两者之间为判据。
-    const docked = window.innerWidth < 99;
+    // 浮动窗口 64、贴边窗口 40：取两者中点 52 作判据。
+    const docked = window.innerWidth < 52;
     ball.classList.toggle("docked", docked);
     const screen = window.screen || {};
     const side = docked ? dockSideForWindow({
@@ -259,7 +257,7 @@
     ball.dataset.dock = side;
     orb.setSize(ballDiameter());
     // 渲染核 resize 会写一版固定字号；这里紧跟一次自适应字号（带
-    // !important），贴边缩到 76px 窗口时读数仍然收在球内。
+    // !important），贴边缩到 40px 窗口时读数仍然收在球内。
     layoutReadout(lastSpeedText);
     if (docked && !dockPoll) {
       dockPoll = setInterval(syncDocked, 500);
@@ -277,7 +275,7 @@
 
   // Go 侧每次 SetSize/SetPosition 后都会广播一次几何事件（带最终尺寸与
   // 位置）。快速连续的贴边/弹回切换下 WebView2 可能吞掉 resize 事件，页面
-  // 会停在旧布局——「贴边拉出来变全白」就是页面停在 76px 贴边布局、内容
+  // 会停在旧布局——「贴边拉出来变全白」就是页面停在 40px 贴边布局、内容
   // 整体偏出可视区。这里按终态立刻重算，不等 resize / dockPoll。
   Events.On("bar-geometry-changed", function () {
     clearTimeout(dockTimer);

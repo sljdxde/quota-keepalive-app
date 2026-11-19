@@ -38,7 +38,7 @@ func TestFloatingBallUsesLEDGauge(t *testing.T) {
 		`assets/orb-agent-speed.js`,
 		`assets/tokenspeed-viz.js`,
 		`createAgentSpeedOrb`,
-		`clip: false`,
+		`clip: true`,
 		`ballReadoutFontSize`,
 		`layoutReadout`,
 		`orb.setSize`,
@@ -415,13 +415,12 @@ func TestBallWindowOptionsKeepDragAndDockSizes(t *testing.T) {
 	if ballDockSize >= ballSize || ballDockSize%2 != 0 {
 		t.Errorf("贴边尺寸 %d 应小于浮动态且能被 2 整除（一半露出）", ballDockSize)
 	}
-	// 窗口 = 1.9 × 球径（与 agent-speed 原型画布一致）：球 64 → 窗口 122，
-	// 贴边球 40 → 窗口 76。外圈光环、彗星与火花必须画得出来。
-	if ballDiscSize != 64 || ballSize != 122 {
-		t.Errorf("球径应为 64、窗口 122，实际 %d / %d", ballDiscSize, ballSize)
+	// 窗口 = 球径（裁成正圆，球外不占位）：球 64 → 窗口 64，贴边球 40 → 窗口 40。
+	if ballDiscSize != 64 || ballSize != 64 {
+		t.Errorf("球径应为 64、窗口 64，实际 %d / %d", ballDiscSize, ballSize)
 	}
-	if ballDockSize != 76 {
-		t.Errorf("贴边窗口应为 76，实际 %d", ballDockSize)
+	if ballDockSize != 40 {
+		t.Errorf("贴边窗口应为 40，实际 %d", ballDockSize)
 	}
 }
 
@@ -588,7 +587,7 @@ func TestDockedBallContentMovesInsideScreen(t *testing.T) {
 		`assets/ball-dock.js`,
 		`dockSideForWindow`,
 		`dockContentShift`,
-		`window.innerWidth < 99`,
+		`window.innerWidth < 52`,
 		`width: window.innerWidth,`,
 		`height: window.innerHeight,`,
 		`ball.style.setProperty("--dock-x"`,
@@ -688,7 +687,7 @@ func TestRedlineDefaultsStayInSync(t *testing.T) {
 }
 
 // 贴边/弹回切换必须走 setBarGeometry 并广播 bar-geometry-changed：页面对
-// 快速连续 resize 会漏事件，停在 76px 贴边布局、内容整体偏出可视区——
+// 快速连续 resize 会漏事件，停在 40px 贴边布局、内容整体偏出可视区——
 // 用户看到「贴边拉出来全白」。几何事件是终态同步的第二条腿。
 func TestBarGeometryChangeSyncWired(t *testing.T) {
 	pageData, err := frontendFS.ReadFile("frontend/bar.html")
@@ -719,5 +718,45 @@ func TestBarGeometryChangeSyncWired(t *testing.T) {
 		if !strings.Contains(source, want) {
 			t.Errorf("app.go 缺少 %q", want)
 		}
+	}
+}
+
+// 悬浮球贴边后拖出：hover 轮询会在拖动中反复命中球、重新登记「待收起」并
+// 抢改几何，松手落成浮动态后失焦又把球吸回侧边（「拖出来又自动收回」）。
+// 锁定修复：BarStartDrag 停轮询 + onBarMoveEnd 清登记。
+func TestBarDragCancelsHoverAndRedock(t *testing.T) {
+	appData, err := os.ReadFile("app.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(appData)
+
+	// BarStartDrag 必须在进入原生拖动前停掉 hover 轮询。
+	dragAt := strings.Index(source, "func (a *App) BarStartDrag()")
+	if dragAt < 0 {
+		t.Fatal("未找到 BarStartDrag")
+	}
+	dragBody := source[dragAt:]
+	if end := strings.Index(dragBody, `bar.HandleMessage("wails:drag")`); end >= 0 {
+		dragBody = dragBody[:end]
+	}
+	if !strings.Contains(dragBody, "a.stopBarHover()") {
+		t.Error("BarStartDrag 应在拖动前 stopBarHover，避免轮询在拖动中重新登记待收起")
+	}
+	if !strings.Contains(dragBody, "a.clearBarRedock()") {
+		t.Error("BarStartDrag 应 clearBarRedock")
+	}
+
+	// onBarMoveEnd 落位时清掉残留登记。
+	moveEndAt := strings.Index(source, "func (a *App) onBarMoveEnd(")
+	if moveEndAt < 0 {
+		t.Fatal("未找到 onBarMoveEnd")
+	}
+	moveEndBody := source[moveEndAt:]
+	if next := strings.Index(moveEndBody[1:], "\nfunc (a *App)"); next >= 0 {
+		moveEndBody = moveEndBody[:next+1]
+	}
+	if !strings.Contains(moveEndBody, "a.clearBarRedock()") {
+		t.Error("onBarMoveEnd 应在落位时 clearBarRedock，避免浮动态失焦又被吸回侧边")
 	}
 }
