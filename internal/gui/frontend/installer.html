@@ -482,10 +482,11 @@
 
   startButton.addEventListener("click", startInstall);
   installInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      startInstall();
-    }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    // 中文输入法合成中按 Enter 只是选词，不能触发安装（macOS WebKit 需补 keyCode 229）。
+    if (event.isComposing || event.keyCode === 229) return;
+    startInstall();
   });
 
   retryButton.addEventListener("click", resetControls);

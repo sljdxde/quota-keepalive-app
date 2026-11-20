@@ -564,7 +564,7 @@ function accountNode(account) {
 }
 
 function fillEmpty(container, title, detail) {
-  container.innerHTML = "";
+  container.replaceChildren();
   const empty = document.createElement("div");
   empty.className = "empty";
   const heading = document.createElement("b");
@@ -583,7 +583,7 @@ function render(view) {
   syncPrivacyToggle();
   currentAccounts = view.accounts || [];
   const box = document.getElementById("targets");
-  box.innerHTML = "";
+  box.replaceChildren();
 
   const attention = currentAccounts.filter(needsAttention).length;
   const completed = currentAccounts.filter(function (account) {
@@ -753,7 +753,7 @@ function refresh() {
 
 function renderSparkline() {
   const sparkline = document.getElementById("panel-speed-sparkline");
-  sparkline.innerHTML = "";
+  sparkline.replaceChildren();
   const max = Math.max.apply(null, speedHistory.concat([1]));
   speedHistory.forEach(function (value, index) {
     const bar = document.createElement("i");
@@ -779,7 +779,7 @@ function seedSpeedHistory(output) {
 
 function renderSpeedDirectory(sources, sessions, idleCount) {
   const list = document.getElementById("panel-sources");
-  list.innerHTML = "";
+  list.replaceChildren();
   const sourceRows = Array.isArray(sources) ? sources : [];
   const sessionRows = Array.isArray(sessions) ? sessions : [];
   document.getElementById("panel-source-count").textContent =
@@ -1711,7 +1711,7 @@ function spawnPetEffect(pet, x, y, rect, options) {
   const layer = document.getElementById("pet-skill-layer");
   const particles = document.getElementById("pet-particles");
   particles.replaceChildren();
-  layer.innerHTML = "";
+  layer.replaceChildren();
   stage.classList.remove("skill-leaf", "skill-ember", "skill-water", "skill-electric");
   void stage.offsetWidth;
   stage.classList.add("skill-" + pet.effect);

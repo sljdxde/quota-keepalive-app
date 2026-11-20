@@ -4034,7 +4034,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
     const commandHighlight =
       commandResults.querySelector(".command-liquid-highlight");
-    commandResults.innerHTML = "";
+    commandResults.replaceChildren();
     commandMatches.forEach(function (item, index) {
       const option = document.createElement("button");
       option.type = "button";
@@ -4391,7 +4391,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       if (control.value.trim() !== (value == null ? "" : String(value).trim())) commit();
     };
     control.onkeydown = function (event) {
-      if (event.key === "Enter") { event.preventDefault(); control.blur(); }
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      // 中文输入法合成中按 Enter 只是选词，不能触发失焦保存（macOS WebKit 需补 keyCode 229）。
+      if (event.isComposing || event.keyCode === 229) return;
+      control.blur();
     };
     return row;
   }
@@ -4491,7 +4495,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       applyAppearance(values);
       const mirror = document.getElementById("settings-update-mirror");
       if (mirror) mirror.checked = !!values.update_domestic_mirror;
-      body.innerHTML = "";
+      body.replaceChildren();
       schema.forEach(function (field) {
         if (field.hidden) return; // 由软件更新卡片里的专用开关呈现
         let row;
@@ -5464,8 +5468,8 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   function renderTitleLadder() {
     const grid = document.getElementById("title-ladder-grid");
     if (!titleCatalog.length) {
-      grid.innerHTML = "";
-      document.getElementById("title-ladder-preview").innerHTML = "";
+      grid.replaceChildren();
+      document.getElementById("title-ladder-preview").replaceChildren();
       document.getElementById("title-ladder-name").textContent = "称号目录";
       document.getElementById("title-ladder-desc").textContent = "称号目录读取中";
       document.getElementById("title-ladder-active").textContent = "当前 —";
@@ -5874,7 +5878,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       : "当前没有可靠解码速度；完成下一次响应后会自动更新。" + updated;
 
     const list = document.getElementById("speed-sources");
-    list.innerHTML = "";
+    list.replaceChildren();
     const sessions = view.sessions || [];
     sources.forEach(function (source) {
       const item = document.createElement("div");
@@ -6112,7 +6116,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     let view;
     try {
       view = asJSON(await Bound.ProvidersList());
-      body.innerHTML = "";
+      body.replaceChildren();
       body.dataset.loaded = "1";
     } catch (_) {
       body.innerHTML = '<div class="empty"><b>无法读取供应商</b>供应商运行时尚未就绪，正在自动重试；也可点右上角刷新。</div>';
@@ -6313,7 +6317,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   function fillAgentModal(provider) {
     agentModalProvider = provider;
     const body = document.getElementById("agent-modal-body");
-    body.innerHTML = "";
+    body.replaceChildren();
     const accounts = provider.accounts || [];
     const accountNodes = [];
     if (accounts.length) {
@@ -6379,13 +6383,60 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (emptyAdd) emptyAdd.onclick = function () { openProviderLogin(provider); };
   }
 
+  // ---- 自定义弹窗无障碍：.modal 没有原生 <dialog> 的 inert / 焦点语义，----
+  // 统一补「Esc 关闭 + 打开移焦 + 关闭归还焦点」三种最小行为。
+  function wireModalA11y(modalId, closeFn) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return { onOpen: function () {}, onClose: function () {} };
+    let returnFocus = null;
+    let inertSiblings = [];
+    modal.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") { event.preventDefault(); closeFn(); }
+    });
+    return {
+      onOpen: function (preferred) {
+        returnFocus = document.activeElement;
+        // 打开时把其余同级内容设为 inert：键盘 Tab 落不进背景，读屏也只读弹窗。
+        // inert 在旧 WebKit 上无效，会优雅降级为原行为，不会报错。
+        inertSiblings = [];
+        const parent = modal.parentElement;
+        if (parent) {
+          Array.prototype.forEach.call(parent.children, function (el) {
+            if (el !== modal && !el.hasAttribute("inert")) {
+              el.setAttribute("inert", "");
+              inertSiblings.push(el);
+            }
+          });
+        }
+        const target = preferred || modal.querySelector(
+          "input:not([type='hidden']), select, textarea, button:not([disabled])"
+        );
+        if (target && typeof target.focus === "function") {
+          window.setTimeout(function () {
+            target.focus();
+            if (typeof target.select === "function") target.select();
+          }, 60);
+        }
+      },
+      onClose: function () {
+        inertSiblings.forEach(function (el) { el.removeAttribute("inert"); });
+        inertSiblings = [];
+        const back = returnFocus;
+        returnFocus = null;
+        if (back && typeof back.focus === "function") back.focus();
+      },
+    };
+  }
+
   async function openAgentModal(provider) {
     fillAgentModal(provider);
     document.getElementById("agent-modal").classList.remove("hidden");
+    agentModalA11y.onOpen();
   }
 
   function closeAgentModal() {
     document.getElementById("agent-modal").classList.add("hidden");
+    agentModalA11y.onClose();
     agentModalProvider = null;
     showAccountsMessage("");
   }
@@ -6406,6 +6457,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function closeActivityModal() {
     document.getElementById("activity-modal").classList.add("hidden");
+    activityModalA11y.onClose();
   }
 
   // ---- 执行日志弹层（原「历史 / 额度」面板升级为居中弹层）：
@@ -6648,6 +6700,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     document.getElementById("activity-modal-body").innerHTML =
       '<div class="acctlog-empty">正在读取执行记录…</div>';
     document.getElementById("activity-modal").classList.remove("hidden");
+    activityModalA11y.onOpen();
     let items = [];
     try {
       const page = asJSON(await Bound.ProvidersHistory(provider.id, key, 60));
@@ -6688,13 +6741,14 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
 
   function closeTravelModal() {
     document.getElementById("travel-modal").classList.add("hidden");
+    travelModalA11y.onClose();
     travelModalProvider = null;
     travelModalAccount = null;
   }
 
   function renderTravelModal(status, logs) {
     const body = document.getElementById("travel-modal-body");
-    body.innerHTML = "";
+    body.replaceChildren();
     const summary = document.createElement("div");
     summary.className = "activity-summary";
     const state = document.createElement("span");
@@ -6794,6 +6848,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
       (provider.name || provider.id) + " · " + accountIdentityText(account);
     document.getElementById("travel-modal-action").disabled = true;
     document.getElementById("travel-modal").classList.remove("hidden");
+    travelModalA11y.onOpen();
     await refreshTravelModal();
   }
 
@@ -6832,6 +6887,12 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   document.getElementById("agent-modal").addEventListener("click", function (event) {
     if (event.target.id === "agent-modal") closeAgentModal();
   });
+
+  // 四个自定义弹窗共用同一套 Esc / 焦点管理。
+  const agentModalA11y = wireModalA11y("agent-modal", closeAgentModal);
+  const activityModalA11y = wireModalA11y("activity-modal", closeActivityModal);
+  const travelModalA11y = wireModalA11y("travel-modal", closeTravelModal);
+  const remarkModalA11y = wireModalA11y("acct-remark-modal", closeAccountRemarkModal);
 
 
   // 签到管理页：供应商账号、双任务开关、手动执行与历史。
@@ -7058,7 +7119,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const accounts = providerAccountCount(view);
     const text = document.getElementById("accounts-summary-text");
     const stats = document.getElementById("accounts-summary-stats");
-    stats.innerHTML = "";
+    stats.replaceChildren();
     let healthy = 0, attention = 0, enabled = 0;
     ((view && view.providers) || []).forEach(function (provider) {
       (provider.accounts || []).forEach(function (account) {
@@ -7077,7 +7138,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   function populateProviderPicker(view, selected) {
     const select = document.getElementById("accounts-provider");
     const current = selected == null ? select.value : selected;
-    select.innerHTML = "";
+    select.replaceChildren();
     const all = document.createElement("option");
     all.value = "";
     all.textContent = "全部供应商";
@@ -7560,12 +7621,13 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     input.maxLength = 40;
     input.value = accountRemarkText(account);
     document.getElementById("acct-remark-modal").classList.remove("hidden");
-    window.setTimeout(function () { input.focus(); input.select(); }, 60);
+    remarkModalA11y.onOpen(input);
   }
 
   function closeAccountRemarkModal() {
     document.getElementById("acct-remark-modal").classList.add("hidden");
     remarkModalTarget = null;
+    remarkModalA11y.onClose();
   }
 
   async function commitAccountRemark() {
@@ -7597,7 +7659,11 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     if (event.target.id === "acct-remark-modal") closeAccountRemarkModal();
   });
   document.getElementById("acct-remark-input").addEventListener("keydown", function (event) {
-    if (event.key === "Enter") { event.preventDefault(); commitAccountRemark(); }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    // 中文输入法合成中按 Enter 只是选词，不能提交半截备注（macOS WebKit 需补 keyCode 229）。
+    if (event.isComposing || event.keyCode === 229) return;
+    commitAccountRemark();
   });
 
   // 额度自动刷新：每 30 分钟对当前打开的 Agent 弹层里的账号走一次 refresh，
@@ -8211,7 +8277,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   }
 
   function resetProviderLoginBody() {
-    document.getElementById("provider-login-methods").innerHTML = "";
+    document.getElementById("provider-login-methods").replaceChildren();
     document.getElementById("provider-login-origin").hidden = true;
     document.getElementById("provider-login-origin").textContent = "";
     document.getElementById("provider-login-input-wrap").hidden = true;
@@ -8478,7 +8544,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     const container = document.getElementById("logs-body");
     if (reset) {
       logCursor = 0;
-      container.innerHTML = "";
+      container.replaceChildren();
     }
     Promise.all([
       Bound.LogsTail(
@@ -8637,7 +8703,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
   function renderFreeTokenTiers() {
     const box = document.getElementById("freetokens-tiers");
     if (!box) return;
-    box.innerHTML = "";
+    box.replaceChildren();
     TIERS.forEach(function (tier) {
       const count = freeTokensState.data && freeTokensState.data.summary
         ? Number(freeTokensState.data.summary[tier.id]) || 0
@@ -8757,7 +8823,7 @@ import { populateProviderIcon, providerIconSpec } from "./assets/provider-icons.
     }
     const list = document.getElementById("freetokens-list");
     if (!list) return;
-    list.innerHTML = "";
+    list.replaceChildren();
     const visible = filterDeals(view.deals, {
       tier: freeTokensState.tier,
       query: freeTokensState.query,

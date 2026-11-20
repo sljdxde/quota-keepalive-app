@@ -36,7 +36,7 @@ func TestAppsBodyClearsLoadingPlaceholder(t *testing.T) {
 		t.Fatal("找不到 ProvidersList 调用")
 	}
 	after := body[awaitIdx:]
-	clearIdx := strings.Index(after, `body.innerHTML = ""`)
+	clearIdx := strings.Index(after, `body.replaceChildren()`)
 	firstAppend := strings.Index(after, "body.appendChild(")
 	if clearIdx < 0 {
 		t.Fatal("成功拿到数据后没有清空 apps-body：占位框会永久残留")
